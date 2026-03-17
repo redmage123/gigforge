@@ -1,0 +1,59 @@
+name: Deploy
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://gigforge.ai
+    if: github.ref == 'refs/heads/master'
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: 78.47.104.139
+          username: aielevate
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            cd /opt/ai-elevate/gigforge/projects
+            git pull origin master
+            
+            # Rebuild CRM
+            cd crm && docker compose build && docker compose up -d && cd ..
+            
+            # Rebuild website
+            cd gigforge-website && docker compose down && docker compose up -d --build && cd ..
+            
+            sleep 15
+            echo "Deploy complete"
+
+      - name: Notify
+        if: always()
+        uses: appleboy/ssh-action@v1
+        with:
+          host: 78.47.104.139
+          username: aielevate
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            STATUS="${{ job.status }}"
+            if [ "$STATUS" = "success" ]; then
+              python3 /home/aielevate/notify.py --priority MEDIUM \
+                --subject "GigForge deployed successfully" \
+                --body "Auto-deploy from GitHub completed. Commit: ${{ github.sha }}" \
+                --org gigforge 2>/dev/null
+            else
+              python3 /home/aielevate/notify.py --priority HIGH \
+                --subject "GigForge deploy FAILED" \
+                --body "Auto-deploy failed. Commit: ${{ github.sha }}. Check GitHub Actions." \
+                --org gigforge 2>/dev/null
+            fi

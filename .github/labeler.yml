@@ -1,0 +1,18 @@
+crm:
+  - changed-files:
+      - any-glob-to-any-file: 'crm/**'
+website:
+  - changed-files:
+      - any-glob-to-any-file: 'gigforge-website/**'
+cryptoadvisor:
+  - changed-files:
+      - any-glob-to-any-file: 'cryptoadvisor-dashboard/**'
+bacswn:
+  - changed-files:
+      - any-glob-to-any-file: 'bacswn/**'
+infrastructure:
+  - changed-files:
+      - any-glob-to-any-file:
+          - '.github/**'
+          - '**/docker-compose*'
+          - '**/Dockerfile*'

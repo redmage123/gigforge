@@ -3,20 +3,23 @@ updates:
   - package-ecosystem: "pip"
     directory: "/crm/backend"
     schedule:
-      interval: "weekly"
-    labels: ["dependencies"]
-  - package-ecosystem: "pip"
-    directory: "/cryptoadvisor-dashboard"
-    schedule:
-      interval: "weekly"
-    labels: ["dependencies"]
+      interval: "monthly"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+
   - package-ecosystem: "npm"
     directory: "/gigforge-website"
     schedule:
-      interval: "weekly"
-    labels: ["dependencies", "frontend"]
+      interval: "monthly"
+    open-pull-requests-limit: 2
+    labels:
+      - "dependencies"
+
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "weekly"
-    labels: ["ci"]
+      interval: "monthly"
+    open-pull-requests-limit: 2
+    labels:
+      - "ci"

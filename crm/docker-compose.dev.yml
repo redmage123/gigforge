@@ -1,0 +1,46 @@
+version: "3.9"
+
+services:
+  postgres:
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: crm_user
+      POSTGRES_PASSWORD: devpassword
+      POSTGRES_DB: crm_db
+
+  redis:
+    ports:
+      - "6379:6379"
+    environment:
+      REDIS_PASSWORD: devpassword
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: builder
+    environment:
+      DATABASE_URL: postgresql+asyncpg://crm_user:devpassword@postgres:5432/crm_db
+      REDIS_URL: redis://:devpassword@redis:6379/0
+      JWT_SECRET_KEY: dev-secret-key-change-in-production
+      ENVIRONMENT: development
+      CORS_ORIGINS: "http://localhost:3000,http://localhost:5173"
+    volumes:
+      - ./backend:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    environment:
+      VITE_API_URL: http://localhost:8000
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    ports:
+      - "5173:5173"
+    command: npm run dev -- --host

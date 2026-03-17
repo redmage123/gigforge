@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Wallet</h1>
+
+<!-- MetaMask Connection -->
+<div class="card">
+    <h3>Browser Wallet (MetaMask)</h3>
+    <div class="wallet-header">
+        <div id="wallet-status">
+            <button id="connect-btn" class="btn">Connect MetaMask</button>
+        </div>
+        <div id="wallet-info" style="display:none;">
+            <div class="wallet-address-display">
+                <span class="wallet-dot"></span>
+                <span id="wallet-addr"></span>
+                <span id="wallet-chain" class="chain-badge"></span>
+            </div>
+            <button id="disconnect-btn" class="btn btn-outline">Disconnect</button>
+        </div>
+    </div>
+</div>
+
+<!-- Saved Wallets -->
+<div class="card">
+    <h3>Saved Wallets</h3>
+    <p style="color:var(--muted);font-size:0.85rem;margin-bottom:1rem;">
+        Add wallet addresses to watch across any chain. No browser extension required.
+    </p>
+    <div class="controls" style="flex-wrap:wrap;">
+        <input type="text" id="wallet-label" placeholder="Label (e.g. Main ETH)" class="form-input" style="min-width:150px;max-width:200px;">
+        <input type="text" id="wallet-address" placeholder="Wallet address (0x... / bc1... / SOL...)" class="form-input" style="min-width:300px;flex:1;">
+        <select id="wallet-chain" class="form-input" style="min-width:auto;width:160px;">
+            <option value="ethereum">Ethereum</option>
+            <option value="bsc">BSC</option>
+            <option value="polygon">Polygon</option>
+            <option value="arbitrum">Arbitrum</option>
+            <option value="optimism">Optimism</option>
+            <option value="avalanche">Avalanche</option>
+            <option value="base">Base</option>
+            <option value="solana">Solana</option>
+            <option value="bitcoin">Bitcoin</option>
+        </select>
+        <button id="add-wallet-btn" class="btn">Add Wallet</button>
+    </div>
+    <div id="saved-wallets-list">
+        <span class="loading">Loading saved wallets...</span>
+    </div>
+</div>
+
+<!-- Saved Wallet Balances -->
+<div class="card">
+    <h3>Saved Wallet Balances</h3>
+    <button id="refresh-balances-btn" class="btn btn-sm" style="margin-bottom:1rem;">Refresh Balances</button>
+    <div id="saved-balances">
+        <span class="loading">Add wallets above to see balances</span>
+    </div>
+</div>
+
+<!-- MetaMask multi-chain balances (only when connected) -->
+<div id="wallet-connected-content" style="display:none;">
+    <div class="card">
+        <h3>MetaMask — All Chain Balances</h3>
+        <div class="controls">
+            <select id="chain-switch">
+                <option value="0x1">Ethereum</option>
+                <option value="0x38">BSC</option>
+                <option value="0x89">Polygon</option>
+                <option value="0xa4b1">Arbitrum</option>
+                <option value="0xa">Optimism</option>
+                <option value="0xa86a">Avalanche</option>
+                <option value="0x2105">Base</option>
+            </select>
+            <button id="switch-chain-btn" class="btn btn-sm">Switch Chain</button>
+        </div>
+        <div id="balances-grid" class="grid grid-3">
+            <span class="loading">Loading...</span>
+        </div>
+    </div>
+</div>
+
+<div id="no-metamask" style="display:none;" class="card">
+    <h3>MetaMask Not Detected</h3>
+    <p>To connect a browser wallet, install <a href="https://metamask.io/download/" target="_blank" style="color:var(--primary);">MetaMask</a>. You can still use saved wallets above to watch any address.</p>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.0/ethers.umd.min.js"></script>
+<script src="/static/js/wallet.js"></script>
+{% endblock %}

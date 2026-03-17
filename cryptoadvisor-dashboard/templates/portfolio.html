@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Portfolio</h1>
+<div class="grid grid-2">
+    <div class="card">
+        <h3>Holdings</h3>
+        <div id="holdings-table"><span class="loading">Loading...</span></div>
+    </div>
+    <div class="card">
+        <h3>Allocation</h3>
+        <div id="portfolio-chart" style="height:300px;"></div>
+    </div>
+</div>
+<div class="grid grid-2">
+    <div class="card">
+        <h3>Signals</h3>
+        <div id="signals-table"><span class="loading">Loading...</span></div>
+    </div>
+    <div class="card">
+        <h3>Watchlist</h3>
+        <div id="watchlist-table"><span class="loading">Loading...</span></div>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="/static/js/portfolio.js"></script>
+{% endblock %}

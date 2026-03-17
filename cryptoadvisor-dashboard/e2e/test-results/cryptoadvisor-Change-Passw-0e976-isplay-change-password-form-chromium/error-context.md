@@ -1,0 +1,216 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e3]:
+  - navigation [ref=e4]:
+    - heading "CryptoAdvisor" [level=2] [ref=e6]
+    - button "✎ Customize" [ref=e7] [cursor=pointer]
+    - list [ref=e8]:
+      - listitem [ref=e9]:
+        - generic [ref=e10] [cursor=pointer]:
+          - generic [ref=e11]: ▾
+          - text: Markets
+        - list [ref=e12]:
+          - listitem [ref=e13]:
+            - link "📊Dashboard" [ref=e14] [cursor=pointer]:
+              - /url: /
+          - listitem [ref=e15]:
+            - link "📈Technical" [ref=e16] [cursor=pointer]:
+              - /url: /technical
+          - listitem [ref=e17]:
+            - link "💬Sentiment" [ref=e18] [cursor=pointer]:
+              - /url: /sentiment
+          - listitem [ref=e19]:
+            - link "🔗Correlation" [ref=e20] [cursor=pointer]:
+              - /url: /correlation
+          - listitem [ref=e21]:
+            - link "📖Order Book" [ref=e22] [cursor=pointer]:
+              - /url: /orderbook
+          - listitem [ref=e23]:
+            - link "💥Liquidations" [ref=e24] [cursor=pointer]:
+              - /url: /liquidations
+      - listitem [ref=e25]:
+        - generic [ref=e26] [cursor=pointer]:
+          - generic [ref=e27]: ▾
+          - text: Portfolio
+        - list [ref=e28]:
+          - listitem [ref=e29]:
+            - link "💼Portfolio" [ref=e30] [cursor=pointer]:
+              - /url: /portfolio
+          - listitem [ref=e31]:
+            - link "💰Wallet" [ref=e32] [cursor=pointer]:
+              - /url: /wallet
+          - listitem [ref=e33]:
+            - link "⇄Trades" [ref=e34] [cursor=pointer]:
+              - /url: /trades
+          - listitem [ref=e35]:
+            - link "💹On-chain P&L" [ref=e36] [cursor=pointer]:
+              - /url: /onchain-pnl
+          - listitem [ref=e37]:
+            - link "🧪Backtest" [ref=e38] [cursor=pointer]:
+              - /url: /backtest
+          - listitem [ref=e39]:
+            - link "🔗Share" [ref=e40] [cursor=pointer]:
+              - /url: /share-portfolio
+      - listitem [ref=e41]:
+        - generic [ref=e42] [cursor=pointer]:
+          - generic [ref=e43]: ▾
+          - text: DeFi & NFTs
+        - list [ref=e44]:
+          - listitem [ref=e45]:
+            - link "🏦DeFi" [ref=e46] [cursor=pointer]:
+              - /url: /defi
+          - listitem [ref=e47]:
+            - link "📦Staking" [ref=e48] [cursor=pointer]:
+              - /url: /staking
+          - listitem [ref=e49]:
+            - link "🖼NFTs" [ref=e50] [cursor=pointer]:
+              - /url: /nfts
+          - listitem [ref=e51]:
+            - link "🌱Yields" [ref=e52] [cursor=pointer]:
+              - /url: /yields
+          - listitem [ref=e53]:
+            - link "📉Impermanent Loss" [ref=e54] [cursor=pointer]:
+              - /url: /impermanent-loss
+          - listitem [ref=e55]:
+            - link "🏛Governance" [ref=e56] [cursor=pointer]:
+              - /url: /governance
+      - listitem [ref=e57]:
+        - generic [ref=e58] [cursor=pointer]:
+          - generic [ref=e59]: ▾
+          - text: Tools
+        - list [ref=e60]:
+          - listitem [ref=e61]:
+            - link "🔔Alerts" [ref=e62] [cursor=pointer]:
+              - /url: /alerts
+          - listitem [ref=e63]:
+            - link "📱DCA Calculator" [ref=e64] [cursor=pointer]:
+              - /url: /dca
+          - listitem [ref=e65]:
+            - link "📅DCA Plans" [ref=e66] [cursor=pointer]:
+              - /url: /dca-plans
+          - listitem [ref=e67]:
+            - link "⛽Gas Tracker" [ref=e68] [cursor=pointer]:
+              - /url: /gas
+          - listitem [ref=e69]:
+            - link "📝Tax Report" [ref=e70] [cursor=pointer]:
+              - /url: /tax
+          - listitem [ref=e71]:
+            - link "🐋Whale Tracker" [ref=e72] [cursor=pointer]:
+              - /url: /whales
+          - listitem [ref=e73]:
+            - link "👥Copy Trading" [ref=e74] [cursor=pointer]:
+              - /url: /copy-trading
+          - listitem [ref=e75]:
+            - link "✔Token Approvals" [ref=e76] [cursor=pointer]:
+              - /url: /token-approvals
+          - listitem [ref=e77]:
+            - link "🎁Airdrops" [ref=e78] [cursor=pointer]:
+              - /url: /airdrops
+          - listitem [ref=e79]:
+            - link "📡Mempool" [ref=e80] [cursor=pointer]:
+              - /url: /mempool
+          - listitem [ref=e81]:
+            - link "🔓Token Unlocks" [ref=e82] [cursor=pointer]:
+              - /url: /token-unlocks
+          - listitem [ref=e83]:
+            - link "💱Converter" [ref=e84] [cursor=pointer]:
+              - /url: /converter
+      - listitem [ref=e85]:
+        - generic [ref=e86] [cursor=pointer]:
+          - generic [ref=e87]: ▾
+          - text: Security
+        - list [ref=e88]:
+          - listitem [ref=e89]:
+            - link "🛡Wallet Health" [ref=e90] [cursor=pointer]:
+              - /url: /wallet-health
+          - listitem [ref=e91]:
+            - link "⚠Rug Detector" [ref=e92] [cursor=pointer]:
+              - /url: /rugpull
+          - listitem [ref=e93]:
+            - link "🔑Multi-sig" [ref=e94] [cursor=pointer]:
+              - /url: /multisig
+      - listitem [ref=e95]:
+        - generic [ref=e96] [cursor=pointer]:
+          - generic [ref=e97]: ▾
+          - text: AI Assistant
+        - list [ref=e98]:
+          - listitem [ref=e99]:
+            - link "🧠Market Briefing" [ref=e100] [cursor=pointer]:
+              - /url: /ai-briefing
+          - listitem [ref=e101]:
+            - link "📊Risk Report" [ref=e102] [cursor=pointer]:
+              - /url: /ai-risk
+          - listitem [ref=e103]:
+            - link "💸Tax Optimizer" [ref=e104] [cursor=pointer]:
+              - /url: /ai-tax
+          - listitem [ref=e105]:
+            - link "🎯Portfolio Builder" [ref=e106] [cursor=pointer]:
+              - /url: /ai-portfolio
+          - listitem [ref=e107]:
+            - link "🔍Pattern Recognition" [ref=e108] [cursor=pointer]:
+              - /url: /pattern-recognition
+          - listitem [ref=e109]:
+            - link "📜Regulatory Monitor" [ref=e110] [cursor=pointer]:
+              - /url: /regulatory
+          - listitem [ref=e111]:
+            - link "🎓Trading Coach" [ref=e112] [cursor=pointer]:
+              - /url: /trading-coach
+          - listitem [ref=e113]:
+            - link "🧠AI Memory" [ref=e114] [cursor=pointer]:
+              - /url: /memory
+      - listitem [ref=e115]:
+        - generic [ref=e116] [cursor=pointer]:
+          - generic [ref=e117]: ▾
+          - text: Blockchain
+        - list [ref=e118]:
+          - listitem [ref=e119]:
+            - link "🔗Blockchain" [ref=e120] [cursor=pointer]:
+              - /url: /blockchain
+          - listitem [ref=e121]:
+            - link "📊Analytics" [ref=e122] [cursor=pointer]:
+              - /url: /analytics
+          - listitem [ref=e123]:
+            - link "👨‍💻Dev Activity" [ref=e124] [cursor=pointer]:
+              - /url: /dev-activity
+      - listitem [ref=e125]:
+        - generic [ref=e126] [cursor=pointer]:
+          - generic [ref=e127]: ▾
+          - text: Exchange
+        - list [ref=e128]:
+          - listitem [ref=e129]:
+            - link "🏢Exchanges" [ref=e130] [cursor=pointer]:
+              - /url: /exchanges
+      - listitem [ref=e131]:
+        - generic [ref=e132] [cursor=pointer]:
+          - generic [ref=e133]: ▾
+          - text: Account
+        - list [ref=e134]:
+          - listitem [ref=e135]:
+            - link "💳Billing" [ref=e136] [cursor=pointer]:
+              - /url: /billing
+    - generic [ref=e138]: CryptoAdvisor v1.0
+  - generic [ref=e139]:
+    - banner [ref=e140]:
+      - generic [ref=e141]:
+        - button "?" [ref=e142] [cursor=pointer]
+        - button "A admin ▾" [ref=e143] [cursor=pointer]:
+          - generic [ref=e144]: A
+          - generic [ref=e145]: admin
+          - generic [ref=e146]: ▾
+    - main [ref=e147]:
+      - generic [ref=e148]:
+        - heading "Change Password" [level=2] [ref=e149]
+        - generic [ref=e151]:
+          - generic [ref=e152]:
+            - generic [ref=e153]: Current Password
+            - textbox [ref=e154]
+          - generic [ref=e155]:
+            - generic [ref=e156]: New Password
+            - textbox [ref=e157]
+          - generic [ref=e158]:
+            - generic [ref=e159]: Confirm New Password
+            - textbox [ref=e160]
+          - button "Change Password" [ref=e161] [cursor=pointer]
+  - button "💬" [ref=e162] [cursor=pointer]
+```

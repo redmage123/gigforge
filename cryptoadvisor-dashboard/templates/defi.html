@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>DeFi Positions</h1>
+<div class="card"><h3>Staking</h3><div id="staking-positions"><span class="loading">Loading...</span></div></div>
+<div class="card"><h3>Lending / Borrowing</h3><div id="lending-positions"><span class="loading">Loading...</span></div></div>
+<div class="card"><h3>Liquidity Pools</h3><div id="lp-positions"><span class="loading">Loading...</span></div></div>
+{% endblock %}
+{% block scripts %}<script src="/static/js/defi.js"></script>{% endblock %}

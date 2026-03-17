@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Analytics</h1>
+<div class="card">
+    <h3>Correlation Heatmap (30d)</h3>
+    <div id="correlation-container" style="text-align:center;">
+        <img id="correlation-chart" class="chart-img" alt="Correlation" />
+        <span class="loading">Loading...</span>
+    </div>
+</div>
+<div class="card">
+    <h3>Portfolio Allocation</h3>
+    <div id="sunburst-chart" style="height:400px;"></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+async function loadAnalytics() {
+    // Correlation heatmap
+    try {
+        const resp = await fetch('/api/charts/correlation');
+        const data = await resp.json();
+        if (data.image) {
+            document.getElementById('correlation-chart').src = 'data:image/png;base64,' + data.image;
+            document.querySelector('#correlation-container .loading').style.display = 'none';
+        }
+    } catch(e) { console.error('Correlation error:', e); }
+
+    // Sunburst
+    try {
+        const resp = await fetch('/api/charts/portfolio/allocation');
+        const data = await resp.json();
+        Plotly.newPlot('sunburst-chart', data.data, data.layout);
+    } catch(e) { console.error('Sunburst error:', e); }
+}
+loadAnalytics();
+</script>
+{% endblock %}

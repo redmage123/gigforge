@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Whale Tracker</h1>
+<div class="controls">
+    <select id="whale-chain" class="form-input" style="width:160px;min-width:auto;"><option value="ethereum">Ethereum</option><option value="bitcoin">Bitcoin</option><option value="bsc">BSC</option><option value="polygon">Polygon</option><option value="arbitrum">Arbitrum</option></select>
+    <input type="number" id="whale-min" placeholder="Min value" class="form-input" style="width:160px;min-width:auto;" value="100" step="10">
+    <button id="whale-refresh-btn" class="btn">Refresh</button>
+</div>
+<div class="card"><h3>Recent Large Transactions</h3><div id="whale-feed"><span class="loading">Loading...</span></div></div>
+{% endblock %}
+{% block scripts %}<script src="/static/js/whales.js"></script>{% endblock %}

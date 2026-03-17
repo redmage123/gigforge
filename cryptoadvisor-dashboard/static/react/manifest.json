@@ -1,0 +1,16 @@
+{
+  "name": "CryptoAdvisor Dashboard",
+  "short_name": "CryptoAdvisor",
+  "description": "AI-powered cryptocurrency portfolio dashboard",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0e1a",
+  "theme_color": "#00d4aa",
+  "icons": [
+    {
+      "src": "/vite.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

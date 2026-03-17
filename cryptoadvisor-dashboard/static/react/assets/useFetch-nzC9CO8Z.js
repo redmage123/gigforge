@@ -1,0 +1,1 @@
+import{r as t,b as i}from"./index-C7H2JglN.js";function g(s,r=0){const[n,c]=t.useState(null),[o,a]=t.useState(!0),[u,l]=t.useState(null),e=t.useCallback(()=>{a(!0),i.get(s).then(c).catch(l).finally(()=>a(!1))},[s]);return t.useEffect(()=>{if(e(),r>0){const f=setInterval(e,r);return()=>clearInterval(f)}},[e,r]),{data:n,loading:o,error:u,refetch:e}}export{g as u};

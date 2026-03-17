@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 400" width="600" height="400" aria-label="Abstract technology illustration showing code and data processing">
+  <title>Technology and code illustration</title>
+
+  <!-- Background -->
+  <rect width="600" height="400" fill="#0f172a" rx="16"/>
+
+  <!-- Monitor frame -->
+  <rect x="80" y="40" width="440" height="270" rx="12" fill="#1e293b" stroke="#3b82f6" stroke-width="1.5"/>
+
+  <!-- Screen area -->
+  <rect x="95" y="55" width="410" height="240" rx="6" fill="#0f172a"/>
+
+  <!-- Code lines — syntax highlight style -->
+  <!-- Line 1: keyword -->
+  <rect x="115" y="80" width="50" height="8" rx="3" fill="#8b5cf6"/>
+  <rect x="172" y="80" width="80" height="8" rx="3" fill="#3b82f6"/>
+  <rect x="260" y="80" width="30" height="8" rx="3" fill="#f8fafc" opacity="0.6"/>
+  <rect x="298" y="80" width="90" height="8" rx="3" fill="#10b981"/>
+
+  <!-- Line 2: indent + function -->
+  <rect x="135" y="100" width="40" height="8" rx="3" fill="#94a3b8" opacity="0.5"/>
+  <rect x="183" y="100" width="120" height="8" rx="3" fill="#f8fafc" opacity="0.7"/>
+  <rect x="311" y="100" width="60" height="8" rx="3" fill="#3b82f6" opacity="0.8"/>
+
+  <!-- Line 3 -->
+  <rect x="135" y="120" width="30" height="8" rx="3" fill="#3b82f6"/>
+  <rect x="173" y="120" width="150" height="8" rx="3" fill="#94a3b8" opacity="0.5"/>
+
+  <!-- Line 4: empty then value -->
+  <rect x="155" y="140" width="70" height="8" rx="3" fill="#10b981"/>
+  <rect x="233" y="140" width="20" height="8" rx="3" fill="#f8fafc" opacity="0.4"/>
+  <rect x="261" y="140" width="100" height="8" rx="3" fill="#f59e0b"/>
+
+  <!-- Line 5 -->
+  <rect x="135" y="160" width="60" height="8" rx="3" fill="#8b5cf6"/>
+  <rect x="203" y="160" width="40" height="8" rx="3" fill="#94a3b8" opacity="0.5"/>
+  <rect x="251" y="160" width="130" height="8" rx="3" fill="#f8fafc" opacity="0.6"/>
+
+  <!-- Line 6 -->
+  <rect x="115" y="180" width="30" height="8" rx="3" fill="#f8fafc" opacity="0.6"/>
+
+  <!-- Line 7: comment -->
+  <rect x="115" y="205" width="180" height="8" rx="3" fill="#94a3b8" opacity="0.3"/>
+
+  <!-- Line 8: keyword + identifier -->
+  <rect x="115" y="225" width="50" height="8" rx="3" fill="#8b5cf6"/>
+  <rect x="173" y="225" width="100" height="8" rx="3" fill="#3b82f6"/>
+  <rect x="281" y="225" width="80" height="8" rx="3" fill="#f8fafc" opacity="0.5"/>
+
+  <!-- Cursor blink -->
+  <rect x="115" y="248" width="3" height="16" rx="1" fill="#3b82f6" opacity="0.9"/>
+
+  <!-- Monitor stand -->
+  <rect x="278" y="310" width="44" height="30" rx="2" fill="#1e293b"/>
+  <rect x="238" y="340" width="124" height="10" rx="5" fill="#1e293b"/>
+
+  <!-- Floating bracket elements (decorative) -->
+  <text x="28" y="130" font-family="monospace" font-size="36" fill="#3b82f6" opacity="0.2" font-weight="700">{</text>
+  <text x="548" y="200" font-family="monospace" font-size="36" fill="#3b82f6" opacity="0.2" font-weight="700">}</text>
+
+  <!-- Floating code snippet -->
+  <rect x="26" y="220" width="40" height="8" rx="3" fill="#3b82f6" opacity="0.15"/>
+  <rect x="26" y="234" width="28" height="8" rx="3" fill="#3b82f6" opacity="0.1"/>
+
+  <!-- Top-right decorative dots -->
+  <circle cx="540" cy="70" r="4" fill="#3b82f6" opacity="0.4"/>
+  <circle cx="556" cy="70" r="4" fill="#3b82f6" opacity="0.25"/>
+  <circle cx="572" cy="70" r="4" fill="#3b82f6" opacity="0.15"/>
+
+  <!-- Bottom left test indicator -->
+  <rect x="26" y="340" width="80" height="28" rx="6" fill="#1e293b" stroke="#10b981" stroke-width="1"/>
+  <text x="38" y="359" font-family="system-ui,sans-serif" font-size="11" fill="#10b981" font-weight="600">✓ 57 tests</text>
+
+  <!-- Bottom right build indicator -->
+  <rect x="494" y="340" width="80" height="28" rx="6" fill="#1e293b" stroke="#3b82f6" stroke-width="1"/>
+  <text x="506" y="359" font-family="system-ui,sans-serif" font-size="11" fill="#3b82f6" font-weight="600">✓ Build OK</text>
+
+  <!-- Connection dots between indicators -->
+  <circle cx="120" cy="378" r="2" fill="#94a3b8" opacity="0.3"/>
+  <circle cx="150" cy="378" r="2" fill="#94a3b8" opacity="0.3"/>
+  <circle cx="180" cy="378" r="2" fill="#94a3b8" opacity="0.3"/>
+  <circle cx="300" cy="378" r="2" fill="#94a3b8" opacity="0.3"/>
+  <circle cx="420" cy="378" r="2" fill="#94a3b8" opacity="0.3"/>
+  <circle cx="450" cy="378" r="2" fill="#94a3b8" opacity="0.3"/>
+</svg>

@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 450">
+  <defs>
+    <linearGradient id="sky" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#1e3a5f"/>
+      <stop offset="100%" style="stop-color:#0f172a"/>
+    </linearGradient>
+    <linearGradient id="green" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#22c55e"/>
+      <stop offset="100%" style="stop-color:#16a34a"/>
+    </linearGradient>
+  </defs>
+  <rect width="800" height="450" fill="url(#sky)"/>
+  <!-- Trees/landscape -->
+  <polygon points="0,450 100,280 200,450" fill="#166534" opacity="0.4"/>
+  <polygon points="150,450 280,300 410,450" fill="#15803d" opacity="0.3"/>
+  <polygon points="500,450 620,310 740,450" fill="#166534" opacity="0.4"/>
+  <!-- Bird silhouettes -->
+  <path d="M200,120 Q210,100 220,120 Q230,100 240,120" fill="none" stroke="#94a3b8" stroke-width="2"/>
+  <path d="M350,80 Q365,55 380,80 Q395,55 410,80" fill="none" stroke="#94a3b8" stroke-width="2.5"/>
+  <path d="M550,140 Q560,125 570,140 Q580,125 590,140" fill="none" stroke="#94a3b8" stroke-width="1.5"/>
+  <!-- Detection box -->
+  <rect x="330" y="55" width="100" height="50" fill="none" stroke="#22c55e" stroke-width="2" rx="4"/>
+  <text x="380" y="120" text-anchor="middle" fill="#22c55e" font-family="monospace" font-size="11">Species: Identified</text>
+  <!-- Radar circles -->
+  <circle cx="650" cy="350" r="60" fill="none" stroke="#3b82f6" stroke-width="1" opacity="0.3"/>
+  <circle cx="650" cy="350" r="40" fill="none" stroke="#3b82f6" stroke-width="1" opacity="0.5"/>
+  <circle cx="650" cy="350" r="20" fill="none" stroke="#3b82f6" stroke-width="1" opacity="0.7"/>
+  <circle cx="660" cy="340" r="3" fill="#22c55e"/>
+  <circle cx="635" cy="360" r="3" fill="#22c55e"/>
+  <!-- Title -->
+  <text x="400" y="40" text-anchor="middle" fill="#f8fafc" font-family="system-ui" font-size="24" font-weight="bold">BACSWN SkyWatch</text>
+  <!-- Stats bar -->
+  <rect x="60" y="380" width="200" height="40" rx="8" fill="#1e293b" stroke="#334155"/>
+  <text x="80" y="405" fill="#94a3b8" font-family="monospace" font-size="12">94% accuracy | 12 species</text>
+</svg>

@@ -1,0 +1,23 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e4]:
+  - heading "CryptoAdvisor" [level=1] [ref=e5]
+  - paragraph [ref=e6]: Sign in to your dashboard
+  - generic [ref=e7]: Rate limit exceeded
+  - generic [ref=e8]:
+    - generic [ref=e9]:
+      - generic [ref=e10]: Username
+      - textbox [ref=e11]: admin
+    - generic [ref=e12]:
+      - generic [ref=e13]: Password
+      - generic [ref=e14]:
+        - textbox [ref=e15]: admin
+        - button "Show password" [ref=e16] [cursor=pointer]:
+          - img [ref=e17]
+    - button "Sign In" [ref=e22] [cursor=pointer]
+  - paragraph [ref=e23]:
+    - text: Don't have an account?
+    - link "Create one" [ref=e24] [cursor=pointer]:
+      - /url: /register
+```

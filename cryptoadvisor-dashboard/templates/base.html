@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CryptoAdvisor Dashboard</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="https://cdn.plot.ly/plotly-2.35.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.bokeh.org/bokeh/release/bokeh-3.4.3.min.js"></script>
+    {% block head %}{% endblock %}
+</head>
+<body>
+    <div class="layout">
+        <nav class="sidebar">
+            <div class="logo">
+                <h2>CryptoAdvisor</h2>
+            </div>
+            <ul class="nav-links">
+                <li><a href="/dashboard" class="{% if active_page == 'dashboard' %}active{% endif %}">Dashboard</a></li>
+                <li><a href="/technical" class="{% if active_page == 'technical' %}active{% endif %}">Technical</a></li>
+                <li><a href="/blockchain" class="{% if active_page == 'blockchain' %}active{% endif %}">Blockchain</a></li>
+                <li><a href="/analytics" class="{% if active_page == 'analytics' %}active{% endif %}">Analytics</a></li>
+                <li><a href="/portfolio" class="{% if active_page == 'portfolio' %}active{% endif %}">Portfolio</a></li>
+                <li><a href="/wallet" class="{% if active_page == 'wallet' %}active{% endif %}">Wallet</a></li>
+            </ul>
+            <div class="sidebar-footer">
+                <a href="/change-password" class="nav-footer-link">Settings</a>
+                <a href="/logout" class="nav-footer-link logout-link">Logout</a>
+            </div>
+        </nav>
+        <main class="content">
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

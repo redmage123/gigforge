@@ -1,0 +1,1 @@
+import{a as e}from"./index-l01Fptg8.js";function g(s,r=3e4){const[l,o]=e.useState(null),[u,c]=e.useState(!0),[i,n]=e.useState(null),a=e.useCallback(async()=>{try{const t=await s();o(t),n(null)}catch(t){n(t.message)}finally{c(!1)}},[s]);return e.useEffect(()=>{a();const t=setInterval(a,r);return()=>clearInterval(t)},[a,r]),{data:l,loading:u,error:i,refresh:a}}export{g as u};

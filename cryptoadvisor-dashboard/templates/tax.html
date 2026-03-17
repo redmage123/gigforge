@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Tax Report</h1>
+<div class="card">
+    <h3>Generate Report</h3>
+    <div class="controls">
+        <select id="tax-method" class="form-input" style="width:120px;min-width:auto;"><option value="fifo">FIFO</option><option value="lifo">LIFO</option></select>
+        <input type="number" id="tax-year" placeholder="Year (blank=all)" class="form-input" style="width:140px;min-width:auto;" min="2020" max="2030">
+        <button id="gen-report-btn" class="btn">Generate</button>
+        <button id="export-csv-btn" class="btn btn-outline">Export CSV</button>
+    </div>
+</div>
+<div class="card"><h3>Summary</h3><div id="tax-summary" class="grid grid-3"><span class="loading">Click Generate</span></div></div>
+<div class="card"><h3>Realized Gains/Losses</h3><div id="tax-events"><span class="muted">Click Generate to see events</span></div></div>
+{% endblock %}
+{% block scripts %}<script src="/static/js/tax.js"></script>{% endblock %}

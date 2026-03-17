@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>NFT Portfolio</h1>
+<div class="card"><h3>Your NFTs</h3><div id="nft-gallery" class="grid grid-3"><span class="loading">Loading NFTs from saved wallets...</span></div></div>
+{% endblock %}
+{% block scripts %}<script src="/static/js/nfts.js"></script>{% endblock %}

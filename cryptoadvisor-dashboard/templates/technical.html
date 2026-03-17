@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Technical Analysis</h1>
+<div class="controls">
+    <select id="coin-select">
+        <option value="bitcoin">Bitcoin</option>
+        <option value="ethereum">Ethereum</option>
+        <option value="solana">Solana</option>
+        <option value="cardano">Cardano</option>
+        <option value="polkadot">Polkadot</option>
+    </select>
+    <select id="days-select">
+        <option value="7">7 Days</option>
+        <option value="30" selected>30 Days</option>
+        <option value="90">90 Days</option>
+        <option value="180">180 Days</option>
+    </select>
+    <button id="refresh-btn" class="btn">Refresh</button>
+</div>
+<div class="card">
+    <h3>Candlestick Chart</h3>
+    <div id="candlestick-chart" style="height:400px;"></div>
+</div>
+<div class="grid grid-3">
+    <div class="card">
+        <h3>RSI (14)</h3>
+        <img id="rsi-chart" class="chart-img" alt="RSI" />
+    </div>
+    <div class="card">
+        <h3>MACD (12,26,9)</h3>
+        <img id="macd-chart" class="chart-img" alt="MACD" />
+    </div>
+    <div class="card">
+        <h3>Bollinger Bands</h3>
+        <img id="bollinger-chart" class="chart-img" alt="Bollinger" />
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="/static/js/technical.js"></script>
+{% endblock %}

@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Exchange Connections</h1>
+<div class="card">
+    <h3>Connect Exchange</h3>
+    <div class="controls" style="flex-wrap:wrap;">
+        <select id="ex-name" class="form-input" style="width:150px;min-width:auto;"><option value="binance">Binance</option><option value="coinbase">Coinbase</option></select>
+        <input type="text" id="ex-label" placeholder="Label" class="form-input" style="width:150px;min-width:auto;">
+        <input type="text" id="ex-key" placeholder="API Key" class="form-input" style="width:200px;min-width:auto;">
+        <input type="password" id="ex-secret" placeholder="API Secret" class="form-input" style="width:200px;min-width:auto;">
+        <button id="add-ex-btn" class="btn">Connect</button>
+    </div>
+    <p style="color:var(--muted);font-size:0.8rem;margin-top:0.5rem;">API keys are encrypted at rest. Use read-only keys only.</p>
+</div>
+<div class="card"><h3>Connected Exchanges</h3><div id="exchange-list"><span class="loading">Loading...</span></div></div>
+<div class="card"><h3>Exchange Balances</h3><div id="exchange-balances"><span class="loading">Connect an exchange to see balances</span></div></div>
+{% endblock %}
+{% block scripts %}<script src="/static/js/exchanges.js"></script>{% endblock %}

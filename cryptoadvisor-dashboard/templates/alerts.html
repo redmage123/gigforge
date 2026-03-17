@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Price Alerts & Watchlist</h1>
+<div class="card">
+    <h3>Create Alert</h3>
+    <div class="controls" style="flex-wrap:wrap;">
+        <select id="alert-coin" class="form-input" style="width:160px;min-width:auto;"><option value="bitcoin">Bitcoin</option><option value="ethereum">Ethereum</option><option value="solana">Solana</option><option value="cardano">Cardano</option><option value="polkadot">Polkadot</option></select>
+        <select id="alert-dir" class="form-input" style="width:120px;min-width:auto;"><option value="above">Above</option><option value="below">Below</option></select>
+        <input type="number" id="alert-price" placeholder="Target price ($)" class="form-input" style="width:160px;min-width:auto;" step="0.01">
+        <input type="number" id="alert-support" placeholder="Support ($)" class="form-input" style="width:140px;min-width:auto;" step="0.01">
+        <input type="number" id="alert-resistance" placeholder="Resistance ($)" class="form-input" style="width:140px;min-width:auto;" step="0.01">
+        <input type="text" id="alert-notes" placeholder="Notes..." class="form-input" style="width:200px;min-width:auto;">
+        <button id="add-alert-btn" class="btn">Add Alert</button>
+    </div>
+</div>
+<div class="card"><h3>Active Alerts</h3><div id="active-alerts"><span class="loading">Loading...</span></div></div>
+<div class="card"><h3>Triggered Alerts</h3><div id="triggered-alerts"><span class="loading">Loading...</span></div></div>
+{% endblock %}
+{% block scripts %}<script src="/static/js/alerts.js"></script>{% endblock %}

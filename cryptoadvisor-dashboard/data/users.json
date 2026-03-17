@@ -1,0 +1,96 @@
+[
+  {
+    "username": "admin",
+    "password_hash": "$2b$12$MOfaXcCNvQFrSO8NPNmXK.n8AYIPxRn79PtZDcrRDPtFEzkjI9ICm",
+    "role": "admin",
+    "created_at": "2026-03-08T19:15:20.674299+00:00"
+  },
+  {
+    "username": "testuser",
+    "password_hash": "$2b$12$rdm2htZilz2O5rxQH85Ek.xfVYNCEXLOAm/EOM.vh0985JiVoVCs2",
+    "role": "user",
+    "created_at": "2026-03-08T20:34:14.951428+00:00"
+  },
+  {
+    "username": "bbrelin",
+    "first_name": "Braun",
+    "last_name": "Brelin",
+    "password_hash": "$2b$12$uIPPQprsozOkeHZAfpa6geYyCMZ.jHK/tSRDChCAHzv9Jc.KLoWiq",
+    "role": "user",
+    "created_at": "2026-03-08T20:36:45.824398+00:00"
+  },
+  {
+    "username": "testuser2",
+    "password_hash": "$2b$12$ANi.7X6Lbs0/44LGGHCCxOPVRXRTRc6qtc.Si8niuwLVDdhtBBQ9a",
+    "role": "user",
+    "created_at": "2026-03-08T20:59:41.518876+00:00"
+  },
+  {
+    "username": "unique_test_xyz_999",
+    "password_hash": "$2b$12$MkcWdusWyyjATtMkJGDvbOGhCPg3VEu191C1xYmlruuFYSLmleH12",
+    "role": "user",
+    "created_at": "2026-03-08T20:59:42.695027+00:00"
+  },
+  {
+    "username": "testuser123",
+    "password_hash": "$2b$12$t6GFNeQNjvUGZ5qzLN.Xg.ZL5/kiR6V.3xEK.Rp1np4qha7W.TZ92",
+    "role": "user",
+    "created_at": "2026-03-08T21:10:38.169103+00:00"
+  },
+  {
+    "username": "testuser1773047297847",
+    "first_name": "Test",
+    "last_name": "User",
+    "password_hash": "$2b$12$QoITwwQeyG4N/EYTjDjSCOb7wacB3XYyRiINOt8MppENFka6G4Frq",
+    "role": "user",
+    "created_at": "2026-03-09T09:08:18.933506+00:00"
+  },
+  {
+    "username": "testuser1773048350527",
+    "first_name": "Test",
+    "last_name": "User",
+    "password_hash": "$2b$12$Grrz.KYmR4stTOaZP/5ujeiUaw23OptBVijULkyrblz1Oxc81XIyq",
+    "role": "user",
+    "created_at": "2026-03-09T09:25:52.898145+00:00"
+  },
+  {
+    "username": "testuser1773049674191",
+    "first_name": "Test",
+    "last_name": "User",
+    "password_hash": "$2b$12$.djA8qoJc0Ut7V2En/Gl1OBh/36ctbFqj76TLekTZwJ5JsVNhs1.O",
+    "role": "user",
+    "created_at": "2026-03-09T09:47:57.588460+00:00"
+  },
+  {
+    "username": "testuser1773052112993",
+    "first_name": "Test",
+    "last_name": "User",
+    "password_hash": "$2b$12$vwN1Yi84OzRwUuid9414ret2Hs1lla/D8k4D046fZyd5nMk2QmFB6",
+    "role": "user",
+    "created_at": "2026-03-09T10:28:36.489421+00:00"
+  },
+  {
+    "username": "testuser1773054319887",
+    "first_name": "Test",
+    "last_name": "User",
+    "password_hash": "$2b$12$2NG4Q46CEKFPWo0sUxpXvOpk/T2xRrZYGNw4A.3iZMx8Ly8r5ERYi",
+    "role": "user",
+    "created_at": "2026-03-09T11:05:21.124406+00:00"
+  },
+  {
+    "username": "jbrelin",
+    "first_name": "Jon",
+    "last_name": "Brelin",
+    "password_hash": "$2b$12$BQD5eq89E8C9tX3wIZE5L.MhMBNve.IWaY0ab16tBmckYRLbH2Rj6",
+    "role": "user",
+    "created_at": "2026-03-09T15:23:39.872830+00:00"
+  },
+  {
+    "username": "pbrelin",
+    "first_name": "Paul",
+    "last_name": "Brelin",
+    "password_hash": "$2b$12$euh3JLXeIxkiff.ZkC5EZ.LVcHdO.o9uKwFMbv6qTR3J1hbW2c3wm",
+    "role": "user",
+    "created_at": "2026-03-10T01:00:26.619212+00:00"
+  }
+]

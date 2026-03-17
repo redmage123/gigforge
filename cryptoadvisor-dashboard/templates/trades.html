@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Trades & P&L</h1>
+<div class="card">
+    <h3>Add Trade</h3>
+    <div class="controls" style="flex-wrap:wrap;">
+        <select id="trade-coin" class="form-input" style="width:150px;min-width:auto;"><option value="bitcoin">Bitcoin</option><option value="ethereum">Ethereum</option><option value="solana">Solana</option><option value="cardano">Cardano</option><option value="polkadot">Polkadot</option></select>
+        <select id="trade-side" class="form-input" style="width:100px;min-width:auto;"><option value="buy">Buy</option><option value="sell">Sell</option></select>
+        <input type="number" id="trade-price" placeholder="Price ($)" class="form-input" style="width:140px;min-width:auto;" step="0.01">
+        <input type="number" id="trade-qty" placeholder="Quantity" class="form-input" style="width:140px;min-width:auto;" step="0.00000001">
+        <input type="date" id="trade-date" class="form-input" style="width:160px;min-width:auto;">
+        <input type="number" id="trade-fee" placeholder="Fee ($)" class="form-input" style="width:100px;min-width:auto;" step="0.01" value="0">
+        <button id="add-trade-btn" class="btn">Add Trade</button>
+    </div>
+</div>
+<div class="card"><h3>P&L Summary</h3><div id="pnl-summary" class="grid grid-3"><span class="loading">Loading...</span></div></div>
+<div class="card"><h3>Trade History</h3><div id="trade-list"><span class="loading">Loading...</span></div></div>
+{% endblock %}
+{% block scripts %}<script src="/static/js/trades.js"></script>{% endblock %}

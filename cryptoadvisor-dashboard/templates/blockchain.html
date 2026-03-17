@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Blockchain Explorer</h1>
+<div class="controls">
+    <input type="text" id="address-input" placeholder="Enter wallet address..." class="input" />
+    <select id="chain-select">
+        <option value="ethereum">Ethereum</option>
+        <option value="solana">Solana</option>
+        <option value="bitcoin">Bitcoin</option>
+    </select>
+    <button id="lookup-btn" class="btn">Lookup</button>
+</div>
+<div id="balance-result" class="card" style="display:none;">
+    <h3>Balance</h3>
+    <div id="balance-data"></div>
+</div>
+<div class="grid grid-3">
+    <div class="card">
+        <h3>Ethereum</h3>
+        <div id="eth-stats"><span class="loading">Loading...</span></div>
+    </div>
+    <div class="card">
+        <h3>Solana</h3>
+        <div id="sol-stats"><span class="loading">Loading...</span></div>
+    </div>
+    <div class="card">
+        <h3>Bitcoin</h3>
+        <div id="btc-stats"><span class="loading">Loading...</span></div>
+    </div>
+</div>
+<div class="grid grid-2">
+    <div class="card">
+        <h3>Gas Price Comparison</h3>
+        <div id="gas-chart" style="height:350px;"></div>
+    </div>
+    <div class="card">
+        <h3>Block Activity</h3>
+        <div id="whale-chart" style="height:350px;"></div>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="/static/js/blockchain.js"></script>
+{% endblock %}

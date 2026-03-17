@@ -1,0 +1,18 @@
+{
+  "risk_tolerance": "aggressive",
+  "strategy": "hodl",
+  "time_horizon": "long",
+  "target_return_pct": 100,
+  "portfolio_goal": "growth",
+  "monthly_investment": 500.0,
+  "preferred_coins": [
+    "bitcoin",
+    "ethereum",
+    "solana"
+  ],
+  "avoid_coins": [
+    "dogecoin"
+  ],
+  "notes": "Long-term BTC/ETH accumulator",
+  "completed": true
+}

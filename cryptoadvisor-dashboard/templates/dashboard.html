@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Market Overview</h1>
+<div class="grid grid-3">
+    <div class="card" id="price-cards">
+        <h3>Loading prices...</h3>
+    </div>
+    <div class="card">
+        <h3>Fear & Greed Index</h3>
+        <div id="fear-greed"><span class="loading">Loading...</span></div>
+    </div>
+    <div class="card">
+        <h3>Global Stats</h3>
+        <div id="global-stats"><span class="loading">Loading...</span></div>
+    </div>
+</div>
+<div class="grid grid-2">
+    <div class="card">
+        <h3>24h Volume</h3>
+        <canvas id="volume-chart" height="200"></canvas>
+    </div>
+    <div class="card">
+        <h3>Market Dominance</h3>
+        <canvas id="dominance-chart" height="200"></canvas>
+    </div>
+</div>
+<div class="card">
+    <h3>Portfolio Allocation</h3>
+    <div id="allocation-chart" style="height:350px;"></div>
+</div>
+<div class="card">
+    <h3>Latest News</h3>
+    <div id="news-feed"><span class="loading">Loading...</span></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="/static/js/dashboard.js"></script>
+{% endblock %}

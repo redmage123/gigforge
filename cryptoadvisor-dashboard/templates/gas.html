@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Gas Tracker</h1>
+<div class="card"><h3>Current Gas Prices</h3><div id="gas-current" class="grid grid-3"><span class="loading">Loading...</span></div></div>
+<div class="card">
+    <h3>Best Time to Transact</h3>
+    <div class="controls">
+        <select id="gas-chain" class="form-input" style="width:160px;min-width:auto;"><option value="ethereum">Ethereum</option><option value="bsc">BSC</option><option value="polygon">Polygon</option><option value="arbitrum">Arbitrum</option><option value="base">Base</option></select>
+    </div>
+    <div id="gas-recommendation"><span class="loading">Loading...</span></div>
+</div>
+<div class="card"><h3>Gas Price History</h3><div id="gas-history-chart" style="height:350px;"></div></div>
+{% endblock %}
+{% block scripts %}<script src="/static/js/gas.js"></script>{% endblock %}

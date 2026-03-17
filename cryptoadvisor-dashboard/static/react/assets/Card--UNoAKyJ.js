@@ -1,0 +1,1 @@
+import{j as s}from"./index-Bz7EF1D6.js";function e({title:r,children:a,className:n="",onClick:c}){return s.jsxs("div",{className:`card ${n}`,onClick:c,children:[r&&s.jsx("h3",{children:r}),a]})}export{e as C};

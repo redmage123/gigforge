@@ -1,0 +1,9 @@
+static/react/
+frontend/node_modules/
+frontend/dist/
+__pycache__/
+*.pyc
+.env
+data/
+.claude/
+memory-bank/

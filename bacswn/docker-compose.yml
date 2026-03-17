@@ -1,0 +1,29 @@
+version: "3.9"
+
+services:
+  bacswn:
+    build: .
+    container_name: bacswn-skywatch
+    ports:
+      - "8060:8060"
+    env_file:
+      - .env
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8060
+      - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
+      - OPENSKY_USERNAME=${OPENSKY_USERNAME:-}
+      - OPENSKY_PASSWORD=${OPENSKY_PASSWORD:-}
+      - TOMORROW_API_KEY=${TOMORROW_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+    volumes:
+      - bacswn-data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8060/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  bacswn-data:

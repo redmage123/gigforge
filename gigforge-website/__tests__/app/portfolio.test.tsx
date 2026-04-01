@@ -8,10 +8,10 @@ describe('Portfolio Page', () => {
     expect(screen.getByRole('heading', { name: /portfolio/i, level: 1 })).toBeInTheDocument()
   })
 
-  it('displays all 5 project cards', () => {
+  it('displays all 7 project cards', () => {
     render(<Portfolio />)
     const projectCards = screen.getAllByTestId('project-card')
-    expect(projectCards).toHaveLength(5)
+    expect(projectCards).toHaveLength(7)
   })
 
   it('shows project titles', () => {

@@ -1,49 +1,100 @@
-import Link from 'next/link'
+'use client';
+
+import Link from 'next/link';
+import { Github, Linkedin, Twitter } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import '@/i18n';
 
 export default function Footer() {
-  const currentYear = new Date().getFullYear()
+  const { t } = useTranslation();
 
   return (
-    <footer className="border-t border-bg-secondary mt-auto">
-      <div className="max-w-[1280px] mx-auto px-6 py-12">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+    <footer className="bg-navy text-text-inverse">
+      <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-8">
+          {/* Col 1: Logo + tagline + social */}
           <div>
-            <h3 className="text-xl font-bold text-text-primary mb-4">GigForge</h3>
-            <p className="text-text-secondary">
-              Your AI-powered freelance agency
-            </p>
+            <h3 className="text-xl font-bold mb-2">GigForge</h3>
+            <p className="text-blue-200 text-sm mb-4">{t('footer.tagline')}</p>
+            <div className="flex items-center gap-3">
+              <a
+                href="https://github.com/gigforge"
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="GitHub"
+                className="text-blue-200 hover:text-white transition-colors"
+              >
+                <Github size={18} aria-hidden="true" />
+              </a>
+              <a
+                href="https://linkedin.com/company/gigforge"
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="LinkedIn"
+                className="text-blue-200 hover:text-white transition-colors"
+              >
+                <Linkedin size={18} aria-hidden="true" />
+              </a>
+              <a
+                href="https://twitter.com/gigforge"
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Twitter"
+                className="text-blue-200 hover:text-white transition-colors"
+              >
+                <Twitter size={18} aria-hidden="true" />
+              </a>
+            </div>
           </div>
 
-          <nav className="flex flex-col gap-2">
-            <Link href="/" className="text-text-secondary hover:text-accent transition-colors">
-              Home
-            </Link>
-            <Link href="/portfolio" className="text-text-secondary hover:text-accent transition-colors">
-              Portfolio
-            </Link>
-            <Link href="/services" className="text-text-secondary hover:text-accent transition-colors">
-              Services
-            </Link>
-            <Link href="/about" className="text-text-secondary hover:text-accent transition-colors">
-              About
-            </Link>
-            <Link href="/contact" className="text-text-secondary hover:text-accent transition-colors">
-              Contact
-            </Link>
+          {/* Col 2: Navigation */}
+          <nav aria-label={t('footer.navigation')}>
+            <h4 className="text-sm font-semibold uppercase tracking-wider mb-4 text-white">
+              {t('footer.navigation')}
+            </h4>
+            <ul className="flex flex-col gap-2">
+              <li>
+                <Link href="/" className="text-blue-200 hover:text-white transition-colors text-sm">
+                  {t('nav.home')}
+                </Link>
+              </li>
+              <li>
+                <Link href="/services" className="text-blue-200 hover:text-white transition-colors text-sm">
+                  {t('nav.services')}
+                </Link>
+              </li>
+              <li>
+                <Link href="/portfolio" className="text-blue-200 hover:text-white transition-colors text-sm">
+                  {t('nav.portfolio')}
+                </Link>
+              </li>
+              <li>
+                <Link href="/about" className="text-blue-200 hover:text-white transition-colors text-sm">
+                  {t('nav.about')}
+                </Link>
+              </li>
+              <li>
+                <Link href="/contact" className="text-blue-200 hover:text-white transition-colors text-sm">
+                  {t('nav.contact')}
+                </Link>
+              </li>
+            </ul>
           </nav>
 
+          {/* Col 3: Contact */}
           <div>
-            <p className="text-text-secondary">
-            <div className="mb-4 pt-4 border-t border-bg-secondary">
-              <p className="text-text-primary text-sm font-semibold mb-1">Subscribe to GigForge Dispatch</p>
-              <p className="text-text-secondary text-xs mb-3">Project showcases, tech deep-dives, and AI trends every Tuesday.</p>
-              <a href="mailto:newsletter@gigforge.ai?subject=Subscribe&body=Please%20add%20me%20to%20GigForge%20Dispatch" className="inline-block bg-accent text-white text-xs px-4 py-2 rounded-lg hover:opacity-90 transition-opacity">Subscribe</a>
-            </div>
-              © {currentYear} GigForge. All rights reserved.
-            </p>
+            <h4 className="text-sm font-semibold uppercase tracking-wider mb-4 text-white">
+              Contact
+            </h4>
+            <p className="text-blue-200 text-sm">{t('footer.contact')}</p>
           </div>
+        </div>
+
+        {/* Bottom bar */}
+        <div className="pt-8 border-t border-white/20">
+          <p className="text-blue-200 text-sm text-center">{t('footer.copyright')}</p>
         </div>
       </div>
     </footer>
-  )
+  );
 }

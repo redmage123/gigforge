@@ -1,38 +1,29 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-const mockSend = vi.fn().mockResolvedValue({ id: 'mock-email-id', error: null })
+// Mock fetch used by the route to call the webhook and Mailgun
+const mockFetch = vi.fn().mockResolvedValue(new Response('', { status: 200 }))
+vi.stubGlobal('fetch', mockFetch)
 
-vi.mock('resend', () => {
-  return {
-    Resend: vi.fn().mockImplementation(() => ({
-      emails: { send: mockSend },
-    })),
-  }
-})
-
-// Import AFTER mocks are set up
-const { POST } = await import('@/app/api/contact/route')
+// Import AFTER stubs are set up
+const routeModule = await import('@/app/api/contact/route')
+let POST = routeModule.POST
 
 describe('POST /api/contact', () => {
-  const originalEnv = process.env
-
   beforeEach(() => {
-    process.env = { ...originalEnv }
     vi.clearAllMocks()
-    mockSend.mockResolvedValue({ id: 'mock-email-id', error: null })
+    mockFetch.mockResolvedValue(new Response('', { status: 200 }))
+    // Re-import to get a fresh module with a clean submissionCache for each test
+    // (cache is module-level, so we reset by reimporting via cache-busting isn't practical;
+    //  instead we use unique email addresses per idempotency test)
   })
 
-  afterEach(() => {
-    process.env = originalEnv
-  })
-
-  it('returns success for valid request', async () => {
+  it('returns 200 success for valid request', async () => {
     const request = new Request('http://localhost:3000/api/contact', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         name: 'John Doe',
-        email: 'john@example.com',
+        email: 'john.success.test@example.com',
         message: 'This is a test message with sufficient length.',
       }),
     })
@@ -52,7 +43,7 @@ describe('POST /api/contact', () => {
       body: JSON.stringify({
         name: 'John Doe',
         email: 'invalid-email',
-        message: 'This is a test message.',
+        message: 'This is a test message with sufficient length.',
       }),
     })
 
@@ -71,7 +62,7 @@ describe('POST /api/contact', () => {
       body: JSON.stringify({
         name: 'A',
         email: 'john@example.com',
-        message: 'This is a test message.',
+        message: 'This is a test message with sufficient length.',
       }),
     })
 
@@ -116,56 +107,72 @@ describe('POST /api/contact', () => {
     expect(data.success).toBe(false)
   })
 
-  // Resend integration tests
-  it('sends email via Resend when RESEND_API_KEY is configured', async () => {
-    process.env.RESEND_API_KEY = 'test-api-key'
-    process.env.CONTACT_EMAIL = 'hello@gigforge.ai'
-
+  it('fires webhook on first submission', async () => {
     const request = new Request('http://localhost:3000/api/contact', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        name: 'Jane Smith',
-        email: 'jane@example.com',
-        message: 'Hello, I need help with my project.',
+        name: 'Alice',
+        email: 'alice.webhook.test@example.com',
+        message: 'I need help with my website project please.',
       }),
     })
 
-    const response = await POST(request)
-    const data = await response.json()
+    await POST(request)
 
-    expect(response.status).toBe(200)
-    expect(data.success).toBe(true)
-    expect(mockSend).toHaveBeenCalledOnce()
-    expect(mockSend).toHaveBeenCalledWith(
-      expect.objectContaining({
-        to: ['hello@gigforge.ai'],
-        subject: expect.stringContaining('Jane Smith'),
-      })
-    )
+    // At least one webhook call fired
+    expect(mockFetch).toHaveBeenCalled()
   })
 
-  it('falls back gracefully when RESEND_API_KEY is not set', async () => {
-    delete process.env.RESEND_API_KEY
-    delete process.env.CONTACT_EMAIL
-
-    const request = new Request('http://localhost:3000/api/contact', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: 'Jane Smith',
-        email: 'jane@example.com',
-        message: 'Hello, I need help with my project.',
-      }),
+  it('deduplicates: second identical submission does NOT fire webhook again', async () => {
+    const payload = JSON.stringify({
+      name: 'Bob Duplicate',
+      email: 'bob.dedup.unique1@example.com',
+      message: 'Please do not send this message twice to the webhook.',
     })
 
-    const response = await POST(request)
-    const data = await response.json()
+    const makeRequest = () =>
+      new Request('http://localhost:3000/api/contact', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: payload,
+      })
 
-    // Should still succeed even without email configured
-    expect(response.status).toBe(200)
-    expect(data.success).toBe(true)
-    // Resend should NOT be called when no API key
-    expect(mockSend).not.toHaveBeenCalled()
+    // First submission
+    const res1 = await POST(makeRequest())
+    const data1 = await res1.json()
+    expect(res1.status).toBe(200)
+    expect(data1.success).toBe(true)
+    const firstCallCount = mockFetch.mock.calls.length
+
+    // Second identical submission (duplicate)
+    const res2 = await POST(makeRequest())
+    const data2 = await res2.json()
+    expect(res2.status).toBe(200)
+    expect(data2.success).toBe(true)
+
+    // No additional fetch calls — duplicate was short-circuited
+    expect(mockFetch.mock.calls.length).toBe(firstCallCount)
+  })
+
+  it('allows different email to submit independently', async () => {
+    const makeRequest = (email: string) =>
+      new Request('http://localhost:3000/api/contact', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: 'Carol',
+          email,
+          message: 'Same message text but different email address.',
+        }),
+      })
+
+    mockFetch.mockClear()
+    await POST(makeRequest('carol.a.uniquetest@example.com'))
+    const afterFirst = mockFetch.mock.calls.length
+
+    await POST(makeRequest('carol.b.uniquetest@example.com'))
+    // Second should also fire (different email = different key)
+    expect(mockFetch.mock.calls.length).toBeGreaterThan(afterFirst)
   })
 })

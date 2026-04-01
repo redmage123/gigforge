@@ -1,14 +1,39 @@
 import type { Metadata } from 'next'
+import { Inter } from 'next/font/google'
 import './globals.css'
 import Header from '@/components/Header'
 import Footer from '@/components/Footer'
+import Sidebar from '@/components/Sidebar'
+import CookieConsentBanner from '@/components/CookieConsentBanner'
+
+const inter = Inter({
+  subsets: ['latin'],
+  variable: '--font-inter',
+  display: 'swap',
+})
 
 export const metadata: Metadata = {
-  title: 'GigForge | AI-Powered Freelance Agency',
-  description: 'Professional software development, AI automation, video production, and marketing services.',
+  title: 'GigForge | AI-Powered Development Agency',
+  description: 'Describe what you need. Our autonomous AI team designs, codes, tests, and ships it — with human approval at every gate.',
+  metadataBase: new URL('https://gigforge.ai'),
+  openGraph: {
+    type: 'website',
+    url: 'https://gigforge.ai',
+    siteName: 'GigForge',
+    title: 'GigForge | AI-Powered Development Agency',
+    description: 'Describe what you need. Our autonomous AI team designs, codes, tests, and ships it — with human approval at every gate.',
+    images: [{ url: '/og-image.png', width: 1200, height: 630, alt: 'GigForge — AI-Powered Development Agency' }],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'GigForge | AI-Powered Development Agency',
+    description: 'Describe what you need. Our autonomous AI team designs, codes, tests, and ships it — with human approval at every gate.',
+    images: ['/og-image.png'],
+  },
   icons: {
     icon: '/favicon.svg',
   },
+  themeColor: '#ffffff',
 }
 
 export default function RootLayout({
@@ -17,16 +42,24 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en">
-      <body className="min-h-screen flex flex-col">
-        <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 bg-accent text-text-primary px-4 py-2 rounded">
+    <html lang="en" className={inter.variable} suppressHydrationWarning>
+      <head />
+      <body className="min-h-screen flex flex-col bg-white text-text-primary">
+        <a
+          href="#main"
+          className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 bg-gold text-white px-4 py-2 rounded z-50"
+        >
           Skip to main content
         </a>
         <Header />
-        <main id="main" className="flex-1">
-          {children}
-        </main>
+        <div className="flex flex-1">
+          <Sidebar />
+          <main id="main" className="flex-1">
+            {children}
+          </main>
+        </div>
         <Footer />
+        <CookieConsentBanner />
       </body>
     </html>
   )

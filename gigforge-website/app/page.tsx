@@ -83,12 +83,12 @@ const steps = [
 
 const pricing = [
   {
-    tier: 'Starter',
-    price: '€100',
-    priceUnit: '/consultation',
-    description: '60-minute scoping session to define your requirements, scope, and delivery plan.',
+    tier: 'Discovery',
+    price: 'from $500',
+    priceUnit: '',
+    description: 'Scoping session to define your requirements, scope, and a fixed-price delivery plan.',
     features: [
-      '60-min consultation',
+      'Requirements workshop',
       'Written scope summary',
       'Fixed-price estimate',
       'No commitment required',
@@ -98,12 +98,12 @@ const pricing = [
     featured: false,
   },
   {
-    tier: 'Professional',
-    price: '€2,500',
-    priceUnit: '/project',
-    description: 'Full MVP in 2–4 weeks. Agile sprints, TDD, and dual approval gate before delivery.',
+    tier: 'Project',
+    price: 'from $5,000',
+    priceUnit: '',
+    description: 'Full project delivery with Agile sprints, TDD, and dual approval gate before shipping.',
     features: [
-      'Full MVP delivery',
+      'Full project delivery',
       'TDD + automated tests',
       'Docker + CI/CD setup',
       'Approval gate (QA + Advocate)',

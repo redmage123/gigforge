@@ -1,0 +1,40 @@
+{
+  "nav": {
+    "home": "Home",
+    "services": "Services",
+    "portfolio": "Portfolio",
+    "about": "About",
+    "blog": "Blog",
+    "contact": "Contact"
+  },
+  "header": {
+    "logoAlt": "GigForge logo",
+    "getStarted": "Get Started"
+  },
+  "footer": {
+    "tagline": "Full-service freelance agency",
+    "copyright": "© 2026 GigForge. All rights reserved.",
+    "contact": "contact@gigforge.dev",
+    "navigation": "Navigation",
+    "social": "Follow us"
+  },
+  "mobileNav": {
+    "open": "Open navigation",
+    "close": "Close navigation"
+  },
+  "darkMode": {
+    "toggle": "Toggle dark mode"
+  },
+  "language": {
+    "en": "English",
+    "hr": "Hrvatski",
+    "switch": "Switch language"
+  },
+  "sidebar": {
+    "title": "Services",
+    "programming": "Programming",
+    "ai": "AI & Automation",
+    "video": "Video",
+    "marketing": "Marketing"
+  }
+}

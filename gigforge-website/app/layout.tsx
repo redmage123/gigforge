@@ -22,13 +22,11 @@ export const metadata: Metadata = {
     siteName: 'GigForge',
     title: 'GigForge | AI-Powered Development Agency',
     description: 'Describe what you need. Our autonomous AI team designs, codes, tests, and ships it — with human approval at every gate.',
-    images: [{ url: '/og-image.png', width: 1200, height: 630, alt: 'GigForge — AI-Powered Development Agency' }],
   },
   twitter: {
     card: 'summary_large_image',
     title: 'GigForge | AI-Powered Development Agency',
     description: 'Describe what you need. Our autonomous AI team designs, codes, tests, and ships it — with human approval at every gate.',
-    images: ['/og-image.png'],
   },
   icons: {
     icon: '/favicon.svg',

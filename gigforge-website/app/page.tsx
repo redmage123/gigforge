@@ -171,11 +171,11 @@ export default function HomePage() {
             </div>
             <div className="hidden md:flex md:col-span-5 items-center justify-center">
               <Image
-                src="/images/hero-tech-illustration.svg"
-                alt="AI-powered development team illustration"
+                src="/images/team-collaboration.jpg"
+                alt="Team collaborating on software projects"
                 width={480}
-                height={480}
-                className="w-full max-w-sm"
+                height={360}
+                className="w-full max-w-sm rounded-2xl shadow-xl object-cover"
                 priority
               />
             </div>
@@ -264,6 +264,39 @@ export default function HomePage() {
                 <p className="text-text-secondary leading-relaxed">{step.description}</p>
               </div>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── Team Photo Band ──────────────────────────────────────────────── */}
+      <section className="bg-white py-24">
+        <div className="max-w-[1280px] mx-auto px-6 md:px-8 lg:px-12">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
+            <div>
+              <Image
+                src="/images/team-meeting.jpg"
+                alt="Team meeting and planning together"
+                width={600}
+                height={400}
+                className="w-full rounded-2xl shadow-xl object-cover"
+              />
+            </div>
+            <div>
+              <p className="text-sm font-semibold uppercase tracking-widest text-gold mb-4">
+                ✦ HOW WE WORK
+              </p>
+              <h2 className="text-4xl font-bold text-navy mb-6">
+                Human oversight at every step
+              </h2>
+              <p className="text-lg text-text-secondary leading-relaxed mb-6">
+                Our AI agents design, build, and test — but you stay in control. Every sprint ends
+                with a review, every deliverable passes a dual approval gate before it reaches you.
+              </p>
+              <p className="text-text-secondary leading-relaxed">
+                Real collaboration, real accountability, real results. Not a black box — a
+                transparent pipeline you can see and steer.
+              </p>
+            </div>
           </div>
         </div>
       </section>
@@ -417,52 +450,54 @@ export default function HomePage() {
       </section>
 
       {/* ── Testimonials ─────────────────────────────────────────────────── */}
-      <section className="bg-white py-24">
-        <div className="max-w-[1280px] mx-auto px-6 md:px-8 lg:px-12">
-          <div className="max-w-2xl mb-16">
-            <p className="text-sm font-semibold uppercase tracking-widest text-gold mb-4">
-              ✦ CLIENT FEEDBACK
-            </p>
-            <h2 className="text-4xl font-bold text-navy mb-4">What our clients say</h2>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {featuredTestimonials.map((testimonial) => (
-              <div
-                key={testimonial.name}
-                className="bg-bg-light border border-border rounded-xl p-8 flex flex-col gap-6"
-              >
-                <p className="text-text-secondary italic text-base leading-relaxed flex-1">
-                  &ldquo;{testimonial.quote}&rdquo;
-                </p>
-                <div className="flex gap-1" role="img" aria-label="5 out of 5 stars">
-                  {Array.from({ length: 5 }).map((_, i) => (
-                    <Star key={i} className="w-5 h-5 fill-gold text-gold" aria-hidden="true" />
-                  ))}
-                </div>
-                <div className="flex items-center gap-3">
-                  <div
-                    className="w-10 h-10 rounded-full bg-navy flex items-center justify-center text-white text-sm font-semibold flex-shrink-0"
-                    aria-hidden="true"
-                  >
-                    {testimonial.name
-                      .split(' ')
-                      .map((n) => n[0])
-                      .join('')
-                      .slice(0, 2)}
-                  </div>
-                  <p className="text-sm text-text-secondary">
-                    <strong className="text-text-primary font-semibold">{testimonial.name}</strong>
-                    {' · '}
-                    {testimonial.role}
-                    {' · '}
-                    {testimonial.company}
+      {featuredTestimonials.length > 0 && (
+        <section className="bg-white py-24">
+          <div className="max-w-[1280px] mx-auto px-6 md:px-8 lg:px-12">
+            <div className="max-w-2xl mb-16">
+              <p className="text-sm font-semibold uppercase tracking-widest text-gold mb-4">
+                ✦ CLIENT FEEDBACK
+              </p>
+              <h2 className="text-4xl font-bold text-navy mb-4">What our clients say</h2>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {featuredTestimonials.map((testimonial) => (
+                <div
+                  key={testimonial.name}
+                  className="bg-bg-light border border-border rounded-xl p-8 flex flex-col gap-6"
+                >
+                  <p className="text-text-secondary italic text-base leading-relaxed flex-1">
+                    &ldquo;{testimonial.quote}&rdquo;
                   </p>
+                  <div className="flex gap-1" role="img" aria-label="5 out of 5 stars">
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <Star key={i} className="w-5 h-5 fill-gold text-gold" aria-hidden="true" />
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div
+                      className="w-10 h-10 rounded-full bg-navy flex items-center justify-center text-white text-sm font-semibold flex-shrink-0"
+                      aria-hidden="true"
+                    >
+                      {testimonial.name
+                        .split(' ')
+                        .map((n) => n[0])
+                        .join('')
+                        .slice(0, 2)}
+                    </div>
+                    <p className="text-sm text-text-secondary">
+                      <strong className="text-text-primary font-semibold">{testimonial.name}</strong>
+                      {' · '}
+                      {testimonial.role}
+                      {' · '}
+                      {testimonial.company}
+                    </p>
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
 
       {/* ── CTA Band ─────────────────────────────────────────────────────── */}
       <section className="bg-navy py-20" id="contact">

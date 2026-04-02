@@ -14,6 +14,8 @@ All images are used under their respective open-source licences.
 | `project-ai-chat.jpg` | Unsplash — AI/technology | Unsplash License (free, no attribution required) | https://unsplash.com/photos/1677442135703-1787eea5ce01 |
 | `project-job-board.jpg` | Unsplash — office/collaboration | Unsplash License (free, no attribution required) | https://unsplash.com/photos/1552664730-d307ca884978 |
 | `project-devops-kit.jpg` | Unsplash — circuit board/technology | Unsplash License (free, no attribution required) | https://unsplash.com/photos/1518770660439-4636190af475 |
+| `team-collaboration.jpg` | Unsplash — team working together | Unsplash License (free, no attribution required) | https://unsplash.com/photos/1522071820081-009f0129c71c |
+| `team-meeting.jpg` | Unsplash — team meeting/planning | Unsplash License (free, no attribution required) | https://unsplash.com/photos/1531482615713-2afd69097998 |
 
 ## Lucide Icons
 

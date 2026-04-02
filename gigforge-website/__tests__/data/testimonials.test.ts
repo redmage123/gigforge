@@ -2,9 +2,8 @@ import { describe, it, expect } from 'vitest'
 import { testimonials } from '@/data/testimonials'
 
 describe('testimonials data', () => {
-  it('exports an array with 3 or 4 testimonials', () => {
-    expect(testimonials.length).toBeGreaterThanOrEqual(3)
-    expect(testimonials.length).toBeLessThanOrEqual(4)
+  it('exports an array (may be empty until real testimonials are collected)', () => {
+    expect(Array.isArray(testimonials)).toBe(true)
   })
 
   it('each testimonial has required fields', () => {

@@ -5,10 +5,12 @@ import { useDebounce } from '../../utils/debounce';
 interface SearchBarProps {
   onSearch: (q: string) => void;
   placeholder?: string;
+  /** Initial value — use to seed from URL params on first render */
+  defaultValue?: string;
 }
 
-export function SearchBar({ onSearch, placeholder = 'Search contacts...' }: SearchBarProps) {
-  const [value, setValue] = useState('');
+export function SearchBar({ onSearch, placeholder = 'Search contacts...', defaultValue = '' }: SearchBarProps) {
+  const [value, setValue] = useState(defaultValue);
 
   const debouncedValue = useDebounce(value, 300);
 

@@ -1,4 +1,5 @@
 import React, { useState, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useContacts } from '../hooks/useContacts';
 import { ContactsTable } from '../components/contacts/ContactsTable';
 import { ContactCard } from '../components/contacts/ContactCard';
@@ -16,7 +17,8 @@ import { Contact } from '../types';
 import { Plus, Users } from 'lucide-react';
 
 export function ContactsPage() {
-  const [q, setQ] = useState('');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const q = searchParams.get('q') ?? '';
   const [tag, setTag] = useState('');
   const [page, setPage] = useState(1);
 
@@ -34,9 +36,17 @@ export function ContactsPage() {
   const pagination = data?.pagination;
 
   const handleSearch = useCallback((value: string) => {
-    setQ(value);
+    setSearchParams(
+      prev => {
+        const next = new URLSearchParams(prev);
+        if (value) next.set('q', value);
+        else next.delete('q');
+        return next;
+      },
+      { replace: true }
+    );
     setPage(1);
-  }, []);
+  }, [setSearchParams]);
 
   const handleTagFilter = useCallback((value: string) => {
     setTag(value);
@@ -90,7 +100,7 @@ export function ContactsPage() {
 
         {/* Filters */}
         <div className="flex items-center gap-3 mt-3 flex-wrap">
-          <SearchBar onSearch={handleSearch} />
+          <SearchBar onSearch={handleSearch} defaultValue={q} />
           <TagFilter selectedTag={tag} onTagChange={handleTagFilter} />
         </div>
       </div>

@@ -154,3 +154,37 @@ custom Payload endpoints that go beyond auto-generated CRUD.
 **Tests:** 36 passing
 **Typecheck:** `tsc --noEmit` clean
 **Blockers:** none
+
+---
+
+## Sprint 3 — Polish, Tests & Deployment | 2026-04-27 (verification)
+
+> **Audit note:** Most Sprint 3 source code (Signals, Alerts, Transactions
+> pages, loading skeletons, empty/error states, responsive layout, Docker
+> multi-stage build) was already implemented and shipped to production but
+> never explicitly verified or marked done. This entry verifies acceptance
+> criteria against the cryptoadvisor branch state at `a8498c8`.
+
+### Done
+- [x] STORY-019: AI trading signals panel (3 pts) ✅ 2026-04-27 — `src/pages/Signals.tsx` (115 lines, uses `useSignals` hook + `Panel` component)
+- [x] STORY-020: Alerts panel (3 pts) ✅ 2026-04-27 — `src/pages/Alerts.tsx` (116 lines)
+- [x] STORY-021: Transaction history table (5 pts) ✅ 2026-04-27 — `src/pages/Transactions.tsx` (159 lines, sortable) + `Transactions.test.tsx`
+- [x] STORY-022: Loading skeleton states (2 pts) ✅ 2026-04-27 — `src/components/ui/LoadingSkeleton.tsx` (used across panels)
+- [x] STORY-023: Empty and error states (2 pts) ✅ 2026-04-27 — `src/components/ui/EmptyState.tsx` + `ErrorBanner.tsx`
+- [x] STORY-024: Responsive layout (3 pts) ✅ 2026-04-27 — `AppLayout.tsx` uses `hidden lg:flex` desktop sidebar + `lg:hidden` mobile overlay + `MobileNav.tsx` + responsive padding (`p-4 lg:p-6`)
+- [x] STORY-025: Vitest + Testing Library suite (5 pts) ✅ 2026-04-27 — **130 tests passing across 21 files**, coverage **93.56% statements / 88% branch / 86% functions / 93.56% lines** (target: ≥80%)
+- [x] STORY-026: Docker multi-stage build + docker-compose (2 pts) ✅ 2026-04-27 — `Dockerfile` (deps → builder → nginx:alpine runner) + `docker-compose.yml`. Build smoke-tested clean.
+- [x] STORY-027: README — setup, run, test, Docker (1 pt) ✅ 2026-04-27 — `README.md` (135 lines, covers prereqs, install, dev, test, coverage, Docker)
+
+**Sprint 3 velocity:** 26 / 26 pts
+**Cumulative (incl. Sprint 2-CMS):** 58 / 72 pts (81%)
+**Tests (frontend):** 130 passing across 21 files; coverage 93.56% statements
+**Tests (CMS, from Sprint 2):** 36 passing across 3 files
+**Typecheck:** `tsc --noEmit` clean
+**Docker build:** ✅ smoke green
+**Production:** container `cryptoadvisor-web` on port 4102 still serving HTTP 200
+**Blockers:** none
+
+### Remaining backlog
+- Sprint 0 (Design specs, 14 pts) — backlog. Specs were never formally written; UX work done in-line during Sprint 1.
+- CMS Docker integration — bundle Payload CMS into `docker-compose.yml` so `docker compose up` runs both frontend + CMS together. Out of Sprint 3 scope; queue for next sprint.

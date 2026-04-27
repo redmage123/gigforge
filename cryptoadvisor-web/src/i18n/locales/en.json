@@ -1,0 +1,23 @@
+{
+  "nav": {
+    "dashboard":    "Dashboard",
+    "portfolio":    "Portfolio",
+    "charts":       "Charts",
+    "signals":      "Signals",
+    "alerts":       "Alerts",
+    "transactions": "Transactions",
+    "watchlist":    "Watchlist",
+    "settings":     "Settings"
+  },
+  "header": {
+    "searchPlaceholder": "Search assets…",
+    "demoUser":          "Demo User"
+  },
+  "darkMode": {
+    "toggle": "Toggle dark mode"
+  },
+  "language": {
+    "en": "English",
+    "hr": "Hrvatski"
+  }
+}

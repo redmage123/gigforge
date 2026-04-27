@@ -1,0 +1,23 @@
+{
+  "nav": {
+    "dashboard":    "Nadzorna ploča",
+    "portfolio":    "Portfelj",
+    "charts":       "Grafikoni",
+    "signals":      "Signali",
+    "alerts":       "Upozorenja",
+    "transactions": "Transakcije",
+    "watchlist":    "Praćene kriptovalute",
+    "settings":     "Postavke"
+  },
+  "header": {
+    "searchPlaceholder": "Pretraži imovinu…",
+    "demoUser":          "Demo korisnik"
+  },
+  "darkMode": {
+    "toggle": "Prebaci tamni način"
+  },
+  "language": {
+    "en": "English",
+    "hr": "Hrvatski"
+  }
+}

@@ -230,3 +230,36 @@ docker compose up --build
 ### Remaining backlog
 - Sprint 0 (Design specs, 14 pts) — backlog
 - Production deploy of full stack (CMS container) — pending operator approval
+
+---
+
+## Sprint 0 — Design Specs (retrofit) | 2026-04-27
+
+> **Retrofit note:** The original Sprint 0 (UX wireframes + component specs)
+> was never completed before implementation began. Sprints 1-4 shipped the code
+> first. This entry retrofits the spec docs against the as-built state at
+> commit b685b5a, so future contributors have written specs to anchor changes
+> against. Specs reflect the implementation, not aspiration.
+
+### Done
+- [x] STORY-001: Dark theme design system (2 pts) ✅ already existed pre-Sprint-0 — `specs/design-system.md` (211 lines: tokens, contrast ratios, typography, spacing scale)
+- [x] STORY-002: Dashboard layout wireframe (2 pts) ✅ 2026-04-27 — `specs/dashboard-layout.md`
+- [x] STORY-003: Portfolio overview component spec (2 pts) ✅ 2026-04-27 — `specs/portfolio-overview.md`
+- [x] STORY-004: Price chart (candlestick) component spec (3 pts) ✅ 2026-04-27 — `specs/candlestick-chart.md`
+- [x] STORY-005: AI signals + alerts panel spec (2 pts) ✅ 2026-04-27 — `specs/signals-alerts-panels.md`
+- [x] STORY-006: Transaction history table spec (2 pts) ✅ 2026-04-27 — `specs/transactions-table.md`
+- [x] STORY-007: Watchlist panel spec (1 pt) ✅ 2026-04-27 — `specs/watchlist-panel.md`
+
+**Sprint 0 velocity:** 14 / 14 pts
+**Cumulative (all sprints):** 94 / 94 pts (100%)
+
+**Specs directory:** 7 markdown documents under `specs/` (~1300 lines total).
+Each spec includes: goal, layout (ASCII wireframe), props/columns table, color &
+formatting rules, loading/error/empty state behavior, and acceptance criteria.
+
+### Closing note
+With Sprint 0 retrofitted, every Sprint defined at project kickoff is complete
+or accounted for. Remaining work for the project lives outside the original
+56-pt scope (now 94 pts incl Sprint 2-CMS + Sprint 4 additions):
+- Production deploy of full stack (CMS container) — pending operator approval
+- Future enhancements (real exchange API, multi-user auth, ADR-0008+)

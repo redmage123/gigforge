@@ -263,3 +263,91 @@ or accounted for. Remaining work for the project lives outside the original
 56-pt scope (now 94 pts incl Sprint 2-CMS + Sprint 4 additions):
 - Production deploy of full stack (CMS container) — pending operator approval
 - Future enhancements (real exchange API, multi-user auth, ADR-0008+)
+
+---
+
+# Future Sprints — Backlog (planned 2026-04-27)
+
+The original 94-pt project scope is complete. The following 4 sprints are
+queued in the GF-CRYPTO Plane project (all stories set to **Backlog**, ready
+for triage). Total: **75 pts across 4 sprints**, derived from a post-Sprint-4
+review of demo credibility, production readiness, UX gaps, and architectural
+debt.
+
+---
+
+## Sprint 5 — Demo Credibility (Live Data) | 21 pts | epic GF-CRYPTO-036
+
+> **Goal:** Replace mock data with real exchange APIs. Persist user-state to
+> CMS. The dashboard should feel like a product, not a demo.
+
+### Backlog
+- [ ] STORY-501: CoinGecko adapter + MOCK/LIVE badge (5 pts) — GF-CRYPTO-037
+- [ ] STORY-502: WebSocket price ticker via Binance (5 pts) — GF-CRYPTO-038
+- [ ] STORY-503: Persist watchlist to CMS (5 pts) — GF-CRYPTO-039
+- [ ] STORY-504: Persist alerts to CMS (3 pts) — GF-CRYPTO-040
+- [ ] STORY-505: Tests for live-data path (3 pts) — GF-CRYPTO-041
+
+---
+
+## Sprint 6 — Production Hardening | 21 pts | epic GF-CRYPTO-042
+
+> **Goal:** Move from "works on my machine" to "I would let a customer use this".
+> CI, E2E, production-grade CMS container, generated types.
+
+### Backlog
+- [ ] STORY-601: CMS Dockerfile production build (5 pts) — GF-CRYPTO-043
+- [ ] STORY-602: GitHub Actions CI (5 pts) — GF-CRYPTO-044
+- [ ] STORY-603: Playwright E2E spec (8 pts) — GF-CRYPTO-045
+- [ ] STORY-604: Auto-generate `payload-types.ts` (2 pts) — GF-CRYPTO-046
+- [ ] STORY-605: ADR-0008 (Payload choice) + ADR-0009 (mock/CMS toggle) (1 pt) — GF-CRYPTO-047
+
+---
+
+## Sprint 7 — Auth & Multi-User | 16 pts | epic GF-CRYPTO-048
+
+> **Goal:** Add per-user portfolios + JWT auth via Payload. Currently the
+> admin panel has no auth gating beyond Payload defaults; portfolios are global.
+
+### Backlog
+- [ ] STORY-701: Login UI — frontend pages + auth context (5 pts) — GF-CRYPTO-049
+- [ ] STORY-702: Per-user portfolio scoping in collections (3 pts) — GF-CRYPTO-050
+- [ ] STORY-703: Auth-gated routes + ProtectedRoute wrapper (3 pts) — GF-CRYPTO-051
+- [ ] STORY-704: Logout + session expiry handling (2 pts) — GF-CRYPTO-052
+- [ ] STORY-705: Tests for auth flows (3 pts) — GF-CRYPTO-053
+
+---
+
+## Sprint 8 — UX Polish & Cleanup | 17 pts | epic GF-CRYPTO-054
+
+> **Goal:** Last-mile UX (keyboard nav, presets, sharing, exports) plus type
+> unification between mock and CMS layers.
+
+### Backlog
+- [ ] STORY-801: Keyboard nav for SignalCard → AssetDetailModal (2 pts) — GF-CRYPTO-055
+- [ ] STORY-802: Risk Calc preset portfolios + save (3 pts) — GF-CRYPTO-056
+- [ ] STORY-803: Risk Calc share-by-URL (2 pts) — GF-CRYPTO-057
+- [ ] STORY-804: Charts page asset switcher (3 pts) — GF-CRYPTO-058
+- [ ] STORY-805: CSV export for Transactions (2 pts) — GF-CRYPTO-059
+- [ ] STORY-806: CSV export for Holdings (2 pts) — GF-CRYPTO-060
+- [ ] STORY-807: Unify mock + CMS Signal types (3 pts) — GF-CRYPTO-061
+
+---
+
+## Sprint plan summary
+
+| Sprint | Epic | Pts | Theme |
+|--------|------|-----|-------|
+| 5 | GF-CRYPTO-036 | 21 | Demo credibility — live data + CMS persistence |
+| 6 | GF-CRYPTO-042 | 21 | Production hardening — CI, E2E, prod CMS build |
+| 7 | GF-CRYPTO-048 | 16 | Auth — per-user portfolios via Payload JWT |
+| 8 | GF-CRYPTO-054 | 17 | UX polish — keyboard nav, presets, exports, type unification |
+| **Total** | — | **75** | — |
+
+**Cumulative when all 4 sprints land:** 94 (delivered) + 75 (planned) = **169 pts**.
+
+### Recommended sprint ordering
+Run **5 → 6** before 7/8 — live data is the biggest perceived-quality win, and
+production hardening protects everything that follows. **7 (Auth) is a hard
+prerequisite** for any kind of public deploy beyond the demo IP. **8 (UX)** can
+slot in anywhere or be sprinkled across other sprints as polish.

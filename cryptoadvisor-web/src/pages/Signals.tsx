@@ -6,6 +6,8 @@ import LoadingSkeleton from '../components/ui/LoadingSkeleton'
 import ErrorBanner from '../components/ui/ErrorBanner'
 import EmptyState from '../components/ui/EmptyState'
 import type { Signal } from '../types/index'
+import SignalSearchBar from '../components/SignalSearchBar'
+import AssetDetailModal from '../components/asset/AssetDetailModal'
 
 type Filter = 'ALL' | 'BUY' | 'SELL' | 'HOLD'
 
@@ -18,12 +20,12 @@ function relativeTime(ts: string): string {
   return `${Math.floor(hours / 24)}d ago`
 }
 
-function SignalCard({ signal }: { signal: Signal }) {
+function SignalCard({ signal, onOpenAsset }: { signal: Signal; onOpenAsset: (s: string) => void }) {
   return (
     <div className="p-4 bg-bg-elevated rounded-lg border border-bg-border">
       <div className="flex items-start justify-between gap-3 mb-2">
         <div className="flex items-center gap-2">
-          <span className="font-mono font-bold text-base text-text-primary">{signal.asset}</span>
+          <button type="button" onClick={() => onOpenAsset(signal.asset)} className="font-mono font-bold text-base text-text-primary hover:text-accent underline-offset-2 hover:underline">{signal.asset}</button>
           <Badge variant={signal.direction.toLowerCase() as 'buy' | 'sell' | 'hold'}>
             {signal.direction}
           </Badge>
@@ -67,6 +69,7 @@ function SignalCard({ signal }: { signal: Signal }) {
 const FILTERS: Filter[] = ['ALL', 'BUY', 'SELL', 'HOLD']
 
 export default function Signals() {
+  const [activeAsset, setActiveAsset] = useState<string | null>(null)
   const { data, isLoading, isError } = useSignals()
   const [filter, setFilter] = useState<Filter>('ALL')
 
@@ -74,6 +77,8 @@ export default function Signals() {
 
   return (
     <div className="space-y-4">
+      <SignalSearchBar />
+      <AssetDetailModal symbol={activeAsset} onClose={() => setActiveAsset(null)} />
       <Panel title="AI Trading Signals">
         {/* Filter buttons */}
         <div className="flex gap-2 mb-4 flex-wrap" role="group" aria-label="Filter signals">
@@ -105,7 +110,7 @@ export default function Signals() {
         ) : (
           <div className="space-y-3">
             {filtered.map((signal) => (
-              <SignalCard key={signal.id} signal={signal} />
+              <SignalCard key={signal.id} signal={signal} onOpenAsset={setActiveAsset} />
             ))}
           </div>
         )}

@@ -1,3 +1,5 @@
+;(import.meta.env as Record<string, string>).VITE_CMS_URL = 'http://localhost:3001'
+
 import '@testing-library/jest-dom'
 import './i18n/index.ts'
 import { vi } from 'vitest'

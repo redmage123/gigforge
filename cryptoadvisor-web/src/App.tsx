@@ -6,7 +6,8 @@ import Charts       from './pages/Charts'
 import Signals      from './pages/Signals'
 import Alerts       from './pages/Alerts'
 import Transactions from './pages/Transactions'
-import Watchlist    from './pages/Watchlist'
+import Watchlist      from './pages/Watchlist'
+import RiskCalculator from './pages/RiskCalculator'
 
 export const router = createBrowserRouter([
   {
@@ -19,6 +20,7 @@ export const router = createBrowserRouter([
       { path: '/alerts',       element: <Alerts /> },
       { path: '/transactions', element: <Transactions /> },
       { path: '/watchlist',    element: <Watchlist /> },
+      { path: '/risk',         element: <RiskCalculator /> },
       {
         path: '*',
         element: (

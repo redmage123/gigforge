@@ -188,3 +188,45 @@ custom Payload endpoints that go beyond auto-generated CRUD.
 ### Remaining backlog
 - Sprint 0 (Design specs, 14 pts) — backlog. Specs were never formally written; UX work done in-line during Sprint 1.
 - CMS Docker integration — bundle Payload CMS into `docker-compose.yml` so `docker compose up` runs both frontend + CMS together. Out of Sprint 3 scope; queue for next sprint.
+
+---
+
+## Sprint 4 — CMS Integration & Production Deploy | 2026-04-27
+
+> **Goal:** Wire the React frontend to the Payload CMS shipped in Sprint 2-CMS.
+> Add Risk Calculator UI, signal search bar, asset detail modal. Ship a
+> deployable docker-compose with both services.
+
+### Done
+- [x] STORY-API-01: CMS HTTP client + env-flag toggle (3 pts) ✅ 2026-04-27 — `src/api/cms/client.ts` (typed exports for search/risk/assets, `useCmsApi()` env switch on `VITE_CMS_URL`)
+- [x] STORY-API-02: React Query hooks for CMS endpoints (2 pts) ✅ 2026-04-27 — `useSearchSignals`, `useRiskCalculator`, `useAsset`
+- [x] STORY-UI-01: Risk Calculator page (5 pts) ✅ 2026-04-27 — `src/pages/RiskCalculator.tsx`, route `/risk`, sidebar link, dynamic allocation rows, sum validation, HHI + diversification + tier badge UI
+- [x] STORY-UI-02: Signal search bar on /signals (3 pts) ✅ 2026-04-27 — `src/components/SignalSearchBar.tsx` mounted at top of Signals page; query + direction filter + minConfidence; ranked results with matched-fields annotation
+- [x] STORY-UI-03: Asset detail modal (3 pts) ✅ 2026-04-27 — `src/components/asset/AssetDetailModal.tsx`, opens on signal-asset click; shows description/risk/chain/exchanges + signalsSummary; ESC to close
+- [x] STORY-DEPLOY-01: docker-compose with both services (3 pts) ✅ 2026-04-27 — `cms` (Payload + SQLite volume + healthcheck) + `web` (depends_on cms healthy); CMS Dockerfile added
+- [x] STORY-TEST-01: Vitest tests for new code (3 pts) ✅ 2026-04-27 — 23 new tests across `client.test.ts`, `RiskCalculator.test.tsx`, `AssetDetailModal.test.tsx`, `SignalSearchBar.test.tsx`
+
+**Sprint 4 velocity:** 22 / 22 pts
+**Cumulative (incl Sprint 2-CMS):** 80 / 94 pts (85%)
+
+**Tests (frontend):** 153 passing across 25 files (up from 130)
+**Tests (CMS):** 36 passing across 3 files (unchanged)
+**Total tests:** 189 passing
+**Frontend coverage:** 94.3% statements / 88.59% branch / 85.93% functions / 94.3% lines
+**Typecheck:** `tsc --noEmit` clean (frontend + CMS)
+**Docker:** `docker compose config` valid; web build args wire `VITE_CMS_URL` through to Vite at build time
+
+**Blockers:** none
+
+### How to run the full stack locally
+```bash
+cd cryptoadvisor-web
+docker compose up --build
+# Frontend: http://localhost:3000
+# CMS admin: http://localhost:3001/admin
+# CMS API:   http://localhost:3001/api/{search,calculator/risk,assets,assets/:symbol}
+```
+
+### Remaining backlog
+- Sprint 0 (Design specs, 14 pts) — backlog
+- Production deploy of full stack (CMS container) — pending operator approval

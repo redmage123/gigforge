@@ -5,6 +5,7 @@ import Badge from '../components/ui/Badge'
 import LoadingSkeleton from '../components/ui/LoadingSkeleton'
 import ErrorBanner from '../components/ui/ErrorBanner'
 import EmptyState from '../components/ui/EmptyState'
+import PersistedAlertsPanel from '../components/PersistedAlertsPanel'
 import type { Alert } from '../types/index'
 
 type Filter = 'ALL' | 'ACTIVE' | 'TRIGGERED'

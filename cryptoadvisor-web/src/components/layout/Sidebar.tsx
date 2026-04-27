@@ -1,4 +1,5 @@
 import { NavLink } from 'react-router'
+import DataSourceBadge from '../DataSourceBadge'
 import LanguageSwitcher from '../LanguageSwitcher'
 
 interface NavItem {
@@ -28,6 +29,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
       {/* Logo */}
       <div className="h-16 flex items-center px-4 border-b border-bg-border flex-shrink-0">
         <span className="text-accent font-bold text-lg tracking-tight">CryptoAdvisor</span>
+        <DataSourceBadge />
       </div>
 
       {/* Nav links */}

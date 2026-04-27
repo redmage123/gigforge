@@ -5,6 +5,7 @@ import Sparkline from '../components/charts/Sparkline'
 import LoadingSkeleton from '../components/ui/LoadingSkeleton'
 import ErrorBanner from '../components/ui/ErrorBanner'
 import { CHART_COLORS } from '../types/index'
+import PersistedWatchlistPanel from '../components/PersistedWatchlistPanel'
 import type { WatchlistItem } from '../types/index'
 
 type SortKey = 'currentPrice' | 'changePct24h'
@@ -94,6 +95,7 @@ export default function Watchlist() {
 
   return (
     <div className="space-y-4">
+      <PersistedWatchlistPanel />
       <Panel title="Watchlist">
         {/* Sort controls */}
         <div className="flex gap-2 mb-4 flex-wrap items-center">

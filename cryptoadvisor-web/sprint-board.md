@@ -351,3 +351,44 @@ Run **5 → 6** before 7/8 — live data is the biggest perceived-quality win, a
 production hardening protects everything that follows. **7 (Auth) is a hard
 prerequisite** for any kind of public deploy beyond the demo IP. **8 (UX)** can
 slot in anywhere or be sprinkled across other sprints as polish.
+
+---
+
+## Sprint 5 — Demo Credibility (Live Data) | 2026-04-28
+
+> **Goal:** Replace mock data with real exchange APIs + persist user-state to
+> CMS. The dashboard should feel like a product, not a demo.
+
+### Done
+- [x] STORY-501: CoinGecko adapter + MOCK/LIVE badge (5 pts) ✅ 2026-04-28 — `src/api/live/coingecko.ts` with 60s in-memory cache, `src/api/live/index.ts` smart router that falls back to mock on rate-limit / network failure, `src/components/DataSourceBadge.tsx` mounted in sidebar showing current source
+- [x] STORY-502: WebSocket price ticker via Binance (5 pts) ✅ 2026-04-28 — `src/api/live/binanceWs.ts` (multi-stream subscribe, exponential backoff reconnect capped at 30s), `src/hooks/useLiveTicker.ts` (no-op when live mode disabled)
+- [x] STORY-503: Persist watchlist to CMS (5 pts) ✅ 2026-04-28 — `cms/src/collections/Watchlist.ts` (userId+symbol unique index), `src/api/cms/userState.ts` CRUD, `src/hooks/usePersistedWatchlist.ts` (React Query mutations with cache invalidation), `PersistedWatchlistPanel` mounted on /watchlist
+- [x] STORY-504: Persist alerts to CMS (3 pts) ✅ 2026-04-28 — `cms/src/collections/AlertConfigs.ts` (asset, condition, threshold, status), `usePersistedAlerts` hooks, `PersistedAlertsPanel` mounted on /alerts with create form + delete buttons
+- [x] STORY-505: Tests for live-data path (3 pts) ✅ 2026-04-28 — 15 new tests: `coingecko.test.ts` (4: mapping, error, cache, cache scope), `userState.test.ts` (6: list/add/remove for both collections), `DataSourceBadge.test.tsx` (2), `PersistedWatchlistPanel.test.tsx` (3)
+
+**Sprint 5 velocity:** 21 / 21 pts
+**Cumulative (incl Sprint 5):** 115 / 169 pts (68% of total planned)
+
+**Tests (frontend):** 168 passing across 29 files (up from 153)
+**Tests (CMS):** 36 passing across 3 files (unchanged)
+**Total tests:** 204 passing
+**Frontend coverage:** 86.26% statements / 83.42% branch / 80.72% functions / 86.26% lines (still above 80% target; slight dip explained by `binanceWs.ts` being WS-only and untestable without a mock WS server)
+**Typecheck:** `tsc --noEmit` clean (frontend + CMS)
+**Blockers:** none
+
+### How to enable live mode
+
+```bash
+# Build with live data
+VITE_LIVE_PRICES=1 VITE_CMS_URL=http://localhost:3001 docker compose up --build
+
+# Or in .env
+VITE_LIVE_PRICES=1
+VITE_CMS_URL=http://localhost:3001
+```
+
+When `VITE_LIVE_PRICES=1`:
+- Charts page calls CoinGecko `coins/{id}/market_chart`
+- Header badge shows `LIVE` (green pulsing dot) instead of `MOCK`
+- WebSocket subscriptions fire for BTC/ETH/SOL/ADA last-trade
+- Falls back to mock automatically on rate-limit (429) or network failure

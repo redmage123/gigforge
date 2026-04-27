@@ -5,6 +5,8 @@ import { lexicalEditor } from '@payloadcms/richtext-lexical'
 import { Assets } from './src/collections/Assets'
 import { Signals } from './src/collections/Signals'
 import { Users } from './src/collections/Users'
+import { Watchlist } from './src/collections/Watchlist'
+import { AlertConfigs } from './src/collections/AlertConfigs'
 import { searchRoute } from './src/routes/search'
 import { riskCalculatorRoute } from './src/routes/riskCalculator'
 import { assetLookupRoute, assetCatalogueRoute } from './src/routes/assetLookup'
@@ -13,7 +15,7 @@ import { seedDatabase } from './src/seed'
 export default buildConfig({
   admin: { user: 'users' },
   editor: lexicalEditor({}),
-  collections: [Users, Assets, Signals],
+  collections: [Users, Assets, Signals, Watchlist, AlertConfigs],
   globals: [],
   endpoints: [searchRoute, riskCalculatorRoute, assetLookupRoute, assetCatalogueRoute],
   db: sqliteAdapter({

@@ -25,7 +25,7 @@ function SignalCard({ signal, onOpenAsset }: { signal: Signal; onOpenAsset: (s: 
     <div className="p-4 bg-bg-elevated rounded-lg border border-bg-border">
       <div className="flex items-start justify-between gap-3 mb-2">
         <div className="flex items-center gap-2">
-          <button type="button" onClick={() => onOpenAsset(signal.asset)} className="font-mono font-bold text-base text-text-primary hover:text-accent underline-offset-2 hover:underline">{signal.asset}</button>
+          <button type="button" onClick={() => onOpenAsset(signal.asset)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpenAsset(signal.asset); } }} tabIndex={0} aria-label={`Open details for ${signal.asset}`} className="font-mono font-bold text-base text-text-primary hover:text-accent focus:outline-none focus:ring-2 focus:ring-accent rounded px-1 -mx-1 underline-offset-2 hover:underline">{signal.asset}</button>
           <Badge variant={signal.direction.toLowerCase() as 'buy' | 'sell' | 'hold'}>
             {signal.direction}
           </Badge>

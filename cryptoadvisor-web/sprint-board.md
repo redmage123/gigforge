@@ -491,3 +491,50 @@ either retry login flow or render a `Sign in to continue` empty state.
 This keeps existing layout tests green (they render `<Sidebar />` without
 wrapping in `AuthProvider`) and matches the runtime behavior in mock-only
 mode where `cmsAvailable` is false.
+
+---
+
+## Sprint 8 — UX Polish & Cleanup | 2026-04-28
+
+> **Goal:** Last-mile UX (keyboard nav, presets, sharing, exports) plus type
+> unification between mock and CMS layers. Hits 100% of the planned scope.
+
+### Done
+- [x] STORY-801: Keyboard nav for SignalCard → AssetDetailModal (2 pts) ✅ 2026-04-28 — clickable asset symbol now has `tabIndex={0}`, `onKeyDown` (Enter/Space → open), `aria-label`, focus ring (`focus:ring-2 focus:ring-accent`). Verified with axe DevTools roles.
+- [x] STORY-802: Risk Calc preset portfolios + save (3 pts) ✅ 2026-04-28 — `src/components/risk/RiskPresets.ts` ships built-in `Conservative` (BTC:30, ETH:20, USD:50), `Balanced` (BTC:50, ETH:30, USD:20), `Aggressive` (BTC:40, ETH:30, SOL:20, LINK:10). "Save current as preset" persists to `localStorage` (key `cryptoadvisor.risk.presets`). Saved presets appear in the same `<select>` under their own optgroup, and each can be deleted from the UI.
+- [x] STORY-803: Risk Calc share-by-URL (2 pts) ✅ 2026-04-28 — `src/utils/riskShareUrl.ts` encodes/decodes `?allocations=BTC:50,ETH:50` (matches the CMS endpoint format so the same URL can be `curl`'d against the API). On submit and on calc-success, `pushAllocationsToUrl` updates `window.history.replaceState` so refresh/share preserves state. "Share link" button writes `window.location.href` to clipboard with a 2 s "✓ Link copied" affordance.
+- [x] STORY-804: Charts page asset switcher (3 pts) ✅ 2026-04-28 — `src/pages/Charts.tsx` rewritten from a 12-line stub to a real page: BTC/ETH/SOL/ADA dropdown + 1D/1W/1M timeframe button group, both wired through `CandlestickChart` props with `key` reset so the chart fully refreshes per selection.
+- [x] STORY-805: CSV export — Transactions (2 pts) ✅ 2026-04-28 — `CsvDownloadButton` mounted in the Transactions panel header (`action` slot) exports current filtered + sorted rows. Filename: `transactions-YYYY-MM-DD.csv`. Disabled when zero rows.
+- [x] STORY-806: CSV export — Holdings (2 pts) ✅ 2026-04-28 — Same component on the Portfolio page; includes computed `pnl` + `pnlPct` columns.
+- [x] STORY-807: Unify mock + CMS Signal types (3 pts) ✅ 2026-04-28 — `src/types/index.ts` Signal gains optional `assetSymbol`, `assetName`, `generatedAt` aliases (additive — preserves backwards-compatible `asset` + `timestamp`). Mock `signals.ts` now populates all three new fields. CMS `SearchSignal` and mock `Signal` are now structurally compatible at every shared field; consumers can read either name without an adapter.
+
+**Sprint 8 velocity:** 17 / 17 pts
+**Cumulative — final:** 169 / 169 pts (100%) 🎉
+
+**Tests (frontend, vitest):** 166 passing across 33 files (up from 144 — +22 tests covering csv utils, riskShareUrl, RiskPresets, CsvDownloadButton)
+**Tests (CMS, vitest):** 36 passing (unchanged)
+**Total tests:** 202 passing
+**Frontend coverage:** 86.22% statements / 82.75% branch / 81.52% functions / 86.22% lines (all above the 80%/75% thresholds in `vitest.config.ts`)
+**Typecheck:** `tsc --noEmit` clean (frontend + CMS)
+**Blockers:** none
+
+### Project status — final
+
+| Sprint | Pts | Status | Notes |
+|--------|-----|--------|-------|
+| Sprint 0 (retrofit) | 14 | ✅ | 6 specs in `specs/` + design system |
+| Sprint 1 (foundation) | 16 | ✅ | bundled into Sprint 2 commit |
+| Sprint 2-CMS | 16 | ✅ | Payload + 3 custom routes |
+| Sprint 3 (polish) | 26 | ✅ | tests, Docker, README |
+| Sprint 4 (CMS integration) | 22 | ✅ | risk calc UI, search bar, asset modal |
+| Sprint 5 (live data) | 21 | ✅ | CoinGecko, Binance WS, persistence |
+| Sprint 6 (prod hardening) | 21 | ✅ | CI, E2E, prod CMS Dockerfile, ADRs |
+| Sprint 7 (auth) | 16 | ✅ | Payload JWT, per-user scoping |
+| Sprint 8 (UX polish) | 17 | ✅ | this sprint |
+| **Total** | **169** | **169** | **100%** |
+
+### Backwards compatibility note for STORY-807
+Existing consumers reading `signal.asset` and `signal.timestamp` are
+untouched — the new fields are optional aliases. Future code should prefer
+`signal.assetSymbol` + `signal.generatedAt` for parity with CMS responses,
+and a future sprint can deprecate the old field names with a codemod.

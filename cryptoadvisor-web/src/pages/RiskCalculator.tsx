@@ -1,15 +1,23 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Panel from '../components/ui/Panel'
 import ErrorBanner from '../components/ui/ErrorBanner'
 import { useRiskCalculator } from '../hooks/useRiskCalculator'
-import { useCmsApi } from '../api/cms/client'
+import { useCmsApi, type RiskAllocation } from '../api/cms/client'
+import {
+  BUILTIN_PRESETS,
+  deleteSavedPreset,
+  loadSavedPresets,
+  saveCurrentAsPreset,
+  type Preset,
+} from '../components/risk/RiskPresets'
+import { pushAllocationsToUrl, readAllocationsFromLocation } from '../utils/riskShareUrl'
 
 interface AllocationRow {
   symbol: string
   pct: string
 }
 
-const INITIAL_ROWS: AllocationRow[] = [
+const DEFAULT_ROWS: AllocationRow[] = [
   { symbol: 'BTC', pct: '50' },
   { symbol: 'ETH', pct: '30' },
   { symbol: 'USD', pct: '20' },
@@ -21,10 +29,32 @@ const TIER_BADGE: Record<'low' | 'medium' | 'high', string> = {
   high: 'bg-rose-500/15 text-rose-300',
 }
 
+function rowsFromAllocations(allocations: RiskAllocation[]): AllocationRow[] {
+  return allocations.map((a) => ({ symbol: a.symbol, pct: String(a.pct) }))
+}
+
+function allocationsFromRows(rows: AllocationRow[]): RiskAllocation[] {
+  return rows
+    .filter((r) => r.symbol.trim())
+    .map((r) => ({ symbol: r.symbol.trim().toUpperCase(), pct: Number(r.pct) || 0 }))
+}
+
 export default function RiskCalculator() {
   const cmsAvailable = useCmsApi()
-  const [rows, setRows] = useState<AllocationRow[]>(INITIAL_ROWS)
+  const [rows, setRows] = useState<AllocationRow[]>(() => {
+    const fromUrl = readAllocationsFromLocation()
+    return fromUrl ? rowsFromAllocations(fromUrl) : DEFAULT_ROWS
+  })
+  const [savedPresets, setSavedPresets] = useState<Preset[]>(() => loadSavedPresets())
+  const [presetSelection, setPresetSelection] = useState('')
+  const [saveLabel, setSaveLabel] = useState('')
+  const [shareCopied, setShareCopied] = useState(false)
   const mutation = useRiskCalculator()
+
+  const allPresets = useMemo<Preset[]>(
+    () => [...BUILTIN_PRESETS, ...savedPresets],
+    [savedPresets],
+  )
 
   function update(index: number, patch: Partial<AllocationRow>) {
     setRows((rs) => rs.map((r, i) => (i === index ? { ...r, ...patch } : r)))
@@ -38,13 +68,55 @@ export default function RiskCalculator() {
     setRows((rs) => rs.filter((_, i) => i !== index))
   }
 
+  function loadPreset(id: string) {
+    setPresetSelection(id)
+    const preset = allPresets.find((p) => p.id === id)
+    if (preset) {
+      setRows(rowsFromAllocations(preset.allocations))
+    }
+  }
+
+  function onSaveCurrent() {
+    const label = saveLabel.trim()
+    if (!label) return
+    const allocations = allocationsFromRows(rows)
+    if (allocations.length === 0) return
+    const preset = saveCurrentAsPreset(label, allocations)
+    setSavedPresets((s) => [...s, preset])
+    setSaveLabel('')
+  }
+
+  function onDeleteSaved(id: string) {
+    deleteSavedPreset(id)
+    setSavedPresets(loadSavedPresets())
+    if (presetSelection === id) setPresetSelection('')
+  }
+
+  async function onShare() {
+    const allocations = allocationsFromRows(rows)
+    pushAllocationsToUrl(allocations)
+    try {
+      await navigator.clipboard?.writeText(window.location.href)
+      setShareCopied(true)
+      setTimeout(() => setShareCopied(false), 2000)
+    } catch {
+      // ignore — URL is still updated even if clipboard write fails
+    }
+  }
+
   function submit(e: React.FormEvent) {
     e.preventDefault()
-    const allocations = rows
-      .filter((r) => r.symbol.trim())
-      .map((r) => ({ symbol: r.symbol.trim().toUpperCase(), pct: Number(r.pct) }))
+    const allocations = allocationsFromRows(rows)
+    pushAllocationsToUrl(allocations)
     mutation.mutate({ allocations })
   }
+
+  // Sync URL with allocations when calculation succeeds
+  useEffect(() => {
+    if (mutation.data) {
+      pushAllocationsToUrl(mutation.data.allocations)
+    }
+  }, [mutation.data])
 
   const total = rows.reduce((acc, r) => acc + (Number(r.pct) || 0), 0)
   const sumOk = Math.abs(total - 100) <= 0.5
@@ -67,6 +139,45 @@ export default function RiskCalculator() {
           (HHI) concentration score, diversification score (0-100), and a risk tier label.
         </p>
 
+        {/* Presets row */}
+        <div className="flex flex-wrap gap-2 items-center mb-3" data-testid="risk-presets">
+          <label htmlFor="risk-preset" className="text-xs text-text-muted uppercase tracking-wide">
+            Load preset:
+          </label>
+          <select
+            id="risk-preset"
+            value={presetSelection}
+            onChange={(e) => loadPreset(e.target.value)}
+            className="px-3 py-1.5 rounded bg-bg-elevated border border-bg-border text-text-primary text-sm"
+            aria-label="Load preset"
+          >
+            <option value="">— select —</option>
+            <optgroup label="Built-in">
+              {BUILTIN_PRESETS.map((p) => (
+                <option key={p.id} value={p.id}>{p.label}</option>
+              ))}
+            </optgroup>
+            {savedPresets.length > 0 && (
+              <optgroup label="Saved">
+                {savedPresets.map((p) => (
+                  <option key={p.id} value={p.id}>{p.label}</option>
+                ))}
+              </optgroup>
+            )}
+          </select>
+
+          {presetSelection && !BUILTIN_PRESETS.find((p) => p.id === presetSelection) && (
+            <button
+              type="button"
+              onClick={() => onDeleteSaved(presetSelection)}
+              className="text-xs text-rose-400 hover:underline"
+              aria-label="Delete saved preset"
+            >
+              delete
+            </button>
+          )}
+        </div>
+
         <form onSubmit={submit} className="space-y-3" data-testid="risk-form">
           {rows.map((row, i) => (
             <div key={i} className="flex gap-2 items-center">
@@ -75,7 +186,7 @@ export default function RiskCalculator() {
                 value={row.symbol}
                 onChange={(e) => update(i, { symbol: e.target.value })}
                 placeholder="Symbol (BTC)"
-                className="flex-1 px-3 py-2 rounded bg-bg-elevated border border-border-default text-text-primary"
+                className="flex-1 px-3 py-2 rounded bg-bg-elevated border border-bg-border text-text-primary"
                 aria-label={`Symbol row ${i + 1}`}
               />
               <input
@@ -86,7 +197,7 @@ export default function RiskCalculator() {
                 min={0}
                 max={100}
                 step="0.1"
-                className="w-24 px-3 py-2 rounded bg-bg-elevated border border-border-default text-text-primary"
+                className="w-24 px-3 py-2 rounded bg-bg-elevated border border-bg-border text-text-primary"
                 aria-label={`Percent row ${i + 1}`}
               />
               <button
@@ -105,7 +216,7 @@ export default function RiskCalculator() {
             <button
               type="button"
               onClick={addRow}
-              className="text-sm text-accent-primary hover:underline"
+              className="text-sm text-accent hover:underline"
             >
               + Add asset
             </button>
@@ -117,11 +228,39 @@ export default function RiskCalculator() {
           <button
             type="submit"
             disabled={!sumOk || mutation.isPending}
-            className="w-full py-2 rounded bg-accent-primary text-bg-base font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full py-2 rounded bg-accent text-white font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {mutation.isPending ? 'Calculating…' : 'Calculate risk'}
           </button>
         </form>
+
+        {/* Save + share row */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-3 border-t border-bg-border mt-4">
+          <input
+            type="text"
+            value={saveLabel}
+            onChange={(e) => setSaveLabel(e.target.value)}
+            placeholder="Preset name"
+            className="px-3 py-2 rounded bg-bg-elevated border border-bg-border text-text-primary text-sm"
+            aria-label="Preset name to save"
+          />
+          <button
+            type="button"
+            onClick={onSaveCurrent}
+            disabled={!saveLabel.trim()}
+            className="py-2 rounded bg-bg-elevated border border-bg-border text-text-primary text-sm hover:bg-bg-border disabled:opacity-50"
+          >
+            Save current as preset
+          </button>
+          <button
+            type="button"
+            onClick={onShare}
+            className="py-2 rounded bg-bg-elevated border border-bg-border text-text-primary text-sm hover:bg-bg-border"
+            data-testid="share-button"
+          >
+            {shareCopied ? '✓ Link copied' : 'Share link'}
+          </button>
+        </div>
       </Panel>
 
       {mutation.isError && (
@@ -144,7 +283,7 @@ export default function RiskCalculator() {
             </div>
             <Stat label="Largest" value={`${mutation.data.largestPosition.symbol} ${mutation.data.largestPosition.pct}%`} />
           </div>
-          <p className="text-sm text-text-secondary border-t border-border-default pt-4">
+          <p className="text-sm text-text-secondary border-t border-bg-border pt-4">
             {mutation.data.breakdown}
           </p>
         </Panel>

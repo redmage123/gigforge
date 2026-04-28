@@ -48,6 +48,12 @@ export interface Signal {
   confidence: number
   reason: string
   timestamp: string
+  /** Sprint 8 STORY-807: alias for the CMS field `assetSymbol`. */
+  assetSymbol?: string
+  /** Sprint 8 STORY-807: human asset name (e.g. "Bitcoin"); CMS-provided. */
+  assetName?: string
+  /** Sprint 8 STORY-807: alias for the CMS field `generatedAt`. */
+  generatedAt?: string
 }
 
 export type AlertCondition = 'above' | 'below'

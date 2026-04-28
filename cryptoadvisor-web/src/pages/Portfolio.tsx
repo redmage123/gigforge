@@ -1,6 +1,7 @@
 import { usePortfolio } from '../hooks/usePortfolio'
 import AllocationPieChart from '../components/charts/AllocationPieChart'
 import Panel from '../components/ui/Panel'
+import CsvDownloadButton from '../components/CsvDownloadButton'
 import LoadingSkeleton from '../components/ui/LoadingSkeleton'
 import ErrorBanner from '../components/ui/ErrorBanner'
 
@@ -40,7 +41,7 @@ export default function Portfolio() {
   return (
     <div className="space-y-4">
       {/* Holdings table */}
-      <Panel title="Holdings">
+      <Panel title="Holdings" action={<CsvDownloadButton rows={data.holdings} filenamePrefix="holdings" headers={["Asset","Symbol","Amount","AvgBuyPrice","CurrentPrice","Value","AllocationPct","PnL","PnLPct"]} rowMapper={(h) => [h.asset,h.symbol,h.amount,h.avgBuyPrice,h.currentPrice,h.value,h.allocationPct,h.pnl,h.pnlPct]} />}>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>

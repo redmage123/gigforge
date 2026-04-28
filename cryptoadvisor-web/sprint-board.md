@@ -578,3 +578,45 @@ Indicator math lives in `src/utils/indicators.ts` so the same functions can be
 reused by the (planned) signal generator, the chart overlays, and any future
 backtesting surface. Per ADR-0009, this is mock-mode-friendly: indicators run
 on whatever price data the smart router serves (mock or live).
+
+---
+
+## Sprint 9 — Technical Indicators & Elliott Waves | 2026-04-28
+
+> **Goal achieved:** Real technical analysis on cryptoadvisor — indicator
+> service, chart overlays, momentum sub-panels, volatility cards, Donchian
+> breakout signals into the Signals UI, and a pragmatic Elliott Wave
+> detector. Every analytics surface now ties back to actual indicator math,
+> not mocks.
+
+### Done
+- [x] STORY-901: Indicator service module (3 pts) ✅ 2026-04-28 — `src/utils/indicators.ts` pure-function `sma`, `ema`, `rsi` (Wilder), `macd`, `bollinger`, `atr` (Wilder), `realizedVol` (×√365 for crypto), `donchian`, plus `crossAbove`/`crossBelow`. Index-aligned `(number | null)[]` outputs, zero deps.
+- [x] STORY-902: SMA 20/50/200 overlay + golden/death cross (3 pts) ✅ 2026-04-28 — `src/components/charts/IndicatorOverlays.tsx` (`useIndicatorOverlays` hook + `OverlayToggleBar` + `IndicatorBanners`); CandlestickChart now renders Line overlays per toggle.
+- [x] STORY-903: RSI sub-panel (3 pts) ✅ 2026-04-28 — `src/components/charts/RSIPanel.tsx` — period selector 7/14/21, 70/30 reference lines, color-coded overbought/oversold fill.
+- [x] STORY-904: MACD sub-panel + histogram (3 pts) ✅ 2026-04-28 — `src/components/charts/MACDPanel.tsx` — default (12, 26, 9), histogram colored by sign, zero-line ReferenceLine.
+- [x] STORY-905: Bollinger Bands overlay + squeeze detection (2 pts) ✅ 2026-04-28 — folded into `useIndicatorOverlays`; squeeze banner fires when bandwidth < 5%.
+- [x] STORY-906: ATR + realized vol StatCards (2 pts) ✅ 2026-04-28 — `src/components/dashboard/VolatilityCards.tsx` mounted as Row 1.5 on Dashboard — ATR(14) absolute USD; 30d annualized realized vol.
+- [x] STORY-907: Donchian breakout detector → Signals (3 pts) ✅ 2026-04-28 — `src/utils/signalGenerator.ts` + `src/hooks/useDonchianSignals.ts` — emits `{action, price, level, source: donchian}` on close > prior 20-day high / < prior 20-day low; merged into Signals.tsx with editorial/indicator source badge.
+- [x] STORY-908: Tests for indicators + signal generator + components (2 pts) ✅ 2026-04-28 — `indicators.test.ts` (14 tests), `signalGenerator.test.ts` (7 tests), `elliottWaves.test.ts` (5 tests), plus 11 component-render tests for the new chart panels and volatility cards.
+- [x] STORY-909: Elliott Wave detector (8 pts) ✅ 2026-04-28 — `src/utils/elliottWaves.ts` — ZigZag pivots (configurable threshold, default 5%) + 5-3 wave structure inference + Fibonacci validation (wave 2 38.2-78.6%, wave 3 ≥1.618×, wave 4 ≤38.2% no overlap) + confidence score 0-100. Hard rule (wave 4 cannot overlap wave 1) excludes invalid candidates entirely; soft rules contribute to confidence.
+
+**Sprint 9 velocity:** 29 / 29 pts (added STORY-909 mid-sprint per user request)
+**Cumulative (incl Sprint 9):** 169 + 29 = 198 pts
+
+**Tests (frontend, vitest):** 232 passing across 41 files (up from 196 — +24 indicator/signal/Elliott unit tests, +12 component-render tests)
+**Frontend coverage:** 85.55% statements / 83.08% branch / 80.95% functions / 85.55% lines (clears the 80% threshold)
+**Typecheck:** `tsc --noEmit` clean
+**Blockers:** none
+
+### Honest scope notes
+Elliott Wave analysis is famously subjective. The detector is rule-based and
+deterministic, tuned to err toward low confidence — only flags structures
+that pass all four Fib/invalidation gates. False positives expected on noisy
+ranges; users should treat output as a hypothesis, not a forecast.
+
+Realized volatility uses 365 trading days/year (crypto trades 24/7), not the
+252 conventional for equities.
+
+### Already filed for Sprint 10/11 (Backlog)
+- STORY-1001 (13 pts): Statistical analytics — Sharpe/Sortino, drawdown, returns distribution, correlation matrix, Hurst exponent
+- STORY-1101 (13 pts): Options data + Black-Scholes greeks panel — Deribit feed, IV/greeks, IV rank — feature-flagged for spot users with options interest

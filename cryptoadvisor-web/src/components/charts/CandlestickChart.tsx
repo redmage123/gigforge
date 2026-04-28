@@ -7,12 +7,21 @@ import {
   Tooltip,
   ResponsiveContainer,
   Bar,
+  Line,
+  Area,
 } from 'recharts'
 import { usePrices } from '../../hooks/usePrices'
 import { CHART_COLORS } from '../../types/index'
 import type { Asset, Timeframe } from '../../types/index'
 import { ChartSkeleton } from '../ui/LoadingSkeleton'
 import ErrorBanner from '../ui/ErrorBanner'
+import {
+  IndicatorBanners,
+  OverlayToggleBar,
+  useIndicatorOverlays,
+} from './IndicatorOverlays'
+import RSIPanel from './RSIPanel'
+import MACDPanel from './MACDPanel'
 
 const ASSETS: Asset[] = ['BTC', 'ETH', 'SOL', 'ADA']
 const TIMEFRAMES: Timeframe[] = ['1D', '1W', '1M']
@@ -46,7 +55,7 @@ function CandlestickBar(props: CandlestickBarProps) {
 
   if (!payload) return null
 
-  const { open, close, high, low } = payload
+  const { open, close } = payload
   const isUp = close >= open
   const color = isUp ? CHART_COLORS.positive : CHART_COLORS.negative
 
@@ -56,14 +65,12 @@ function CandlestickBar(props: CandlestickBarProps) {
   const wickTop = payload.yHigh ?? 0
   const wickBottom = payload.yLow ?? 0
 
-  // Safety guard: skip rendering if values are invalid
   if (!isFinite(candleY) || !isFinite(candleHeight) || !isFinite(wickTop) || !isFinite(wickBottom)) {
     return null
   }
 
   return (
     <g>
-      {/* Wick */}
       <line
         x1={wickX}
         y1={wickTop}
@@ -72,7 +79,6 @@ function CandlestickBar(props: CandlestickBarProps) {
         stroke={color}
         strokeWidth={1}
       />
-      {/* Body */}
       <rect
         x={x + 1}
         y={candleY}
@@ -144,20 +150,27 @@ export default function CandlestickChart({
   const [asset, setAsset] = useState<Asset>(defaultAsset)
   const [timeframe, setTimeframe] = useState<Timeframe>(defaultTimeframe)
   const { data, isLoading, isError } = usePrices(asset, timeframe)
+  const candles = data?.candles ?? []
+  const { toggles, setToggles, overlays } = useIndicatorOverlays(candles)
 
   if (isLoading) return <ChartSkeleton />
   if (isError) return <ErrorBanner />
 
-  const chartData = (data?.candles ?? []).map((c) => ({
+  const chartData = candles.map((c, i) => ({
     date: new Date(c.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
     open: c.open,
     high: c.high,
     low: c.low,
     close: c.close,
     volume: c.volume,
-    // We use a special shape: encode candle body as a single bar with custom renderer
     candle: c.close - c.open,
     candleBase: Math.min(c.open, c.close),
+    sma20: overlays.sma20?.[i] ?? null,
+    sma50: overlays.sma50?.[i] ?? null,
+    sma200: overlays.sma200?.[i] ?? null,
+    bbUpper: overlays.bollinger?.upper[i] ?? null,
+    bbMiddle: overlays.bollinger?.middle[i] ?? null,
+    bbLower: overlays.bollinger?.lower[i] ?? null,
   }))
 
   return (
@@ -194,7 +207,11 @@ export default function CandlestickChart({
         </div>
       </div>
 
-      {/* Price chart */}
+      {/* Indicator overlay toggles + banners (Sprint 9, STORY-902/905) */}
+      <OverlayToggleBar toggles={toggles} onChange={setToggles} />
+      <IndicatorBanners banners={overlays.banners} />
+
+      {/* Price chart with overlays */}
       <ResponsiveContainer width="100%" height={260}>
         <ComposedChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} vertical={false} />
@@ -219,11 +236,68 @@ export default function CandlestickChart({
             width={60}
           />
           <Tooltip content={<CustomTooltip />} />
+          {toggles.bollinger && (
+            <>
+              <Area
+                type="monotone"
+                dataKey="bbUpper"
+                stroke="#a5b4fc"
+                strokeWidth={1}
+                fill="#a5b4fc"
+                fillOpacity={0.1}
+                isAnimationActive={false}
+                connectNulls
+              />
+              <Area
+                type="monotone"
+                dataKey="bbLower"
+                stroke="#a5b4fc"
+                strokeWidth={1}
+                fill="#a5b4fc"
+                fillOpacity={0.1}
+                isAnimationActive={false}
+                connectNulls
+              />
+            </>
+          )}
           <Bar
             dataKey="candle"
             shape={(props: unknown) => <CandlestickBar {...(props as CandlestickBarProps)} />}
             isAnimationActive={false}
           />
+          {toggles.sma20 && (
+            <Line
+              type="monotone"
+              dataKey="sma20"
+              stroke={CHART_COLORS.positive}
+              strokeWidth={1.5}
+              dot={false}
+              isAnimationActive={false}
+              connectNulls
+            />
+          )}
+          {toggles.sma50 && (
+            <Line
+              type="monotone"
+              dataKey="sma50"
+              stroke={CHART_COLORS.neutral}
+              strokeWidth={1.5}
+              dot={false}
+              isAnimationActive={false}
+              connectNulls
+            />
+          )}
+          {toggles.sma200 && (
+            <Line
+              type="monotone"
+              dataKey="sma200"
+              stroke={CHART_COLORS.accent}
+              strokeWidth={1.5}
+              dot={false}
+              isAnimationActive={false}
+              connectNulls
+            />
+          )}
         </ComposedChart>
       </ResponsiveContainer>
 
@@ -240,6 +314,14 @@ export default function CandlestickChart({
           />
         </ComposedChart>
       </ResponsiveContainer>
+
+      {/* Sub-panels (Sprint 9, STORY-903/904) */}
+      {candles.length > 0 && (
+        <>
+          <RSIPanel candles={candles} />
+          <MACDPanel candles={candles} />
+        </>
+      )}
     </div>
   )
 }

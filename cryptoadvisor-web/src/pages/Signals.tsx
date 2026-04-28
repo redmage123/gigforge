@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useSignals } from '../hooks/useSignals'
+import { useDonchianSignals } from '../hooks/useDonchianSignals'
 import Panel from '../components/ui/Panel'
 import Badge from '../components/ui/Badge'
 import LoadingSkeleton from '../components/ui/LoadingSkeleton'
@@ -20,17 +21,56 @@ function relativeTime(ts: string): string {
   return `${Math.floor(hours / 24)}d ago`
 }
 
-function SignalCard({ signal, onOpenAsset }: { signal: Signal; onOpenAsset: (s: string) => void }) {
+function SourceBadge({ source }: { source?: string }) {
+  const isIndicator = source === 'donchian'
+  return (
+    <span
+      className={`text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded ${
+        isIndicator
+          ? 'bg-accent/20 text-accent'
+          : 'bg-bg-elevated text-text-muted'
+      }`}
+      aria-label={`source: ${source ?? 'editorial'}`}
+    >
+      {isIndicator ? 'Indicator' : 'Editorial'}
+    </span>
+  )
+}
+
+function SignalCard({
+  signal,
+  onOpenAsset,
+}: {
+  signal: Signal
+  onOpenAsset: (s: string) => void
+}) {
   return (
     <div className="p-4 bg-bg-elevated rounded-lg border border-bg-border">
       <div className="flex items-start justify-between gap-3 mb-2">
         <div className="flex items-center gap-2">
-          <button type="button" onClick={() => onOpenAsset(signal.asset)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpenAsset(signal.asset); } }} tabIndex={0} aria-label={`Open details for ${signal.asset}`} className="font-mono font-bold text-base text-text-primary hover:text-accent focus:outline-none focus:ring-2 focus:ring-accent rounded px-1 -mx-1 underline-offset-2 hover:underline">{signal.asset}</button>
+          <button
+            type="button"
+            onClick={() => onOpenAsset(signal.asset)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                onOpenAsset(signal.asset)
+              }
+            }}
+            tabIndex={0}
+            aria-label={`Open details for ${signal.asset}`}
+            className="font-mono font-bold text-base text-text-primary hover:text-accent focus:outline-none focus:ring-2 focus:ring-accent rounded px-1 -mx-1 underline-offset-2 hover:underline"
+          >
+            {signal.asset}
+          </button>
           <Badge variant={signal.direction.toLowerCase() as 'buy' | 'sell' | 'hold'}>
             {signal.direction}
           </Badge>
+          <SourceBadge source={signal.source} />
         </div>
-        <span className="text-xs text-text-muted flex-shrink-0">{relativeTime(signal.timestamp)}</span>
+        <span className="text-xs text-text-muted flex-shrink-0">
+          {relativeTime(signal.timestamp)}
+        </span>
       </div>
 
       {/* Confidence bar */}
@@ -70,17 +110,26 @@ const FILTERS: Filter[] = ['ALL', 'BUY', 'SELL', 'HOLD']
 
 export default function Signals() {
   const [activeAsset, setActiveAsset] = useState<string | null>(null)
-  const { data, isLoading, isError } = useSignals()
+  const editorial = useSignals()
+  const donchian = useDonchianSignals()
   const [filter, setFilter] = useState<Filter>('ALL')
 
-  const filtered = data?.filter((s) => filter === 'ALL' || s.direction === filter) ?? []
+  const merged = useMemo<Signal[]>(() => {
+    const base = (editorial.data ?? []).map((s) => ({ ...s, source: s.source ?? 'editorial' }))
+    return [...base, ...donchian.data].sort(
+      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
+    )
+  }, [editorial.data, donchian.data])
+
+  const filtered = merged.filter((s) => filter === 'ALL' || s.direction === filter)
+  const isLoading = editorial.isLoading
+  const isError = editorial.isError
 
   return (
     <div className="space-y-4">
       <SignalSearchBar />
       <AssetDetailModal symbol={activeAsset} onClose={() => setActiveAsset(null)} />
       <Panel title="AI Trading Signals">
-        {/* Filter buttons */}
         <div className="flex gap-2 mb-4 flex-wrap" role="group" aria-label="Filter signals">
           {FILTERS.map((f) => (
             <button
@@ -105,7 +154,9 @@ export default function Signals() {
         ) : filtered.length === 0 ? (
           <EmptyState
             title="No signals"
-            description={`No ${filter === 'ALL' ? '' : filter + ' '}signals available.`}
+            description={`No ${
+              filter === 'ALL' ? '' : filter + ' '
+            }signals — Donchian breakouts and editorial picks will appear here.`}
           />
         ) : (
           <div className="space-y-3">

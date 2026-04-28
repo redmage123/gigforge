@@ -54,6 +54,8 @@ export interface Signal {
   assetName?: string
   /** Sprint 8 STORY-807: alias for the CMS field `generatedAt`. */
   generatedAt?: string
+  /** Sprint 9 STORY-907: signal origin — "donchian" for indicator-generated, "editorial" for CMS-curated. */
+  source?: string
 }
 
 export type AlertCondition = 'above' | 'below'

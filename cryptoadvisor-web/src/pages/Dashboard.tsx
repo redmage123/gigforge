@@ -10,6 +10,8 @@ import Badge from '../components/ui/Badge'
 import Sparkline from '../components/charts/Sparkline'
 import AllocationPieChart from '../components/charts/AllocationPieChart'
 import CandlestickChart from '../components/charts/CandlestickChart'
+import VolatilityCards from '../components/dashboard/VolatilityCards'
+import { usePrices } from '../hooks/usePrices'
 import LoadingSkeleton, { StatCardSkeleton } from '../components/ui/LoadingSkeleton'
 import ErrorBanner from '../components/ui/ErrorBanner'
 
@@ -42,6 +44,7 @@ export default function Dashboard() {
   const alerts = useAlerts()
   const transactions = useTransactions()
   const watchlist = useWatchlist()
+  const btcPrices = usePrices('BTC', '1M')
 
   return (
     <div className="space-y-4">
@@ -76,6 +79,13 @@ export default function Dashboard() {
               sparklineData={portfolio.data.sparkline}
             />
           </>
+        ) : null}
+      </div>
+
+      {/* Row 1.5: Volatility cards (Sprint 9, STORY-906) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {btcPrices.data?.candles ? (
+          <VolatilityCards candles={btcPrices.data.candles} />
         ) : null}
       </div>
 

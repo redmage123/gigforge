@@ -102,13 +102,13 @@ export default function Backtest() {
             className="bg-bg-elevated border border-bg-border rounded px-3 py-1.5 text-sm text-text-primary"
           >
             <option value="donchian">Donchian Breakout (20)</option>
-            <option value="buyhold">Buy &amp; Hold</option>
+            <option value="buyhold">Buy & Hold</option>
           </select>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
           <StatCard label="Total Return" value={pct(result.totalReturn)} />
-          <StatCard label="Buy &amp; Hold" value={pct(result.buyHoldReturn)} />
+          <StatCard label="Buy & Hold" value={pct(result.buyHoldReturn)} />
           <StatCard label="Sharpe" value={fmt(result.sharpe)} />
           <StatCard label="Max Drawdown" value={pct(result.maxDrawdown)} />
         </div>
@@ -166,7 +166,7 @@ export default function Backtest() {
                 strokeWidth={1.5}
                 strokeDasharray="3 3"
                 dot={false}
-                name="Buy &amp; Hold"
+                name="Buy & Hold"
                 isAnimationActive={false}
               />
             </ComposedChart>

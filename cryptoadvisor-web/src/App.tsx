@@ -13,6 +13,9 @@ import Watchlist      from './pages/Watchlist'
 import RiskCalculator from './pages/RiskCalculator'
 import Stats          from './pages/Stats'
 import Backtest       from './pages/Backtest'
+import Options        from './pages/Options'
+import OrderBookPage  from './pages/OrderBookPage'
+import FeedSettings   from './pages/FeedSettings'
 
 export const router = createBrowserRouter([
   { path: '/login',    element: <Login /> },
@@ -30,6 +33,9 @@ export const router = createBrowserRouter([
       { path: '/risk',         element: <RiskCalculator /> },
       { path: '/stats',        element: <Stats /> },
       { path: '/backtest',     element: <Backtest /> },
+      { path: '/options',      element: <Options /> },
+      { path: '/orderbook',    element: <OrderBookPage /> },
+      { path: '/feeds',        element: <FeedSettings /> },
       {
         path: '*',
         element: (

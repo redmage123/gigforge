@@ -26,6 +26,8 @@ vi.mock('recharts', () => {
     AreaChart: MockChart,
     BarChart: MockChart,
     ReferenceLine: () => null,
+    ScatterChart: MockChart,
+    Scatter: () => React.createElement('div', { 'data-testid': 'scatter' }),
   }
 })
 

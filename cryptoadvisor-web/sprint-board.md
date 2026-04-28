@@ -620,3 +620,90 @@ Realized volatility uses 365 trading days/year (crypto trades 24/7), not the
 ### Already filed for Sprint 10/11 (Backlog)
 - STORY-1001 (13 pts): Statistical analytics — Sharpe/Sortino, drawdown, returns distribution, correlation matrix, Hurst exponent
 - STORY-1101 (13 pts): Options data + Black-Scholes greeks panel — Deribit feed, IV/greeks, IV rank — feature-flagged for spot users with options interest
+
+---
+
+## Sprint 10 — Statistical Analytics + Modern Portfolio Theory | 2026-04-28
+
+> **Goal achieved:** Full statistical analytics surface (Sharpe/Sortino,
+> drawdown, distribution moments, correlation, rolling z, Hurst) plus
+> Modern Portfolio Theory (efficient frontier, tangency, min-variance,
+> risk parity) and a quantum-inspired simulated-annealing portfolio
+> optimizer. New /stats route on the sidebar.
+
+### Done
+- [x] STORY-1002: Sharpe/Sortino + max drawdown (3 pts) ✅ 2026-04-28 — `src/utils/statistics.ts riskAdjustedMetrics()` — annualized via √365 (crypto), configurable risk-free rate (default 4% USD treasuries 2026).
+- [x] STORY-1003: Returns distribution moments (2 pts) ✅ 2026-04-28 — `distributionMoments()` — mean, stdev, Fisher skewness, excess kurtosis, n.
+- [x] STORY-1004: Correlation matrix across watchlist (2 pts) ✅ 2026-04-28 — `correlationMatrix()` Pearson on log returns + heatmap UI on /stats.
+- [x] STORY-1005: Rolling z-score + Hurst exponent (2 pts) ✅ 2026-04-28 — `rollingZScore()` + `hurstExponent()` via R/S analysis; warns on small samples.
+- [x] STORY-1006: Stats tab UI (3 pts) ✅ 2026-04-28 — `src/pages/Stats.tsx` mounted at /stats — risk-adjusted StatCards row, returns histogram, drawdown chart, correlation heatmap.
+- [x] STORY-1007: Tests (1 pt) ✅ 2026-04-28 — 18 statistics tests + 12 portfolio tests + Stats/PortfolioOptimizer component tests.
+
+### Done — bonus scope (added mid-sprint per user request)
+- [x] STORY-1008: Modern Portfolio Theory module (5 pts) ✅ 2026-04-28 — `src/utils/portfolio.ts` — `computePortfolioStats`, `efficientFrontier`, `tangencyPortfolio`, `minimumVariancePortfolio`, `riskParityPortfolio`. Long-only fully-invested coordinate-descent solver.
+- [x] STORY-1009: Quantum-inspired simulated-annealing optimizer (3 pts) ✅ 2026-04-28 — `quantumAnnealPortfolio()` — Metropolis sweeps + tunneling jumps, exponential cooling, deterministic seeded PRNG. Honest framing in the UI: pure-JS, no quantum-hardware advantage at this scale.
+
+**Sprint 10 velocity:** 21 / 13 pts planned (+8 bonus MPT + quantum-annealer)
+**Cumulative:** 198 + 21 = 219 pts
+
+**Tests (frontend, vitest):** 244 passing across 45 files (up from 232 — +18 statistics, +12 portfolio, +4 component)
+**Frontend coverage:** 87.48% statements / 80.7% functions / 87.48% lines (clears the 80% threshold)
+**Typecheck:** `tsc --noEmit` clean
+**Blockers:** none
+
+### Honest scope notes
+
+**Quantum:** the "quantum-annealed" optimizer is a *quantum-inspired* SQA
+running in pure JavaScript. At 4-asset scale, classical solvers are faster
+and exact; the SQA earns its keep on non-convex objectives (cardinality
+constraints, lot sizes) where gradient methods get stuck. Real quantum
+hardware (D-Wave / IBM Qiskit) requires a backend service — filed as
+STORY-1201 for Sprint 12.
+
+**NIMCP integration:** investigated /home/bbrelin/nimcp — it ships a
+quantum-annealing module for neural-network weight optimization, not
+finance. The QUBO formulation of MPT *could* run through it via a C→WASM
+binding, but thats a multi-week project, not a Sprint 10 add-on. Filed
+
+---
+
+## Sprint 10 — Statistical Analytics + Modern Portfolio Theory | 2026-04-28
+
+> **Goal achieved:** Full statistical analytics surface (Sharpe/Sortino,
+> drawdown, distribution moments, correlation, rolling z, Hurst) plus
+> Modern Portfolio Theory (efficient frontier, tangency, min-variance,
+> risk parity) and a quantum-inspired simulated-annealing portfolio
+> optimizer. New /stats route on the sidebar.
+
+### Done
+- [x] STORY-1002: Sharpe/Sortino + max drawdown (3 pts) — `src/utils/statistics.ts riskAdjustedMetrics()`. Annualized via √365 (crypto), configurable risk-free rate (default 4% USD treasuries 2026).
+- [x] STORY-1003: Returns distribution moments (2 pts) — `distributionMoments()` — mean, stdev, Fisher skewness, excess kurtosis, n.
+- [x] STORY-1004: Correlation matrix across watchlist (2 pts) — `correlationMatrix()` Pearson on log returns + heatmap UI on /stats.
+- [x] STORY-1005: Rolling z-score + Hurst exponent (2 pts) — `rollingZScore()` + `hurstExponent()` via R/S analysis; warns on small samples.
+- [x] STORY-1006: Stats tab UI (3 pts) — `src/pages/Stats.tsx` mounted at /stats — risk-adjusted StatCards row, returns histogram, drawdown chart, correlation heatmap.
+- [x] STORY-1007: Tests (1 pt) — 18 statistics tests + 12 portfolio tests + Stats/PortfolioOptimizer component tests.
+
+### Done — bonus scope (added mid-sprint per user request)
+- [x] STORY-1008: Modern Portfolio Theory module (5 pts) — `src/utils/portfolio.ts` — `computePortfolioStats`, `efficientFrontier`, `tangencyPortfolio`, `minimumVariancePortfolio`, `riskParityPortfolio`. Long-only fully-invested coordinate-descent solver.
+- [x] STORY-1009: Quantum-inspired simulated-annealing optimizer (3 pts) — `quantumAnnealPortfolio()` — Metropolis sweeps + tunneling jumps, exponential cooling, deterministic seeded PRNG. Honest framing in the UI: pure-JS, no quantum-hardware advantage at this scale.
+
+**Sprint 10 velocity:** 21 / 13 pts planned (+8 bonus: MPT + quantum-annealer)
+**Cumulative:** 198 + 21 = 219 pts
+
+**Tests (frontend, vitest):** 244 passing across 45 files (up from 232)
+**Frontend coverage:** 87.48% statements / 80.7% functions (clears 80% threshold)
+**Typecheck:** tsc --noEmit clean
+**Blockers:** none
+
+### Honest scope notes
+
+The "quantum-annealed" optimizer is a quantum-inspired SQA running in pure
+JavaScript. At 4-asset scale, classical solvers are faster and exact; the
+SQA earns its keep on non-convex objectives (cardinality constraints, lot
+sizes). Real quantum hardware (D-Wave / IBM Qiskit) requires a backend
+service — filed as STORY-1201 for Sprint 12.
+
+NIMCP integration investigated under /home/bbrelin/nimcp — it ships a
+quantum-annealing module for neural-network weight optimization, not
+finance. The QUBO formulation of MPT could run through it via a C-to-WASM
+binding, but that is a multi-week project. Filed under Sprint 12 backlog.

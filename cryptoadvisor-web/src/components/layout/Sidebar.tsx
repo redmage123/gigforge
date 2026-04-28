@@ -18,6 +18,7 @@ const NAV_ITEMS: NavItem[] = [
   { path: '/transactions', label: 'Transactions', icon: '↕' },
   { path: '/watchlist', label: 'Watchlist', icon: '★' },
   { path: '/risk', label: 'Risk Calc', icon: '⚖' },
+  { path: '/stats', label: 'Statistics', icon: 'σ' },
 ]
 
 interface SidebarProps {

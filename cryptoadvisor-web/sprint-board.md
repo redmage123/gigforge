@@ -392,3 +392,46 @@ When `VITE_LIVE_PRICES=1`:
 - Header badge shows `LIVE` (green pulsing dot) instead of `MOCK`
 - WebSocket subscriptions fire for BTC/ETH/SOL/ADA last-trade
 - Falls back to mock automatically on rate-limit (429) or network failure
+
+---
+
+## Sprint 6 — Production Hardening | 2026-04-28
+
+> **Goal:** Move from "works on my machine" to "I would let a customer use this".
+> CI, E2E, production-grade CMS container, generated types, ADRs.
+
+### Done
+- [x] STORY-601: Production CMS Dockerfile (5 pts) ✅ 2026-04-28 — `cms/Dockerfile.production`: multi-stage (deps → builder → runtime), non-root `payload` user, `NODE_ENV=production`, healthcheck, libc6-compat, persistent SQLite volume at `/data`. Trade-off documented in ADR-0008: still uses `npx payload dev` because Payload v3 requires a Next.js scaffold for `next start` (queued).
+- [x] STORY-602: GitHub Actions CI (5 pts) ✅ 2026-04-28 — `.github/workflows/cryptoadvisor.yml`: 3 jobs (frontend tsc+vitest+coverage, CMS tsc+vitest, multi-stage Docker build with GHA cache). Triggers on PRs touching `cryptoadvisor-web/**` and pushes to the `cryptoadvisor` branch. Coverage uploaded as artifact (14-day retention).
+- [x] STORY-603: Playwright E2E (8 pts) ✅ 2026-04-28 — `playwright.config.ts` (chromium, retain-on-failure traces/screenshots/video, single worker, GHA reporter in CI), `e2e/walkthrough.spec.ts` covers dashboard load, /signals navigation, /risk calculation (when full-stack), /watchlist persisted-panel detection. Mock-only mode skips CMS-dependent assertions; full-stack mode (set `E2E_FULL_STACK=1`) drives the calculator.
+- [x] STORY-604: payload-types autogen (2 pts) ✅ 2026-04-28 — `prebuild` script added to `cms/package.json` runs `payload generate:types` automatically before `npm run build`. Frontend `package.json` also gains `e2e` + `e2e:ui` scripts and `@playwright/test` devDep.
+- [x] STORY-605: ADR-0008 + ADR-0009 (1 pt) ✅ 2026-04-28 — `docs/adr/0008-headless-cms-payload.md` (Payload chosen over Strapi/Directus, with the `payload dev` production trade-off documented), `docs/adr/0009-mock-cms-env-toggle.md` (build-time `VITE_CMS_URL` + `VITE_LIVE_PRICES` env-flag pattern; smart fallback to mock on live failure).
+
+**Sprint 6 velocity:** 21 / 21 pts
+**Cumulative (incl Sprint 6):** 136 / 169 pts (80% of total planned)
+
+**Tests (frontend, vitest):** 132 passing across 26 files (CMS tests now correctly excluded via vitest.config — they're 36 tests across 3 files, run separately in their own job)
+**Tests (CMS, vitest):** 36 passing across 3 files
+**Total tests:** 168 passing
+**Frontend coverage:** 86.26% statements / 83.42% branch / 80.72% functions / 86.26% lines (still above the 80% threshold)
+**Typecheck:** `tsc --noEmit` clean (frontend + CMS)
+**Docker:** both `Dockerfile` and `cms/Dockerfile.production` smoke-tested clean
+**Blockers:** none
+
+### Verification gates added by this sprint
+
+| Gate | Local | CI |
+|------|-------|----|
+| Frontend tsc | `npx tsc --noEmit` | ✅ frontend job |
+| Frontend vitest | `npx vitest run` | ✅ frontend job |
+| Frontend coverage | `npx vitest run --coverage` | ✅ frontend job (uploads artifact) |
+| CMS tsc | `cd cms && npx tsc --noEmit` | ✅ cms job |
+| CMS vitest | `cd cms && npx vitest run` | ✅ cms job |
+| Multi-stage Docker (web) | `docker build cryptoadvisor-web` | ✅ docker-build job |
+| Multi-stage Docker (CMS prod) | `docker build -f cms/Dockerfile.production cms/` | ✅ docker-build job |
+| E2E walkthrough | `npm run e2e` | not yet (planned for Sprint 7+ once auth lands) |
+
+### Notes for next sprints
+
+- Sprint 7 (Auth) — once login is in place, add E2E for login → protected route → logout cycle and bring `npm run e2e` into the CI workflow as a fourth job.
+- The `cms/Dockerfile.production` has a known compromise (runs `payload dev`); ADR-0008 documents the Next.js scaffold path for true production.

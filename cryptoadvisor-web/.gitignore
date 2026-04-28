@@ -15,3 +15,8 @@ Thumbs.db
 cms/*.sqlite
 cms/*.sqlite-journal
 cms/src/payload-types.ts
+
+# Playwright
+/playwright-report/
+/test-results/
+/.playwright/

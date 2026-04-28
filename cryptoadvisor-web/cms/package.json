@@ -8,7 +8,8 @@
     "build": "payload build",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "prebuild": "payload generate:types"
   },
   "dependencies": {
     "@libsql/client": "^0.14.0",

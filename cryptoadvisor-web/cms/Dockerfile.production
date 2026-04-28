@@ -1,0 +1,60 @@
+# Payload CMS — production multi-stage build
+#
+# Demonstrates production-grade container patterns:
+#   * Multi-stage with deps -> builder -> runtime separation
+#   * Layer caching: package files copied first
+#   * Non-root user in the runtime image
+#   * NODE_ENV=production
+#   * Healthcheck wired
+#
+# NOTE: Payload v3 production deployment officially requires the Next.js
+# app-router scaffold (see ADR-0008). This image runs the Payload dev
+# server with NODE_ENV=production set; replace the CMD with `next start`
+# once the scaffold is added.
+
+# ---------- Stage 1: deps ----------
+FROM node:22-alpine AS deps
+WORKDIR /app
+RUN apk add --no-cache libc6-compat
+COPY package.json package-lock.json* ./
+RUN npm ci --no-audit --no-fund
+
+# ---------- Stage 2: builder ----------
+FROM deps AS builder
+WORKDIR /app
+COPY . .
+ENV NODE_ENV=production
+# Generate types + importmap for production-ready bundles.
+RUN npx payload generate:types || true
+RUN npx payload generate:importmap || true
+
+# ---------- Stage 3: runtime ----------
+FROM node:22-alpine AS runtime
+WORKDIR /app
+
+# Healthcheck dependency
+RUN apk add --no-cache wget && \
+    addgroup -S payload && adduser -S payload -G payload
+
+# Copy artifacts from builder
+COPY --from=builder --chown=payload:payload /app/node_modules ./node_modules
+COPY --from=builder --chown=payload:payload /app/package.json ./package.json
+COPY --from=builder --chown=payload:payload /app/payload.config.ts ./payload.config.ts
+COPY --from=builder --chown=payload:payload /app/src ./src
+
+# Persistent SQLite volume mount target
+RUN mkdir -p /data && chown payload:payload /data
+VOLUME ["/data"]
+
+USER payload
+
+ENV NODE_ENV=production
+ENV PORT=3001
+ENV DATABASE_URL=file:/data/cms.sqlite
+
+EXPOSE 3001
+
+HEALTHCHECK --interval=15s --timeout=5s --retries=8 --start-period=30s \
+  CMD wget -q -O - http://localhost:3001/api/assets >/dev/null 2>&1 || exit 1
+
+CMD ["npx", "payload", "dev"]

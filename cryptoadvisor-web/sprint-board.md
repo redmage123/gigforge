@@ -538,3 +538,43 @@ Existing consumers reading `signal.asset` and `signal.timestamp` are
 untouched — the new fields are optional aliases. Future code should prefer
 `signal.assetSymbol` + `signal.generatedAt` for parity with CMS responses,
 and a future sprint can deprecate the old field names with a codemod.
+
+---
+
+## Sprint 9 — Technical Indicators (planned 2026-04-28) | 21 pts | epic GF-CRYPTO-062
+
+> **Goal:** Add real technical analysis to the platform: trend overlays, momentum
+> sub-panels, volatility headline cards, and a Donchian breakout detector that
+> feeds the Signals panel with rule-based BUY/SELL signals computed from actual
+> price data. Tie analytics surfaces back to indicator math so the platform
+> demonstrates real signal generation, not just rendered mock data.
+
+### Backlog
+- [ ] STORY-901: Indicator service module (3 pts) — GF-CRYPTO-063 — `src/utils/indicators.ts`: pure-function `sma`, `ema`, `rsi`, `macd`, `bollinger`, `atr`, `realizedVol`, `donchian`. Zero deps; outputs validated against TA-Lib reference.
+- [ ] STORY-902: SMA 20/50/200 overlay (3 pts) — GF-CRYPTO-064 — Toggle group above `CandlestickChart`; Recharts `Line` series; golden-cross / death-cross banner.
+- [ ] STORY-903: RSI sub-panel (3 pts) — GF-CRYPTO-065 — 100-px panel below the chart; RSI(14) line + 70/30 reference lines; period selector 7/14/21; color-coded fill.
+- [ ] STORY-904: MACD sub-panel + histogram (3 pts) — GF-CRYPTO-066 — Default (12, 26, 9); MACD line + signal line + histogram bars colored by sign; mark zero-line crossovers.
+- [ ] STORY-905: Bollinger Bands overlay (2 pts) — GF-CRYPTO-067 — SMA(20) ± 2σ as Recharts `Area` + `Line`; squeeze detection badge.
+- [ ] STORY-906: ATR + realized vol StatCards (2 pts) — GF-CRYPTO-068 — Two new Dashboard hero cards: ATR(14) absolute USD range; realized vol 30d annualized %.
+- [ ] STORY-907: Donchian breakout detector → Signals (3 pts) — GF-CRYPTO-069 — `src/utils/signalGenerator.ts`: emits BUY on close above 20-day high, SELL below 20-day low. Generated signals tagged `source: 'donchian'`, rendered alongside mock signals.
+- [ ] STORY-908: Tests for indicators + signal generator (2 pts) — GF-CRYPTO-070 — ≥3 reference values per indicator validated against TA-Lib outputs; signal generator golden-input test cases. ≥90% line coverage on both files.
+
+**Total:** 21 pts. Recommended ordering: 901 first (everything else depends on it), then 902-906 in parallel-friendly chunks, 907 after the indicator service is solid, 908 alongside each story's implementation.
+
+**Cumulative when Sprint 9 lands:** 169 (delivered) + 21 (planned) = 190 pts.
+
+### Why these specific indicators
+
+| Indicator | Why it matters here |
+|---|---|
+| SMA 20/50/200 + golden/death cross | Most-requested chart feature; trivial to compute; high visual payoff |
+| RSI | Already referenced in mock signal text — the analytics should match the marketing |
+| MACD | Pairs naturally with RSI; standard momentum reading for retail traders |
+| Bollinger Bands | Volatility regime indicator; squeeze detection is genuinely useful |
+| ATR + realized vol | Stop-loss sizing + headline-card material; one number each |
+| Donchian breakout | The high-impact one — closes the loop between Signals UI and real math |
+
+Indicator math lives in `src/utils/indicators.ts` so the same functions can be
+reused by the (planned) signal generator, the chart overlays, and any future
+backtesting surface. Per ADR-0009, this is mock-mode-friendly: indicators run
+on whatever price data the smart router serves (mock or live).

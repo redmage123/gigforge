@@ -3,6 +3,7 @@ import { Outlet, useLocation } from 'react-router'
 import Sidebar from './Sidebar'
 import Header from './Header'
 import MobileNav from './MobileNav'
+import ChatWidget from '../chat/ChatWidget'
 
 const PAGE_TITLES: Record<string, string> = {
   '/': 'Dashboard',
@@ -60,6 +61,8 @@ export default function AppLayout() {
         </main>
         <MobileNav />
       </div>
+
+      <ChatWidget />
     </div>
   )
 }

@@ -6,8 +6,8 @@ import {
   listAlertConfigs,
   listWatchlist,
   removeFromWatchlist,
-  DEMO_USER_ID,
 } from './userState'
+import { CmsAuthError } from './client'
 
 describe('userState — Watchlist CRUD', () => {
   beforeEach(() => {
@@ -17,7 +17,7 @@ describe('userState — Watchlist CRUD', () => {
     vi.unstubAllGlobals()
   })
 
-  test('listWatchlist scopes by demo userId', async () => {
+  test('listWatchlist sends no userId filter (server scopes by req.user)', async () => {
     ;(fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
       json: async () => ({ docs: [], totalDocs: 0 }),
@@ -25,16 +25,17 @@ describe('userState — Watchlist CRUD', () => {
 
     await listWatchlist()
     const url = (fetch as ReturnType<typeof vi.fn>).mock.calls[0][0] as string
-    expect(url).toMatch(/\/api\/watchlist\?where=/)
-    expect(decodeURIComponent(url)).toContain(`"userId":{"equals":"${DEMO_USER_ID}"}`)
+    expect(url).toMatch(/\/api\/watchlist\?limit=200$/)
+    const init = (fetch as ReturnType<typeof vi.fn>).mock.calls[0][1] as RequestInit
+    expect(init.credentials).toBe('include')
   })
 
-  test('addToWatchlist POSTs JSON', async () => {
+  test('addToWatchlist POSTs symbol+name only (userId set server-side)', async () => {
     ;(fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
       json: async () => ({
         id: 'wl-1',
-        userId: DEMO_USER_ID,
+        userId: 'srv-derived',
         symbol: 'BTC',
         name: 'Bitcoin',
         addedAt: '2026-04-28T00:00:00Z',
@@ -45,11 +46,10 @@ describe('userState — Watchlist CRUD', () => {
     expect(entry.symbol).toBe('BTC')
     const init = (fetch as ReturnType<typeof vi.fn>).mock.calls[0][1] as RequestInit
     expect(init.method).toBe('POST')
-    expect(JSON.parse(init.body as string)).toMatchObject({
-      symbol: 'BTC',
-      name: 'Bitcoin',
-      userId: DEMO_USER_ID,
-    })
+    expect(init.credentials).toBe('include')
+    const body = JSON.parse(init.body as string) as Record<string, unknown>
+    expect(body).toEqual({ symbol: 'BTC', name: 'Bitcoin' })
+    expect(body).not.toHaveProperty('userId')
   })
 
   test('removeFromWatchlist DELETEs by id', async () => {
@@ -65,6 +65,16 @@ describe('userState — Watchlist CRUD', () => {
     expect(url).toMatch(/\/api\/watchlist\/wl-1$/)
     expect(init.method).toBe('DELETE')
   })
+
+  test('listWatchlist throws CmsAuthError on 401', async () => {
+    ;(fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: false,
+      status: 401,
+      json: async () => ({ message: 'Unauthorized' }),
+    } as Response)
+
+    await expect(listWatchlist()).rejects.toBeInstanceOf(CmsAuthError)
+  })
 })
 
 describe('userState — AlertConfigs CRUD', () => {
@@ -75,22 +85,22 @@ describe('userState — AlertConfigs CRUD', () => {
     vi.unstubAllGlobals()
   })
 
-  test('listAlertConfigs scopes by demo userId', async () => {
+  test('listAlertConfigs sends no userId filter', async () => {
     ;(fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
       json: async () => ({ docs: [], totalDocs: 0 }),
     } as Response)
     await listAlertConfigs()
     const url = (fetch as ReturnType<typeof vi.fn>).mock.calls[0][0] as string
-    expect(url).toMatch(/\/api\/alertConfigs\?where=/)
+    expect(url).toMatch(/\/api\/alertConfigs\?limit=200$/)
   })
 
-  test('createAlertConfig defaults status=active', async () => {
+  test('createAlertConfig defaults status=active and omits userId', async () => {
     ;(fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
       json: async () => ({
         id: 'a-1',
-        userId: DEMO_USER_ID,
+        userId: 'srv-derived',
         asset: 'BTC',
         condition: 'above',
         threshold: 60_000,
@@ -102,13 +112,14 @@ describe('userState — AlertConfigs CRUD', () => {
     const entry = await createAlertConfig({ asset: 'BTC', condition: 'above', threshold: 60_000 })
     expect(entry.status).toBe('active')
     const init = (fetch as ReturnType<typeof vi.fn>).mock.calls[0][1] as RequestInit
-    expect(JSON.parse(init.body as string)).toMatchObject({
+    const body = JSON.parse(init.body as string) as Record<string, unknown>
+    expect(body).toEqual({
       asset: 'BTC',
       condition: 'above',
       threshold: 60_000,
       status: 'active',
-      userId: DEMO_USER_ID,
     })
+    expect(body).not.toHaveProperty('userId')
   })
 
   test('deleteAlertConfig DELETEs by id', async () => {

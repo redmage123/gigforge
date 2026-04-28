@@ -1,6 +1,7 @@
 import { NavLink } from 'react-router'
 import DataSourceBadge from '../DataSourceBadge'
 import LanguageSwitcher from '../LanguageSwitcher'
+import UserMenu from '../auth/UserMenu'
 
 interface NavItem {
   path: string
@@ -59,6 +60,7 @@ export default function Sidebar({ onClose }: SidebarProps) {
         </ul>
       </div>
 
+      <UserMenu />
       {/* Language switcher — pinned to sidebar bottom */}
       <div className="flex-shrink-0 border-t border-bg-border py-3">
         <LanguageSwitcher />

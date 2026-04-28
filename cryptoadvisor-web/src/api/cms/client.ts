@@ -19,15 +19,25 @@ export class CmsError extends Error {
   }
 }
 
+export class CmsAuthError extends CmsError {
+  constructor(message: string) {
+    super(401, null, message)
+    this.name = 'CmsAuthError'
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const url = `${CMS_BASE_URL}${path}`
-  const res = await fetch(url, init)
+  const res = await fetch(url, { ...init, credentials: 'include' })
   if (!res.ok) {
     let body: unknown = null
     try {
       body = await res.json()
     } catch {
       // ignore parse failure
+    }
+    if (res.status === 401) {
+      throw new CmsAuthError(`CMS 401: ${path}`)
     }
     throw new CmsError(res.status, body, `CMS ${res.status}: ${path}`)
   }

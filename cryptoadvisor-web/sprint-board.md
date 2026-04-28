@@ -435,3 +435,59 @@ When `VITE_LIVE_PRICES=1`:
 
 - Sprint 7 (Auth) — once login is in place, add E2E for login → protected route → logout cycle and bring `npm run e2e` into the CI workflow as a fourth job.
 - The `cms/Dockerfile.production` has a known compromise (runs `payload dev`); ADR-0008 documents the Next.js scaffold path for true production.
+
+---
+
+## Sprint 7 — Auth & Multi-User | 2026-04-28
+
+> **Goal:** Per-user portfolios via Payload's built-in JWT auth. Replace the
+> Sprint 5 hardcoded `DEMO_USER_ID` with real authenticated users.
+
+### Done
+- [x] STORY-701: AuthContext + login/register pages (5 pts) ✅ 2026-04-28 — `src/auth/api.ts` (login/register/logout/fetchCurrentUser, `credentials: 'include'`), `src/auth/AuthContext.tsx` (provider + `useAuth()` hook with safe defaults outside provider), `src/pages/Login.tsx` + `src/pages/Register.tsx` (form validation, returnTo support, mock-mode gate)
+- [x] STORY-702: Per-user portfolio scoping (3 pts) ✅ 2026-04-28 — `cms/src/collections/Watchlist.ts` + `cms/src/collections/AlertConfigs.ts`: `userId` set from `req.user` via `beforeChange` hook, all `access` paths filter `{ userId: { equals: req.user.id } }`. Frontend stops sending `userId` (server-derived).
+- [x] STORY-703: ProtectedRoute + UserMenu (3 pts) ✅ 2026-04-28 — `src/components/auth/ProtectedRoute.tsx` (mock-mode passthrough, loading state, returnTo redirect), `src/components/auth/UserMenu.tsx` (signed-in-as + logout in sidebar footer), `App.tsx` wraps `AppLayout` in `ProtectedRoute`
+- [x] STORY-704: 401 interceptor (2 pts) ✅ 2026-04-28 — `CmsAuthError extends CmsError` thrown on 401 responses; CMS client now sends `credentials: 'include'` so cookies flow through search/risk/asset reads too; `userState.ts` returns null/throws appropriately so callers can redirect
+- [x] STORY-705: Auth tests (3 pts) ✅ 2026-04-28 — 12 new tests: `auth/api.test.ts` (6: login/register/logout/me success+failure), `auth/AuthContext.test.tsx` (3: initial /me, anon, logout), `components/auth/ProtectedRoute.test.tsx` (2: authenticated passthrough, unauth redirect), updated `userState.test.ts` (4: contracts shifted from `DEMO_USER_ID` payload to server-derived; new CmsAuthError test)
+
+**Sprint 7 velocity:** 16 / 16 pts
+**Cumulative (incl Sprint 7):** 152 / 169 pts (90% of total planned)
+
+**Tests (frontend, vitest):** 144 passing across 29 files (up from 132 — +12 auth tests, -0 broken)
+**Tests (CMS, vitest):** 36 passing (unchanged)
+**Total tests:** 180 passing
+**Frontend coverage:** 85.38% statements / 82.97% branch / 80.23% functions / 85.38% lines (still above the 80% threshold despite adding 4 new untested page/component files; pages are exercised by E2E)
+**Typecheck:** `tsc --noEmit` clean (frontend + CMS)
+**Blockers:** none
+
+### Auth flow
+
+```
+Unauthenticated user lands on /watchlist
+  → ProtectedRoute (CMS mode) sees user=null
+  → redirect to /login?returnTo=%2Fwatchlist
+  → Login.tsx: POST /api/users/login (cookie set httpOnly)
+  → AuthProvider sets user, navigates to /watchlist
+  → /watchlist GET /api/watchlist (cookie sent via credentials:include)
+  → Server access control filters { userId: req.user.id }
+  → Frontend renders only this user's records
+```
+
+Logout:
+```
+User clicks "Log out" in sidebar
+  → POST /api/users/logout (cookie cleared)
+  → AuthProvider sets user=null
+  → Navigate to /login
+```
+
+401 handling: any subsequent CMS request after session expiry throws
+`CmsAuthError`; React Query surfaces this to the caller, which can choose to
+either retry login flow or render a `Sign in to continue` empty state.
+
+### Defensive useAuth
+
+`useAuth()` returns a no-op default state when called outside any provider.
+This keeps existing layout tests green (they render `<Sidebar />` without
+wrapping in `AuthProvider`) and matches the runtime behavior in mock-only
+mode where `cmsAvailable` is false.

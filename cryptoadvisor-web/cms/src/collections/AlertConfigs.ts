@@ -1,26 +1,44 @@
 import type { CollectionConfig } from 'payload'
 
 /**
- * User-configured price alerts.
+ * Per-user price-alert configurations (Sprint 7 scoping).
  *
- * Distinct from the in-memory `Alert` interface in src/types/index.ts on the
- * frontend, which is read-only mock data. This collection stores the user's
- * own alert rules persisted across sessions.
+ * `userId` is set from `req.user` on create; all read/write paths are
+ * filtered to the authenticated user.
  */
 export const AlertConfigs: CollectionConfig = {
   slug: 'alertConfigs',
   access: {
-    read: () => true,
-    create: () => true,
-    update: () => true,
-    delete: () => true,
+    create: ({ req }) => Boolean(req.user),
+    read: ({ req }) => {
+      if (!req.user) return false
+      return { userId: { equals: req.user.id } }
+    },
+    update: ({ req }) => {
+      if (!req.user) return false
+      return { userId: { equals: req.user.id } }
+    },
+    delete: ({ req }) => {
+      if (!req.user) return false
+      return { userId: { equals: req.user.id } }
+    },
+  },
+  hooks: {
+    beforeChange: [
+      ({ req, operation, data }) => {
+        if (operation === 'create' && req.user) {
+          return { ...data, userId: req.user.id }
+        }
+        return data
+      },
+    ],
   },
   admin: {
     useAsTitle: 'asset',
     defaultColumns: ['asset', 'condition', 'threshold', 'status', 'userId'],
   },
   fields: [
-    { name: 'userId', type: 'text', required: true, defaultValue: 'demo-user', index: true },
+    { name: 'userId', type: 'text', required: true, index: true },
     { name: 'asset', type: 'text', required: true, index: true },
     {
       name: 'condition',

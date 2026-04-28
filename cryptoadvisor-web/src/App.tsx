@@ -1,5 +1,8 @@
 import { createBrowserRouter } from 'react-router'
 import AppLayout from './components/layout/AppLayout'
+import ProtectedRoute from './components/auth/ProtectedRoute'
+import Login from './pages/Login'
+import Register from './pages/Register'
 import Dashboard    from './pages/Dashboard'
 import Portfolio    from './pages/Portfolio'
 import Charts       from './pages/Charts'
@@ -10,8 +13,10 @@ import Watchlist      from './pages/Watchlist'
 import RiskCalculator from './pages/RiskCalculator'
 
 export const router = createBrowserRouter([
+  { path: '/login',    element: <Login /> },
+  { path: '/register', element: <Register /> },
   {
-    element: <AppLayout />,
+    element: <ProtectedRoute><AppLayout /></ProtectedRoute>,
     children: [
       { index: true,           element: <Dashboard /> },
       { path: '/portfolio',    element: <Portfolio /> },

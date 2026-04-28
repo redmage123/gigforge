@@ -16,6 +16,8 @@ import Backtest       from './pages/Backtest'
 import Options        from './pages/Options'
 import OrderBookPage  from './pages/OrderBookPage'
 import FeedSettings   from './pages/FeedSettings'
+import Sentiment      from './pages/Sentiment'
+import OnChain        from './pages/OnChain'
 
 export const router = createBrowserRouter([
   { path: '/login',    element: <Login /> },
@@ -36,6 +38,8 @@ export const router = createBrowserRouter([
       { path: '/options',      element: <Options /> },
       { path: '/orderbook',    element: <OrderBookPage /> },
       { path: '/feeds',        element: <FeedSettings /> },
+      { path: '/sentiment',    element: <Sentiment /> },
+      { path: '/onchain',      element: <OnChain /> },
       {
         path: '*',
         element: (

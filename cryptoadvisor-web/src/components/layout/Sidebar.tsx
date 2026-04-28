@@ -23,6 +23,8 @@ const NAV_ITEMS: NavItem[] = [
   { path: '/orderbook', label: 'Order Book', icon: '☰' },
   { path: '/options', label: 'Options', icon: 'Ω' },
   { path: '/feeds', label: 'Data Feeds', icon: '⚙' },
+  { path: '/sentiment', label: 'Sentiment', icon: '☺' },
+  { path: '/onchain', label: 'On-Chain', icon: '⛓' },
 ]
 
 interface SidebarProps {

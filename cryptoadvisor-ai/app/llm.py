@@ -48,21 +48,27 @@ async def generate(
     max_tokens: int = 1024,
     stream: bool = False,
 ) -> str:
-    """Single-shot non-streaming completion. Returns the response string."""
+    """Single-shot non-streaming completion. Returns the response string.
+
+    Routes through /api/chat with think=False so reasoning-tuned Gemma
+    variants (which silently swallow tokens into a hidden "thinking" field
+    on /api/generate) actually emit a visible answer.
+    """
     payload = {
         "model": model or settings.gemma_model_chat,
-        "prompt": prompt,
+        "messages": [{"role": "user", "content": prompt}],
         "stream": False,
+        "think": False,
         "options": {"temperature": temperature, "num_predict": max_tokens},
     }
     async with httpx.AsyncClient(timeout=120) as client:
         r = await client.post(
-            f"{settings.gemma_host}/api/generate",
+            f"{settings.gemma_host}/api/chat",
             headers=_headers(),
             json=payload,
         )
         r.raise_for_status()
-        return r.json().get("response", "")
+        return r.json().get("message", {}).get("content", "")
 
 
 async def chat_stream(
@@ -77,6 +83,7 @@ async def chat_stream(
         "model": model or settings.gemma_model_chat,
         "messages": messages,
         "stream": True,
+        "think": False,
         "options": {"temperature": temperature, "num_predict": max_tokens},
     }
     async with httpx.AsyncClient(timeout=None) as client:

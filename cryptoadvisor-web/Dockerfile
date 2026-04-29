@@ -8,7 +8,9 @@ RUN pnpm install --frozen-lockfile || pnpm install
 # Stage 2: builder
 FROM deps AS builder
 ARG VITE_CMS_URL=""
+ARG VITE_AI_URL=""
 ENV VITE_CMS_URL=$VITE_CMS_URL
+ENV VITE_AI_URL=$VITE_AI_URL
 COPY . .
 RUN pnpm build
 

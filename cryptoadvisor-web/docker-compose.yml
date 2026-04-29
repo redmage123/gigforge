@@ -5,7 +5,7 @@ services:
       context: ./cms
       dockerfile: Dockerfile
     ports:
-      - "3001:3001"
+      - "4101:3001"
     environment:
       DATABASE_URL: file:/data/cms.sqlite
       PAYLOAD_SECRET: ${PAYLOAD_SECRET:-change-me-in-dev}
@@ -20,18 +20,44 @@ services:
       start_period: 30s
     restart: unless-stopped
 
+  ai:
+    build:
+      context: ../cryptoadvisor-ai
+      dockerfile: Dockerfile
+    network_mode: host
+    environment:
+      CA_AI_GEMMA_HOST: ${CA_AI_GEMMA_HOST:-http://127.0.0.1:11435}
+      CA_AI_GEMMA_TOKEN: ${CA_AI_GEMMA_TOKEN:-}
+      CA_AI_GEMMA_MODEL_CHAT: ${CA_AI_GEMMA_MODEL_CHAT:-gemma-4-e4b-base:latest}
+      CA_AI_GEMMA_MODEL_EXPLAIN: ${CA_AI_GEMMA_MODEL_EXPLAIN:-gemma-4-e4b-base:latest}
+      CA_AI_GEMMA_MODEL_EMBED: ${CA_AI_GEMMA_MODEL_EMBED:-nomic-embed-text:latest}
+      CA_AI_CORS_ORIGINS: ${CA_AI_CORS_ORIGINS:-http://localhost:3000,http://localhost:5173,http://176.9.99.103:3000}
+    volumes:
+      - ai-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:4103/healthz', timeout=2).status==200 else 1)\""]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 20s
+    restart: unless-stopped
+
   web:
     build:
       context: .
       dockerfile: Dockerfile
       args:
-        VITE_CMS_URL: ${VITE_CMS_URL:-http://localhost:3001}
+        VITE_CMS_URL: ${VITE_CMS_URL:-http://176.9.99.103:4101}
+        VITE_AI_URL: ${VITE_AI_URL:-http://176.9.99.103:4103}
     ports:
-      - "3000:80"
+      - "4102:80"
     depends_on:
       cms:
-        condition: service_healthy
+        condition: service_started
+      ai:
+        condition: service_started
     restart: unless-stopped
 
 volumes:
   cms-data:
+  ai-data:

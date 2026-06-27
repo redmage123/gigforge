@@ -69,6 +69,7 @@ expands.
 - **Cyber or physical attack** — critical national infrastructure is a target.
 - **Supply-chain / vendor disruption** — edge hardware, radar, satellite.
 - **Environmental constraints** — protected-area issues forcing site changes.
+- **Untrusted AI supply chain** — Chinese-built/untrusted model weights (excluded by policy; see R20).
 
 ---
 
@@ -103,6 +104,7 @@ schedule workstreams (WS-A…R).
 | R17 | Operational / people | **Local skills gap** / staffing for sovereign operation | 3×3 | Medium | Training & Capacity-Building Plan; train-the-trainer; academic partnerships; phased localization | Low | WS-R |
 | R18 | Political | Administration change / mandate continuity | 2×4 | Medium | BOO asset ownership; essential-service status; contractual term protections | Medium | WS-A |
 | R19 | Program | Execution complexity across 18 workstreams | 3×3 | Medium | Phase gates; PMO; critical-path focus; change control; consolidated risk reviews | Low | WS-A |
+| R20 | Security / supply chain | **AI model provenance** — untrusted or Chinese-built model weights | 2×4 | Medium | Policy: trusted, **non-Chinese** models only; provenance + integrity verification (Data Governance §6); applies to edge ensemble and hub | Low | WS-J |
 
 ---
 

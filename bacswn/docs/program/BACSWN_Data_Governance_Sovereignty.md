@@ -4,8 +4,9 @@
 **Classification:** CONFIDENTIAL — For Authorized Recipients Only
 **Prepared for:** Owner & CEO, BACSWN (private delivery partner) / Ministry of Transport & Aviation
 **Prepared by:** Sky Miles Limited — AI Elevate Division
-**Version:** 1.0 — June 2026
+**Version:** 1.1 — June 2026
 **Companion to:** Mesh Architecture Master Plan (BACSWN-MARCH-2026-002, esp. §4.4 cryptography and §8 integration)
+**Change log:** v1.1 adds the trusted AI supply-chain clause (no Chinese-built models) in §6.
 
 ---
 
@@ -81,6 +82,10 @@ governed by Bahamian data-protection law (§6).
 - **ICAO/WMO** data-exchange and security guidance for aviation/meteorological data.
 - Alignment with the security standards in Architecture §4.4.9 (**FIPS 140-3, NIST SP 800-53, IEC
   62443**).
+- **Trusted AI supply chain:** all AI/ML models used anywhere in BACSWN (the edge 2-of-3 ensemble and
+  any hub-side models) must be from **trusted, non-Chinese sources** — no Chinese-built model weights or
+  training pipelines — with **documented provenance and integrity verification**. This protects
+  national-security data and aligns with US/allied (FAA/NORAD) interoperability.
 
 ---
 

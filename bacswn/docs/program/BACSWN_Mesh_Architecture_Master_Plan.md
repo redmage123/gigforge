@@ -4,9 +4,9 @@
 **Classification:** CONFIDENTIAL — For Authorized Recipients Only
 **Prepared for:** Owner & CEO, BACSWN (private delivery partner)
 **Prepared by:** Sky Miles Limited — AI Elevate Division
-**Version:** 1.7 — June 2026
+**Version:** 1.9 — June 2026
 **Supersedes/extends:** BACSWN-ARCH-2026-001 (Distributed Intelligence Architecture Whitepaper)
-**Change log:** v1.7 adds **Annex A — RF Link Budgets** (VHF link budgets, radio-horizon analysis, and the engineering basis for the satellite-critical remote edge). v1.6 references the Master V&V and ICD Plan (BACSWN-VV-2026-006), which governs the per-station acceptance in §11 and the interface contracts across §4, §8, and §9. v1.5 adds **hub disaster recovery / control-plane redundancy** (§4.5) and **lightning, grounding & corrosion** hardening (§7.7); references the new O&M Plan (BACSWN-OM-2026-004) and Data Governance & Sovereignty Policy (BACSWN-GOV-2026-005). v1.4 names the primary radar as **Raytheon** equipment at designated radar towers (§8.8, cross-ref to Schedule WS-P) and adds **Tomorrow.io** space-based-radar weather ingestion (§4.3). v1.3 adds a sensing & response extensions section — distributed IoT sensor network and drone/UAS technology (§9). v1.2 extends §8 with commercial & military airspace surveillance (§8.8) and external/U.S. interoperability (§8.9). v1.1 added three mandated baselines — Category 4/5 hurricane survivability (§7), full end-to-end cryptographic security (§4.4), and emergency-services / inter-agency integration (§8) — with matching hardware, standards, and acceptance updates.
+**Change log:** v1.9 adds the **trusted model supply-chain** constraint — no Chinese-built models (§4.1). v1.8 specifies the tower edge AI as a **multimodal model** (trained on weather + relevant data) running a **2-of-3 model-consensus ensemble** before autonomous action (§4.1), distinct from the multi-station consensus; notes the resulting Orin NX 16GB compute baseline. v1.7 adds **Annex A — RF Link Budgets** (VHF link budgets, radio-horizon analysis, and the engineering basis for the satellite-critical remote edge). v1.6 references the Master V&V and ICD Plan (BACSWN-VV-2026-006), which governs the per-station acceptance in §11 and the interface contracts across §4, §8, and §9. v1.5 adds **hub disaster recovery / control-plane redundancy** (§4.5) and **lightning, grounding & corrosion** hardening (§7.7); references the new O&M Plan (BACSWN-OM-2026-004) and Data Governance & Sovereignty Policy (BACSWN-GOV-2026-005). v1.4 names the primary radar as **Raytheon** equipment at designated radar towers (§8.8, cross-ref to Schedule WS-P) and adds **Tomorrow.io** space-based-radar weather ingestion (§4.3). v1.3 adds a sensing & response extensions section — distributed IoT sensor network and drone/UAS technology (§9). v1.2 extends §8 with commercial & military airspace surveillance (§8.8) and external/U.S. interoperability (§8.9). v1.1 added three mandated baselines — Category 4/5 hurricane survivability (§7), full end-to-end cryptographic security (§4.4), and emergency-services / inter-agency integration (§8) — with matching hardware, standards, and acceptance updates.
 
 ---
 
@@ -80,11 +80,26 @@ the hub and to designated relay peers. The hub coordinates but does not gate sta
 | Layer | Component | Responsibility |
 |-------|-----------|----------------|
 | L5 — Application | **Station Agent** | Local reasoning, microclimate prediction, anomaly/hazard detection, consensus participation, local alert decisions. |
-| L4 — Edge AI Runtime | **ONNX / TFLite inference** | Runs per-station microclimate models (temp/pressure/wind/visibility), anomaly detectors, and nowcasting; models tuned to each site's history. |
+| L4 — Edge AI Runtime | **Multimodal models + 2-of-3 ensemble** | Runs the on-node multimodal model (sensor time-series + radar/satellite imagery + METAR/text) for microclimate prediction, anomaly detection, and nowcasting; a **2-of-3 model-consensus ensemble** must agree before any autonomous correction/action. Trained on weather + site history; updated via signed OTA. |
 | L3 — Mesh Protocol Stack | **Transport + routing** | Distance-vector routing optimized for low-bandwidth radio; store-and-forward; transport abstraction over VHF / cellular / satellite. |
 | L2 — Data & State | **Local time-series + event store** | Ring-buffered observations, alert log, peer-link health, signed message journal for store-and-forward replay. |
 | L1 — Sensor & Radio HAL | **Hardware abstraction** | Drivers for the sensor suite (temperature, pressure, wind, humidity, visibility, ceilometer) and the three radios. |
 | L0 — Platform | **Hardened Linux on Jetson Orin** | Read-only root, watchdog, secure boot, OTA-updatable firmware with A/B rollback. |
+
+**Multimodal edge model & on-node consensus.** Each tower's decision model is **multimodal** — it fuses
+heterogeneous inputs (numeric sensor time-series, the Tomorrow.io space-based and Raytheon primary-radar
+imagery, and METAR/text) — and is **trained on weather and other relevant domain data** (site
+microclimate history, ERA5 normals). To make safe correction decisions, the node runs **three
+independent models** and requires a **2-of-3 majority** before acting — a triple-modular-redundancy /
+Byzantine-tolerant approach at the *inference* layer. This on-node model consensus is distinct from, and
+complementary to, the **multi-station** consensus in §4.2: one guards against a bad *model*, the other
+against a bad *station*. Running the multimodal ensemble drives the per-node compute baseline up to a
+Jetson **Orin NX 16GB** (with AGX Orin / independent triple-module options for higher assurance — see the
+Edge AI Node Hardware Budget, BACSWN-HWB-2026-009). Models are versioned and updated via signed OTA (§4.4.5). **Trusted model supply chain:** all
+models — base weights and fine-tunes — must come from **trusted, non-Chinese sources** (no
+Chinese-built model weights or training pipelines), with documented provenance and integrity
+verification, consistent with the system's sovereignty and US/allied interoperability posture
+(§4.4, §8.9; policy in BACSWN-GOV-2026-005).
 
 ### 4.2 Mesh Protocol
 

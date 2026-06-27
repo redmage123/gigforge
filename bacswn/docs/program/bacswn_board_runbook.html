@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<style>
+  @page { size: A4; margin: 13mm 13mm 11mm 13mm; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body { font-family: "Helvetica Neue", Arial, sans-serif; color:#1c2b39; font-size:10px; line-height:1.4; }
+  .page-break { page-break-before: always; }
+
+  .masthead { background: linear-gradient(110deg,#0b2545 0%,#13315c 55%,#0a9396 140%); color:#fff; padding:15px 17px 13px; border-radius:8px; }
+  .masthead .kicker { text-transform:uppercase; letter-spacing:2.4px; font-size:8px; color:#94d2bd; font-weight:700; }
+  .masthead h1 { margin:4px 0 1px; font-size:23px; }
+  .masthead h1 span { color:#ee9b00; }
+  .masthead .sub { font-size:10px; color:#cfe3ee; max-width:84%; }
+  .masthead .meta { margin-top:8px; font-size:7.8px; color:#9fc7d8; letter-spacing:0.3px; }
+
+  .lead { font-size:10.3px; color:#2a3b4d; margin:10px 0 2px; }
+  .lead strong { color:#0b2545; }
+
+  .stats { display:flex; gap:7px; margin:9px 0 4px; }
+  .stat { flex:1; background:#0b2545; color:#fff; border-radius:7px; padding:8px 6px; text-align:center; }
+  .stat .n { font-size:16px; font-weight:800; color:#94d2bd; line-height:1; }
+  .stat .l { font-size:7.2px; text-transform:uppercase; letter-spacing:0.4px; color:#cfe3ee; margin-top:3px; }
+
+  h2 { font-size:11px; text-transform:uppercase; letter-spacing:1.1px; color:#0b2545; margin:12px 0 6px; padding-bottom:3px; border-bottom:2px solid #0a9396; }
+
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:8px 13px; }
+  .card { border-left:3px solid #0a9396; padding:1px 0 2px 9px; }
+  .card .t { font-weight:700; color:#0b2545; font-size:10px; }
+  .card .t .tag { color:#0a9396; font-weight:700; }
+  .card .d { color:#46586a; font-size:9.1px; margin-top:1px; }
+
+  .closing { margin-top:11px; background:linear-gradient(100deg,#0a9396,#0b2545); color:#fff; border-radius:8px; padding:11px 14px; }
+  .closing .b { font-size:9.8px; color:#eaf5f1; }
+  .closing .b strong { color:#fff; }
+
+  .foot { margin-top:9px; font-size:7.4px; color:#8499a8; text-align:center; border-top:1px solid #e2e9ee; padding-top:5px; }
+</style>
+</head>
+<body>
+
+  <!-- ============== PAGE 1 ============== -->
+  <div class="masthead">
+    <div class="kicker">Board Runbook &nbsp;•&nbsp; Technology Highlights &nbsp;•&nbsp; Confidential</div>
+    <h1>BACSWN <span>SkyWatch Bahamas</span></h1>
+    <div class="sub">The core technologies behind a sovereign, AI-operated meteorological watch, airspace surveillance, and emergency-response network for the Commonwealth of The Bahamas.</div>
+    <div class="meta">Prepared by Sky Miles Limited — AI Elevate Division &nbsp;•&nbsp; For the BACSWN Board &nbsp;•&nbsp; June 2026</div>
+  </div>
+
+  <p class="lead">BACSWN turns 15 island weather stations into a network of <strong>intelligent, self-reliant agents</strong> that sense, predict, warn, and coordinate the national response — and keep working through the strongest hurricanes, even when the central hub or an entire island is cut off. The technologies below are what make that possible.</p>
+
+  <div class="stats">
+    <div class="stat"><div class="n">15</div><div class="l">Intelligent stations</div></div>
+    <div class="stat"><div class="n">3</div><div class="l">Independent comms layers</div></div>
+    <div class="stat"><div class="n">40 TOPS</div><div class="l">Edge AI per station</div></div>
+    <div class="stat"><div class="n">42</div><div class="l">Alert channels</div></div>
+  </div>
+
+  <h2>Core platform technologies</h2>
+  <div class="grid">
+    <div class="card"><div class="t">Autonomous AI mesh network</div><div class="d">15 weather stations that reason locally and reach consensus with their neighbors — continuing to sense, predict, and warn even if the hub or an island goes dark.</div></div>
+    <div class="card"><div class="t">Triple-layer resilient communications</div><div class="d">Every station runs three independent links — a licensed <span class="tag">VHF radio mesh</span>, cellular, and hurricane-proof <span class="tag">Iridium satellite</span> — with automatic failover so no station is ever silenced.</div></div>
+    <div class="card"><div class="t">Category 4/5-survivable hardware</div><div class="d">Towers, enclosures, and power engineered to ride through the strongest hurricanes (Dorian-class), with the satellite link as the guaranteed lifeline.</div></div>
+    <div class="card"><div class="t">Edge artificial intelligence</div><div class="d">On-site <span class="tag">NVIDIA Jetson</span> processors run microclimate prediction and anomaly detection, continuously self-correcting forecasts against what actually happens.</div></div>
+    <div class="card"><div class="t">End-to-end cryptographic security</div><div class="d">Hardware root-of-trust, national PKI, and encrypted, signed messaging on every link and device — <span class="tag">FIPS-grade</span>, with a post-quantum upgrade path.</div></div>
+    <div class="card"><div class="t">Commercial + military airspace surveillance</div><div class="d">Tracks every aircraft in the Bahamas FIR by fusing ADS-B with <span class="tag">Raytheon primary radar</span> — covering military and non-cooperative traffic, not just airliners.</div></div>
+  </div>
+
+  <div class="foot">BACSWN — Bahamas Aviation, Climate &amp; Severe Weather Network &nbsp;•&nbsp; Technology Highlights &nbsp;•&nbsp; CONFIDENTIAL &nbsp;•&nbsp; Page 1 of 2</div>
+
+  <!-- ============== PAGE 2 ============== -->
+  <div class="page-break"></div>
+
+  <h2>Data, sensing &amp; response technologies</h2>
+  <div class="grid">
+    <div class="card"><div class="t">Tomorrow.io space-based weather radar</div><div class="d">Integrates commercial satellite weather radar to see storms forming over open ocean, where ground-based radar cannot reach.</div></div>
+    <div class="card"><div class="t">Carbon-emissions tracking (CORSIA)</div><div class="d">Calculates per-flight CO&#8322; to the ICAO <span class="tag">CORSIA</span> standard — turning the same overflight data into automated carbon accounting.</div></div>
+    <div class="card"><div class="t">Emergency-services integration</div><div class="d">A shared <span class="tag">Common Operating Picture</span> and standards-based (CAP/EDXL) alerting connect NEMA, Police, Fire &amp; Rescue, the Defence Force / Coast Guard, and the shelter system.</div></div>
+    <div class="card"><div class="t">IoT sensor network</div><div class="d">Low-power <span class="tag">LoRaWAN</span> sensors densify coverage with street-level rain, flood, storm-surge, and lightning detection feeding the AI.</div></div>
+    <div class="card"><div class="t">Autonomous drones (UAS)</div><div class="d">Drones for post-storm survey, search-and-rescue, and emergency comms relay — safely deconflicted using BACSWN's own live air picture.</div></div>
+    <div class="card"><div class="t">International interoperability</div><div class="d">Built to exchange data with ICAO systems and, in a future phase, U.S. agencies — NOAA / National Hurricane Center, FAA Miami Oceanic, and NORAD.</div></div>
+  </div>
+
+  <h2>How it fits together</h2>
+  <p class="lead">A single layer of <strong>airspace surveillance feeds three missions at once</strong>: aviation safety, carbon-emissions accounting, and overflight monitoring. The same mesh that carries weather warnings also drives <strong>emergency coordination</strong> across every Bahamian response agency. And because the survival core of every station is engineered to outlast a Category 5 storm, the network is at its most valuable precisely when the country needs it most.</p>
+
+  <div class="closing">
+    <div class="b">Together these technologies make BACSWN a <strong>sovereign, AI-operated safety network</strong> — protecting Bahamian lives, airspace, and infrastructure, and continuing to operate when conventional systems fail.</div>
+  </div>
+
+  <div class="foot">BACSWN — Bahamas Aviation, Climate &amp; Severe Weather Network &nbsp;•&nbsp; Sky Miles Limited — AI Elevate Division &nbsp;•&nbsp; CONFIDENTIAL &nbsp;•&nbsp; Page 2 of 2</div>
+
+</body>
+</html>

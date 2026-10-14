@@ -21,6 +21,8 @@ RUN ln -s /usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js /usr/loca
 ENV DISABLE_AUTOUPDATER=1
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+# Sentiment analysis needs the VADER lexicon at import time (one-line RUN: no heredoc, works with any builder)
+RUN python -c "import nltk; nltk.download('vader_lexicon', download_dir='/usr/local/share/nltk_data')"
 COPY . .
 COPY --from=frontend /build/../static/react ./static/react
 RUN mkdir -p data

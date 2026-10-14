@@ -134,6 +134,8 @@ body {
 
 .topbar-right {
     position: relative;
+    display: flex;
+    align-items: center;
 }
 
 .user-menu-btn {

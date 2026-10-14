@@ -91,6 +91,7 @@ from api.sidebar_prefs import router as sidebar_prefs_router
 from api.sentiment_advisor import router as sentiment_advisor_router
 from api.memory import router as memory_router
 from api.search import router as search_router
+from api.in_play import router as in_play_router
 
 # Auth router (JSON API)
 from routers.auth import router as auth_router
@@ -141,6 +142,10 @@ async def lifespan(app: FastAPI):
     register_task(scan_all_sources, interval_seconds=900, name="news_scanner")
     register_task(check_sentiment_alerts, interval_seconds=300, name="sentiment_alerts")
     register_task(cleanup_expired, interval_seconds=3600, name="rag_cleanup")
+
+    # In-play scanner: volume spike + outsized daily candle across Binance USDT pairs
+    from services.in_play import scan_in_play
+    register_task(scan_in_play, interval_seconds=900, name="in_play_scanner")
 
     # Start WebSocket price feed
     asyncio.create_task(price_manager.start_price_feed())
@@ -227,6 +232,7 @@ app.include_router(sidebar_prefs_router, prefix="/api/sidebar", tags=["sidebar"]
 app.include_router(sentiment_advisor_router, prefix="/api/sentiment-advisor", tags=["sentiment-advisor"])
 app.include_router(memory_router, prefix="/api/memory", tags=["memory"])
 app.include_router(search_router, prefix="/api/search", tags=["search"])
+app.include_router(in_play_router, prefix="/api/in-play", tags=["in-play"])
 
 # Auth API router
 app.include_router(auth_router, prefix="/api/auth", tags=["auth"])

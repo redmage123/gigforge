@@ -11,6 +11,7 @@ const navSections = [
     label: 'Markets',
     items: [
       { path: '/', label: 'Dashboard', icon: '\uD83D\uDCCA' },
+      { path: '/notifications', label: 'In-Play', icon: '\uD83D\uDE80' },
       { path: '/technical', label: 'Technical', icon: '\uD83D\uDCC8' },
       { path: '/sentiment', label: 'Sentiment', icon: '\uD83D\uDCAC' },
       { path: '/correlation', label: 'Correlation', icon: '\uD83D\uDD17' },

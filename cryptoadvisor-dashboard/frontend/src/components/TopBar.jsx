@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
+import NotificationBell from './NotificationBell'
 
 function TopBar({ onStartGuide }) {
   const { user, logout } = useAuth()
@@ -38,6 +39,7 @@ function TopBar({ onStartGuide }) {
         <h1 className="topbar-title">CryptoAdvisor</h1>
       </div>
       <div className="topbar-right" ref={menuRef}>
+        <NotificationBell />
         <button
           className="guide-help-btn"
           onClick={onStartGuide}

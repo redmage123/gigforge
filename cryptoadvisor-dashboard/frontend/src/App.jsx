@@ -15,6 +15,7 @@ const Analytics = lazy(() => import('./pages/Analytics'))
 const Portfolio = lazy(() => import('./pages/Portfolio'))
 const Wallet = lazy(() => import('./pages/Wallet'))
 const Alerts = lazy(() => import('./pages/Alerts'))
+const Notifications = lazy(() => import('./pages/Notifications'))
 const Trades = lazy(() => import('./pages/Trades'))
 const Tax = lazy(() => import('./pages/Tax'))
 const DeFi = lazy(() => import('./pages/DeFi'))
@@ -139,6 +140,7 @@ function App() {
               <Route path="portfolio" element={<Portfolio />} />
               <Route path="wallet" element={<Wallet />} />
               <Route path="alerts" element={<Alerts />} />
+              <Route path="notifications" element={<Notifications />} />
               <Route path="trades" element={<Trades />} />
               <Route path="tax" element={<Tax />} />
               <Route path="defi" element={<DeFi />} />

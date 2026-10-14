@@ -273,25 +273,13 @@ async def chat(req: ChatRequest, request: Request):
     prompt_parts.append(req.message)
     augmented_prompt = "\n\n---\n\n".join(prompt_parts)
 
+    from services.claude_cli import run_claude
     try:
-        proc = await asyncio.create_subprocess_exec(
-            "claude",
-            "--mcp-config", "/home/bbrelin/.claude/empty-mcp.json",
-            "--model", "sonnet",
-            "-p", augmented_prompt,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            env={k: v for k, v in os.environ.items() if k != "CLAUDECODE"},
-        )
-        stdout, stderr = await proc.communicate()
+        result = await run_claude(augmented_prompt)
+        if not result.ok:
+            return JSONResponse(status_code=502, content={"error": f"Claude CLI error: {result.text}"})
 
-        if proc.returncode != 0:
-            return JSONResponse(
-                status_code=502,
-                content={"error": f"Claude CLI error: {stderr.decode().strip()}"},
-            )
-
-        response_text = stdout.decode().strip()
+        response_text = result.text
 
         # Background: extract facts from this exchange and store them
         if username and req.message.strip():
@@ -301,11 +289,6 @@ async def chat(req: ChatRequest, request: Request):
             asyncio.create_task(_extract_and_store_facts(username, conversation))
 
         return {"response": response_text}
-    except FileNotFoundError:
-        return JSONResponse(
-            status_code=502,
-            content={"error": "Claude CLI not found. Ensure 'claude' is on PATH."},
-        )
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 

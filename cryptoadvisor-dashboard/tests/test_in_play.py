@@ -227,3 +227,39 @@ class TestAiSummary:
         cat = {"found": True, "headlines": [HEADLINE]}
         with patch.dict("os.environ", {}, clear=True):
             assert asyncio.run(in_play_news.summarize_catalyst(_entry(cat), cat)) is cat
+
+
+class TestClaudeCli:
+    def test_run_claude_flags_and_success(self):
+        from services import claude_cli
+
+        proc = SimpleNamespace(returncode=0, communicate=AsyncMock(return_value=(b"  4 \n", b"")))
+        with patch.object(claude_cli.asyncio, "create_subprocess_exec", AsyncMock(return_value=proc)) as spawn:
+            res = asyncio.run(claude_cli.run_claude("2+2?", system="terse"))
+        assert res == claude_cli.ClaudeResult(True, "4")
+        args = spawn.call_args.args
+        assert args[:3] == ("claude", "-p", "2+2?")
+        assert args[args.index("--tools") + 1] == "" and "--system-prompt" in args
+        assert "/home/bbrelin" not in " ".join(args)  # no machine-specific paths
+        assert spawn.call_args.kwargs["cwd"] == claude_cli._WORKDIR
+
+    def test_run_claude_reports_auth_errors(self):
+        from services import claude_cli
+
+        proc = SimpleNamespace(returncode=1, communicate=AsyncMock(return_value=(b"Invalid API key", b"")))
+        with patch.object(claude_cli.asyncio, "create_subprocess_exec", AsyncMock(return_value=proc)):
+            res = asyncio.run(claude_cli.run_claude("hi"))
+        assert not res.ok and "Invalid API key" in res.text
+        with patch.object(claude_cli.asyncio, "create_subprocess_exec", AsyncMock(return_value=proc)):
+            assert asyncio.run(claude_cli.ask_claude("hi")).startswith("Error:")
+
+    def test_summary_uses_cli_when_token_set(self):
+        from services import claude_cli
+
+        cat = {"found": False, "headlines": [HEADLINE], "coin_name": "Abc"}
+        run = AsyncMock(return_value=claude_cli.ClaudeResult(True, "ABC was listed on a major exchange."))
+        with patch.dict("os.environ", {"CLAUDE_CODE_OAUTH_TOKEN": "t"}, clear=True), \
+                patch.object(claude_cli, "run_claude", run):
+            out = asyncio.run(in_play_news.summarize_catalyst(_entry(cat), cat))
+        assert out["found"] and out["ai_summary"].startswith("ABC was listed")
+        assert run.call_args.kwargs["system"] == in_play_news._SYSTEM

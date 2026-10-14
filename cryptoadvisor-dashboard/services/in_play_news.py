@@ -11,7 +11,7 @@ import anthropic
 import feedparser
 import httpx
 
-from services import news_scanner
+from services import claude_cli, news_scanner
 
 logger = logging.getLogger(__name__)
 
@@ -185,7 +185,47 @@ _SYSTEM = (
 
 
 def ai_enabled() -> bool:
-    return bool(os.getenv("ANTHROPIC_API_KEY"))
+    return bool(os.getenv("ANTHROPIC_API_KEY") or os.getenv("CLAUDE_CODE_OAUTH_TOKEN"))
+
+
+def _apply_verdict(catalyst: dict, text: str) -> dict:
+    text = text.strip()
+    if not text:
+        return catalyst
+    if text.startswith(NO_CATALYST):
+        return {**catalyst, "found": False, "ai_summary": None, "ai_verdict": "none"}
+    return {**catalyst, "found": True, "ai_summary": text, "ai_verdict": "catalyst"}
+
+
+async def _summarize_via_cli(entry: dict, prompt: str) -> str | None:
+    result = await claude_cli.run_claude(prompt, system=_SYSTEM)
+    if not result.ok:
+        logger.warning("in_play: Claude CLI summary failed for %s: %s", entry["base"], result.text)
+        return None
+    return result.text
+
+
+async def _summarize_via_api(entry: dict, prompt: str) -> str | None:
+    try:
+        client = anthropic.AsyncAnthropic(timeout=60.0)
+        response = await client.beta.messages.create(
+            model=AI_MODEL,
+            max_tokens=2000,
+            system=_SYSTEM,
+            output_config={"effort": "low"},
+            betas=["server-side-fallback-2026-07-01"],
+            fallbacks="default",
+            messages=[{"role": "user", "content": prompt}],
+        )
+    except anthropic.AuthenticationError:
+        logger.warning("in_play: Anthropic API key rejected; skipping AI summaries")
+        return None
+    except anthropic.APIError as exc:
+        logger.warning("in_play: AI summary failed for %s: %s", entry["base"], exc)
+        return None
+    if response.stop_reason == "refusal":
+        return None
+    return " ".join(b.text for b in response.content if b.type == "text")
 
 
 async def summarize_catalyst(entry: dict, catalyst: dict) -> dict:
@@ -203,28 +243,9 @@ async def summarize_catalyst(entry: dict, catalyst: dict) -> dict:
         f"volume {entry['volume_ratio']:.1f}x and range {entry['range_ratio']:.1f}x the 60-day average.\n\n"
         f"Headlines:\n{listing}"
     )
-    try:
-        client = anthropic.AsyncAnthropic(timeout=60.0)
-        response = await client.beta.messages.create(
-            model=AI_MODEL,
-            max_tokens=2000,
-            system=_SYSTEM,
-            output_config={"effort": "low"},
-            betas=["server-side-fallback-2026-07-01"],
-            fallbacks="default",
-            messages=[{"role": "user", "content": prompt}],
-        )
-    except anthropic.AuthenticationError:
-        logger.warning("in_play: Anthropic API key rejected; skipping AI summaries")
-        return catalyst
-    except anthropic.APIError as exc:
-        logger.warning("in_play: AI summary failed for %s: %s", entry["base"], exc)
-        return catalyst
-    if response.stop_reason == "refusal":
-        return catalyst
-    text = " ".join(b.text for b in response.content if b.type == "text").strip()
-    if not text:
-        return catalyst
-    if text.startswith(NO_CATALYST):
-        return {**catalyst, "found": False, "ai_summary": None, "ai_verdict": "none"}
-    return {**catalyst, "found": True, "ai_summary": text, "ai_verdict": "catalyst"}
+    # Prefer the Claude CLI (subscription token); use the API directly only with an API key alone
+    if os.getenv("CLAUDE_CODE_OAUTH_TOKEN"):
+        text = await _summarize_via_cli(entry, prompt)
+    else:
+        text = await _summarize_via_api(entry, prompt)
+    return _apply_verdict(catalyst, text) if text else catalyst

@@ -289,6 +289,9 @@ async def _ensure_catalysts(client: httpx.AsyncClient, candidates: dict[str, dic
         cat = c.get("catalyst")
         stale = cat and c["candle_forming"] and now - cat.get("checked_at", 0) > CATALYST_REFRESH_S
         if cat and not stale:
+            # News already fetched before AI was switched on: summarize without re-fetching
+            if in_play_news.ai_enabled() and "ai_verdict" not in cat and cat["headlines"]:
+                c["catalyst"] = await in_play_news.summarize_catalyst(c, cat)
             continue
         cat = await in_play_news.find_catalyst(client, c["base"], c["candle_date"])
         c["catalyst"] = await in_play_news.summarize_catalyst(c, cat)

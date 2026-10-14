@@ -342,26 +342,14 @@ async def extract_facts_from_conversation(conversation: list[dict]) -> list[dict
 
     prompt = _EXTRACTION_TEMPLATE.format(conversation=conv_text)
 
-    # Shell out to Claude directly to avoid sanitize_claude_prompt stripping
-    # characters needed for the JSON format in the extraction prompt
-    import os
-    env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            "claude", "--mcp-config", "/home/bbrelin/.claude/empty-mcp.json",
-            "--model", "sonnet", "-p", prompt,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            env=env,
-        )
-        stdout, stderr = await proc.communicate()
-        if proc.returncode != 0:
-            logger.warning("Fact extraction CLI error: %s", stderr.decode().strip())
-            return []
-        response = stdout.decode().strip()
-    except Exception as e:
-        logger.warning("Fact extraction failed: %s", e)
+    # run_claude (not ask_claude) so sanitize_claude_prompt doesn't strip characters
+    # needed for the JSON format in the extraction prompt
+    from services.claude_cli import run_claude
+    result = await run_claude(prompt)
+    if not result.ok:
+        logger.warning("Fact extraction CLI error: %s", result.text)
         return []
+    response = result.text
 
     try:
         match = re.search(r'\[.*\]', response, re.DOTALL)

@@ -17,7 +17,7 @@ PORT = int(os.getenv("PORT", "8060"))
 _jwt_secret = os.getenv("JWT_SECRET", "")
 if not _jwt_secret:
     if os.getenv("TESTING"):
-        _jwt_secret = "test-secret-not-for-production"
+        _jwt_secret = os.getenv("TEST_JWT_SECRET", "test-secret-not-for-production")  # nosec B105
     else:
         raise ValueError(
             "JWT_SECRET environment variable is required. "
@@ -93,6 +93,9 @@ NWS_API_URL = "https://api.weather.gov"
 
 TOMORROW_API_KEY = os.getenv("TOMORROW_API_KEY", "")
 TOMORROW_API_URL = "https://api.tomorrow.io/v4"
+
+# ── Anthropic (AI SIGMET generation / chat) ─────────────────────────────
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 
 # ── Cache TTLs (seconds) ───────────────────────────────────────────────
 CACHE_TTL_METAR = 120       # 2 minutes

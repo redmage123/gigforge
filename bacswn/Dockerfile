@@ -12,17 +12,20 @@ RUN apt-get update && apt-get install -y curl && \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Frontend build
+# Pre-warm MetPy: build the matplotlib font cache and download the station
+# tables now so the first METAR parse at runtime is fast and offline-safe.
+RUN python -c "from metpy.io.metar import parse_metar; parse_metar('MYNN 011200Z 09012KT 9999 BKN045 30/24 Q1016', 2026, 1)" || true
+
+# Copy backend first
+COPY . .
+
+# Frontend build AFTER backend copy — so it overwrites any stale static/react/
 COPY frontend/package*.json frontend/
 RUN cd frontend && npm install
-
-COPY frontend/ frontend/
 RUN cd frontend && npm run build && \
     mkdir -p /app/static/react && \
+    rm -rf /app/static/react/* && \
     cp -r dist/* /app/static/react/
-
-# Backend
-COPY . .
 
 EXPOSE 8060
 

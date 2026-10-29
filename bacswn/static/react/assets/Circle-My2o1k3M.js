@@ -1,0 +1,1 @@
+import{b as i,l,a as s,e as u}from"./TileLayer-DuDHV39P.js";function d(t,e,n){e.center!==n.center&&t.setLatLng(e.center),e.radius!=null&&e.radius!==n.radius&&t.setRadius(e.radius)}const C=i(function({center:e,children:n,...a},r){const c=new l.Circle(e,a);return s(c,u(r,{overlayContainer:c}))},d);export{C};

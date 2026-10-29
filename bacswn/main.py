@@ -8,6 +8,7 @@ Built by AI Elevate for the Bahamas Aviation, Climate and Severe Weather Network
 
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -45,6 +46,8 @@ from api.chat import router as chat_router
 from api.hurricane import router as hurricane_router
 from api.mesh import router as mesh_router
 from api.simulation import router as simulation_router
+from api.verification import router as verification_router
+from api.climatology import router as climatology_router
 
 # ── Logging ─────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -80,6 +83,43 @@ async def lifespan(app: FastAPI):
     # Start periodic agents
     await orchestrator.run_periodic_agents()
     logger.info("7 AI agents initialized")
+
+    # ── Forecast verification ───────────────────────────────────────────
+    # Skipped under TESTING so the suite never makes live network calls or
+    # spawns background tasks inside the lifespan test harness.
+    if not os.getenv("TESTING"):
+        from services import forecast_verification as fv
+        from services import forecast_correction as fc
+        from services.scheduler import register_task
+
+        fc.load_registry()
+
+        from services import climatology as cl
+
+        async def _seed_verification():
+            try:
+                await fv.ensure_seeded()
+                # Train bias-correction models once data exists (also refreshes the
+                # cached scoreboard). If models already exist, just populate the cache.
+                if not fc.has_models():
+                    await fc.train_correctors()
+                else:
+                    await fc.refresh_scoreboard()
+                # Build ERA5 climate normals once (persisted; skip if present).
+                await cl.ensure_built()
+            except Exception as e:
+                logger.error(f"Forecast verification seed/train failed: {e}")
+
+        # Populate the scoreboard in the background so startup is never blocked.
+        asyncio.create_task(_seed_verification())
+        # Capture forecasts hourly; match against observations every 10 minutes;
+        # retrain bias-correction models every 6 hours.
+        register_task(fv.capture_forecasts, 3600, "fv-capture")
+        register_task(fv.match_pending, 600, "fv-match")
+        register_task(fc.train_correctors, 21600, "fv-train")
+        # Hourly: fill any climate-normal stations missed due to API rate limits.
+        register_task(cl.ensure_built, 3600, "climatology-fill")
+        logger.info("Forecast verification engine initialized")
 
     # ── WebSocket broadcast tasks ───────────────────────────────────────
     async def _broadcast_flights():
@@ -132,6 +172,13 @@ async def lifespan(app: FastAPI):
 
     logger.info("BACSWN shutting down...")
 
+    # Shutdown: close any open httpx clients
+    from services import opensky_client, awc_client
+    if opensky_client._client is not None:
+        await opensky_client._client.aclose()
+    if awc_client._client is not None:
+        await awc_client._client.aclose()
+
 
 # ── FastAPI App ─────────────────────────────────────────────────────────
 app = FastAPI(
@@ -173,6 +220,8 @@ app.include_router(chat_router, prefix="/api/chat", tags=["chat"])
 app.include_router(hurricane_router, prefix="/api/hurricane", tags=["hurricane"])
 app.include_router(mesh_router, prefix="/api/mesh", tags=["mesh"])
 app.include_router(simulation_router, prefix="/api/simulation", tags=["simulation"])
+app.include_router(verification_router, prefix="/api/verification", tags=["verification"])
+app.include_router(climatology_router, prefix="/api/climatology", tags=["climatology"])
 
 
 # ── React SPA catch-all ─────────────────────────────────────────────────

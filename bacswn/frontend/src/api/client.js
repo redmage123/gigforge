@@ -117,4 +117,22 @@ export const api = {
   // Simulations
   simulationScenarios: () => request('/api/simulation/scenarios'),
   simulationRun: (id, step) => request('/api/simulation/run/' + id + '?step=' + step),
+
+  // Forecast Verification
+  verificationScoreboard: (windowHours) => request('/api/verification/scoreboard?window_hours=' + (windowHours || 168)),
+  verificationStations: (windowHours) => request('/api/verification/stations?window_hours=' + (windowHours || 168)),
+  verificationWarnings: (windowHours) => request('/api/verification/warnings?window_hours=' + (windowHours || 168)),
+  verificationStation: (id, windowHours) => request('/api/verification/station/' + id + '?window_hours=' + (windowHours || 168)),
+
+  // Climatology (ERA5 30-year normals)
+  climatologyNormals: (station) => request('/api/climatology/normals' + (station ? '?station=' + station : '')),
+
+  // Operations briefing
+  briefing: () => request('/api/verification/briefing'),
+  verificationTimeseries: (station, variable, leadH) =>
+    request('/api/verification/timeseries?station=' + (station || 'MYNN') + '&variable=' + (variable || 'temp_c') + '&lead_h=' + (leadH || 6)),
+  verificationMeta: () => request('/api/verification/meta'),
+  verificationCorrection: (windowHours) => request('/api/verification/correction?window_hours=' + (windowHours || 720)),
+  verificationCapture: () => request('/api/verification/capture', { method: 'POST' }),
+  verificationBackfill: (days) => request('/api/verification/backfill?days=' + (days || 7), { method: 'POST' }),
 }

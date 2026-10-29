@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import { MapContainer, TileLayer, Marker, Popup, Polygon, Polyline, Circle, useMap } from 'react-leaflet'
+import { MapContainer, TileLayer, Marker, Popup, Polygon, Polyline, Circle, Tooltip, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import { api } from '../api/client'
 import { usePolling } from '../hooks/usePolling'
@@ -390,6 +390,18 @@ export default function CommandCenter() {
   const { data, loading } = usePolling(useCallback(() => api.mapLayers(), []), 15000)
   const { data: summary } = usePolling(useCallback(() => api.dashboardSummary(), []), 30000)
   const alertWs = useWebSocket('alerts')
+  const sigmetWs = useWebSocket('sigmets')
+  const [simSigmets, setSimSigmets] = useState([])
+
+  useEffect(() => {
+    if (sigmetWs.lastMessage && sigmetWs.lastMessage.type === 'new_sigmet') {
+      setSimSigmets(prev => {
+        const s = sigmetWs.lastMessage.sigmet
+        const active = prev.filter(x => x.id !== s.id && x.valid_to > new Date().toISOString())
+        return [...active, s]
+      })
+    }
+  }, [sigmetWs.lastMessage])
   const playAlert = useAlertSound()
 
   // State for layer toggles
@@ -403,7 +415,20 @@ export default function CommandCenter() {
   const flights = data?.flights || []
   const stations = data?.stations || []
   const firPolygon = data?.fir_polygon || []
-  const sigmets = data?.sigmets || []
+  const apiSigmets = data?.sigmets || []
+  const sigmets = [...apiSigmets, ...simSigmets.map(s => ({
+    hazard: s.hazard_type || 'TS',
+    hazard_name: s.hazard_name || s.hazard_type || 'SIGMET',
+    severity: s.severity || 'moderate',
+    raw_text: s.raw_text || '',
+    valid_from: s.valid_from || '',
+    valid_to: s.valid_to || '',
+    area: s.area || '',
+    fl_base: s.fl_base || 0,
+    fl_top: s.fl_top || 450,
+    source: 'simulation',
+    description: s.description || '',
+  }))]
   const hurricanes = data?.hurricanes || []
 
   const firLatLngs = firPolygon.map(([lon, lat]) => [lat, lon])

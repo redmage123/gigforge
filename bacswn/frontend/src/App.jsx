@@ -22,11 +22,13 @@ const AgentConsole = lazy(() => import('./pages/AgentConsole'))
 const HurricaneOps = lazy(() => import('./pages/HurricaneOps'))
 const MeshNetwork = lazy(() => import('./pages/MeshNetwork'))
 const Simulations = lazy(() => import('./pages/Simulations'))
+const Verification = lazy(() => import('./pages/Verification'))
 const Login = lazy(() => import('./pages/Login'))
 
 const NAV_ITEMS = [
   { path: '/', icon: '🎯', label: 'Command Center' },
   { path: '/watch-office', icon: '🌤️', label: 'Watch Office' },
+  { path: '/verification', icon: '📈', label: 'Forecast Skill' },
   { path: '/flights', icon: '✈️', label: 'Flight Operations' },
   { path: '/emissions', icon: '🌱', label: 'Carbon & Emissions' },
   { path: '/emergency', icon: '🚨', label: 'Emergency Response' },
@@ -155,6 +157,7 @@ export default function App() {
               <Route path="hurricane" element={<HurricaneOps />} />
               <Route path="mesh" element={<MeshNetwork />} />
               <Route path="simulations" element={<Simulations />} />
+              <Route path="verification" element={<Verification />} />
             </Route>
           </Routes>
         </Suspense>

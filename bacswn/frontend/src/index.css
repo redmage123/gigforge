@@ -963,3 +963,10 @@ input:focus, select:focus, textarea:focus {
     font-size: 13px;
   }
 }
+
+
+/* Fix zoom controls clipped by border-radius */
+.leaflet-control-zoom {
+  margin-top: 16px !important;
+  margin-left: 12px !important;
+}

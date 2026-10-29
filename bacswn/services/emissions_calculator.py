@@ -42,7 +42,9 @@ def estimate_airspace_emissions(flights: list[dict], transit_time_hours: float =
     flight_emissions = []
 
     for flight in flights:
-        category = flight.get("category", "medium")
+        raw_cat = flight.get("category", "medium")
+        cat_map = {5: "heavy", 6: "heavy", 7: "heavy", 4: "large", 3: "medium", 2: "small", 1: "light", 0: "medium"}
+        category = cat_map.get(raw_cat, raw_cat) if isinstance(raw_cat, int) else raw_cat
         em = calculate_flight_emissions(category, transit_time_hours)
         total_fuel += em["fuel_burn_kg"]
         total_co2 += em["co2_kg"]

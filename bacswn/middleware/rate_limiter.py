@@ -21,6 +21,11 @@ class RateLimiter(BaseHTTPMiddleware):
         hits = self._buckets.get(client_ip, [])
         hits = [t for t in hits if now - t < self.window]
 
+        # Evict stale IPs — if bucket is now empty, remove the key entirely
+        if not hits and client_ip in self._buckets:
+            del self._buckets[client_ip]
+            return await call_next(request)
+
         if len(hits) >= self.max_requests:
             return JSONResponse(status_code=429, content={"error": "Rate limit exceeded"})
 

@@ -71,3 +71,16 @@ async def ws_alerts(websocket: WebSocket, token: str | None = Query(default=None
             await websocket.receive_text()
     except WebSocketDisconnect:
         ws_manager.disconnect(websocket, "alerts")
+
+
+@router.websocket("/sigmets")
+async def ws_sigmets(websocket: WebSocket, token: str | None = Query(default=None)):
+    """WebSocket feed for live SIGMET updates (including simulation-generated)."""
+    if not await _authenticate_ws(websocket, token):
+        return
+    await ws_manager.connect(websocket, "sigmets")
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        ws_manager.disconnect(websocket, "sigmets")

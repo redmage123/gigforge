@@ -1,0 +1,106 @@
+name: BACSWN CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  backend:
+    name: Backend — pytest + coverage
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Run tests with coverage
+        env:
+          TESTING: "1"
+          JWT_SECRET: "ci-test-secret-not-for-production-use"
+        run: pytest
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-xml
+          path: coverage.xml
+
+  lint:
+    name: Lint — ruff + black
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install linters
+        run: pip install ruff black
+
+      - name: ruff check
+        run: ruff check . --exclude frontend,debug_*.py,generate_*.py
+
+      - name: black check
+        run: black --check . --exclude "/(frontend|\.venv|debug_|generate_)/"
+
+  frontend:
+    name: Frontend — build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+
+  docker:
+    name: Docker — build image
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    needs: [backend, frontend]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            --build-arg BUILDKIT_INLINE_CACHE=1 \
+            -t bacswn:ci-${{ github.sha }} \
+            .
+
+      - name: Verify non-root user
+        run: |
+          USER=$(docker inspect --format='{{.Config.User}}' bacswn:ci-${{ github.sha }})
+          if [ -z "$USER" ] || [ "$USER" = "root" ]; then
+            echo "WARNING: Container runs as root — consider adding a non-root USER in Dockerfile"
+          else
+            echo "Container user: $USER ✓"
+          fi

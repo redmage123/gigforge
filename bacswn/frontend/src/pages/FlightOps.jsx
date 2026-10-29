@@ -2,6 +2,10 @@ import { useState, useCallback, useRef, useEffect } from 'react'
 import { MapContainer, TileLayer, Polygon, useMap } from 'react-leaflet'
 import { api } from '../api/client'
 import { usePolling } from '../hooks/usePolling'
+import { Bar, Doughnut } from 'react-chartjs-2'
+import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, ArcElement, Title, Tooltip as ChartTooltip, Legend } from 'chart.js'
+
+ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, Title, ChartTooltip, Legend)
 
 // ─── Aircraft category color ──────────────────────────────────────────
 const getCatColor = (category) => {
@@ -188,10 +192,15 @@ function FlightCanvas({ flights, onSelect }) {
 // ─── Main component ───────────────────────────────────────────────────
 export default function FlightOps() {
   const { data: flightData, loading } = usePolling(useCallback(() => api.liveFlights(), []), 10000)
+  const { data: statsData } = usePolling(useCallback(() => api.flightStats(), []), 30000)
   const { data: mapData } = usePolling(useCallback(() => api.mapLayers(), []), 30000)
   const [selected, setSelected] = useState(null)
 
-  const flights = flightData?.flights || []
+  const flights = (flightData?.flights || []).map(f => ({
+    ...f,
+    lat: f.lat || f.latitude,
+    lon: f.lon || f.longitude,
+  }))
   const firRaw = mapData?.fir_polygon || []
   const firPolygon = firRaw.length > 0
     ? firRaw.map(([lon, lat]) => [lat, lon])
@@ -272,58 +281,33 @@ export default function FlightOps() {
 
         {/* Selected aircraft panel */}
         <div style={{ width: 260, flexShrink: 0 }}>
-          {selected ? (
-            <div className="card" style={{ borderLeft: '3px solid ' + getCatColor(selected.category) }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: 18 }}>{selected.callsign?.trim() || selected.icao24}</div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>
-                    <span style={{ color: getCatColor(selected.category) }}>●</span> {CAT_LABEL[getCatColor(selected.category)]}
-                  </div>
-                </div>
-                <button onClick={() => setSelected(null)}
-                  style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 20 }}>×</button>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 12px', fontSize: 13 }}>
-                {[
-                  ['Country', selected.origin_country],
-                  ['Altitude', selected.baro_altitude ? 'FL' + Math.round(selected.baro_altitude * 3.281 / 100).toString().padStart(3, '0') : selected.altitude ? Math.round(selected.altitude * 3.281).toLocaleString() + ' ft' : 'GND'],
-                  ['Speed', selected.velocity ? Math.round(selected.velocity * 1.944) + ' kt' : '—'],
-                  ['Track', selected.track || selected.true_track ? Math.round(selected.track || selected.true_track) + '°' : '—'],
-                  ['V/S', selected.vertical_rate ? (selected.vertical_rate > 0 ? '+' : '') + Math.round(selected.vertical_rate * 196.85) + ' fpm' : '—'],
-                  ['Status', selected.on_ground ? 'On Ground' : 'Airborne'],
-                ].map(([label, value]) => (
-                  <div key={label}>
-                    <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{label}</div>
-                    <div style={{ fontWeight: 600, marginTop: 1 }}>{value}</div>
-                  </div>
-                ))}
-              </div>
-              <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border)', fontSize: 11, color: 'var(--text-muted)', fontFamily: 'monospace' }}>
-                {selected.icao24}
-              </div>
+          {/* Charts dashboard */}
+          <div className="card" style={{ marginBottom: 12 }}>
+            <div className="card-header"><h3>By Country</h3></div>
+            <div style={{ height: 180, padding: 8 }}>
+              <Doughnut data={{
+                labels: Object.keys(statsData?.by_country || {}).slice(0, 8),
+                datasets: [{ data: Object.values(statsData?.by_country || {}).slice(0, 8),
+                  backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#a855f7', '#06b6d4', '#ec4899', '#94a3b8'],
+                  borderWidth: 0 }]
+              }} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: '#94a3b8', font: { size: 10 } } } } }} />
             </div>
-          ) : (
-            <div className="card" style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-muted)' }}>
-              <div style={{ fontSize: 36, marginBottom: 12 }}>✈</div>
-              <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>Select an Aircraft</div>
-              <div style={{ fontSize: 12 }}>Click any aircraft on the map to view details</div>
-              <div style={{ marginTop: 20, textAlign: 'left' }}>
-                {[
-                  ['#3b82f6', 'Commercial — Large/heavy'],
-                  ['#10b981', 'Private/GA — Small/light'],
-                  ['#ef4444', 'Military'],
-                  ['#f59e0b', 'Rotorcraft'],
-                  ['#94a3b8', 'Unknown'],
-                ].map(([color, label]) => (
-                  <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, fontSize: 12 }}>
-                    <div style={{ width: 10, height: 10, borderRadius: 2, background: color, flexShrink: 0 }} />
-                    <span style={{ color: 'var(--text-secondary)' }}>{label}</span>
-                  </div>
-                ))}
-              </div>
+          </div>
+          <div className="card" style={{ marginBottom: 12 }}>
+            <div className="card-header"><h3>Altitude Distribution</h3></div>
+            <div style={{ height: 180, padding: 8 }}>
+              {(() => {
+                const ab = statsData?.altitude_bands || {}
+                return <Bar data={{
+                  labels: ['Ground', 'Low (<3km)', 'Medium (3-8km)', 'High (8-12km)', 'Cruise (>12km)'],
+                  datasets: [{ label: 'Flights', data: [ab.ground || 0, ab.low || 0, ab.medium || 0, ab.high || 0, ab.cruise || 0],
+                    backgroundColor: ['#94a3b8', '#10b981', '#3b82f6', '#f59e0b', '#ef4444'],
+                    borderRadius: 6 }]
+                }} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { ticks: { color: '#94a3b8', font: { size: 10 } } }, y: { ticks: { color: '#64748b' }, grid: { color: '#1e293b' } } } }} />
+              })()}
             </div>
-          )}
+          </div>
+
         </div>
       </div>
 
@@ -370,7 +354,7 @@ export default function FlightOps() {
                 const color = getCatColor(f.category)
                 const isSelected = selected?.icao24 === f.icao24
                 return (
-                  <tr key={f.icao24} onClick={() => setSelected(f)} style={{
+                  <tr key={f.icao24} onClick={() => setSelected(f)} style={{ cursor: 'pointer',
                     cursor: 'pointer',
                     background: isSelected ? color + '15' : undefined,
                   }}>
@@ -399,6 +383,54 @@ export default function FlightOps() {
           </table>
         </div>
       </div>
+
+      {/* Flight info popup — page level overlay */}
+      {selected && (
+        <div onClick={() => setSelected(null)} style={{
+          position: 'fixed', inset: 0, zIndex: 9999,
+          background: 'rgba(0,0,0,0.5)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <div onClick={e => e.stopPropagation()} style={{
+            background: 'var(--bg-card, #1e293b)', border: '1px solid var(--border, #334155)',
+            borderRadius: 12, padding: 24, minWidth: 380, maxWidth: 480,
+            boxShadow: '0 20px 60px rgba(0,0,0,0.6)',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 22 }}>{selected.callsign?.trim() || selected.icao24}</div>
+                <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 3 }}>
+                  {selected.airline || 'Unknown airline'}
+                  {selected.aircraft_type ? ' • ' + selected.aircraft_type : ''}
+                </div>
+              </div>
+              <button onClick={() => setSelected(null)}
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 24, lineHeight: 1 }}>×</button>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px 20px', fontSize: 13 }}>
+              {[
+                ['Airline', selected.airline || '—'],
+                ['Aircraft', selected.aircraft_type || '—'],
+                ['Registration', selected.registration || '—'],
+                ['Route', selected.route || '—'],
+                ['Origin', selected.origin_country || '—'],
+                ['ICAO24', selected.icao24],
+                ['Altitude', selected.baro_altitude ? 'FL' + Math.round(selected.baro_altitude * 3.281 / 100).toString().padStart(3, '0') : 'GND'],
+                ['Ground Speed', selected.velocity ? Math.round(selected.velocity * 1.944) + ' kt' : '—'],
+                ['Heading', (selected.track || selected.true_track) ? Math.round(selected.track || selected.true_track) + '°' : '—'],
+                ['Vertical Speed', selected.vertical_rate ? (selected.vertical_rate > 0 ? '+' : '') + Math.round(selected.vertical_rate * 196.85) + ' fpm' : '—'],
+                ['Squawk', selected.squawk || '—'],
+                ['Status', selected.on_ground ? 'On Ground' : 'Airborne'],
+              ].map(([label, value]) => (
+                <div key={label}>
+                  <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{label}</div>
+                  <div style={{ fontWeight: 600, marginTop: 3 }}>{value}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

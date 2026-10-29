@@ -4,13 +4,21 @@ import L from 'leaflet'
 import { api } from '../api/client'
 import { usePolling } from '../hooks/usePolling'
 
+const RADAR_D = 'M16 2 L16 10 M8 10 L24 10 M10 10 Q16 4 22 10 M6 12 L12 28 L20 28 L26 12 M4 28 L28 28'
+
 const nodeIcon = (status, hubConn) => {
-  const c = status === 'healthy' ? '#10b981' : status === 'caution' ? '#f59e0b' : '#ef4444'
+  const c = status === 'healthy' ? '#10b981' : status === 'caution' ? '#f59e0b' : status === 'degraded' ? '#ef4444' : '#374151'
   const r = hubConn ? '#3b82f6' : '#ef4444'
   return L.divIcon({
     className: 'station-marker',
-    html: '<div style="width:20px;height:20px;border-radius:50%;background:' + c + ';border:3px solid ' + r + ';box-shadow:0 0 8px ' + c + '"></div>',
-    iconSize: [20, 20], iconAnchor: [10, 10],
+    html: '<div style="filter:drop-shadow(0 0 6px ' + c + ')">'
+      + '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="36" height="36">'
+      + '<path fill="none" stroke="' + c + '" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" d="' + RADAR_D + '"/>'
+      + '<circle cx="16" cy="6" r="3" fill="' + c + '"/>'
+      + '<path fill="none" stroke="' + c + '" stroke-width="1.5" d="M9 3 Q16 -2 23 3" opacity="0.6"/>'
+      + '<circle cx="28" cy="4" r="4" fill="' + r + '" stroke="white" stroke-width="1"/>'
+      + '</svg></div>',
+    iconSize: [36, 36], iconAnchor: [18, 36],
   })
 }
 
@@ -22,6 +30,11 @@ const MSG_COLORS = {
 export default function MeshNetwork() {
   const { data, loading } = usePolling(useCallback(() => api.meshStatus(), []), 5000)
   const [showLinks, setShowLinks] = useState(true)
+  const [commFilters, setCommFilters] = useState({ vhf: true, cellular: true, satellite: true, hf: true })
+
+  const COMM_COLORS = { vhf: '#10b981', cellular: '#3b82f6', satellite: '#a855f7', hf: '#f59e0b' }
+  const COMM_LABELS = { vhf: 'VHF Radio', cellular: 'Cellular', satellite: 'Satellite', hf: 'HF Radio' }
+  const COMM_DASH = { vhf: null, cellular: '10 5', satellite: '3 3', hf: '16 8' }
   const [consensusResult, setConsensusResult] = useState(null)
   const [triggering, setTriggering] = useState(false)
 
@@ -46,7 +59,7 @@ export default function MeshNetwork() {
         seen.add(key)
         const dn = nodes.find(n => n.station === peer.station)
         if (!dn) continue
-        result.push({ key, from: [sn.lat, sn.lon], to: [dn.lat, dn.lon], quality: peer.signal_quality || 50 })
+        result.push({ key, from: [sn.lat, sn.lon], to: [dn.lat, dn.lon], quality: peer.signal_quality || 50, link_type: peer.link_type || 'vhf', distance: peer.distance_nm || 0 })
       }
     }
     return result
@@ -101,6 +114,23 @@ export default function MeshNetwork() {
 
       <div className="layer-toggles" style={{marginBottom: 10}}>
         <label><input type="checkbox" checked={showLinks} onChange={() => setShowLinks(!showLinks)} /> Mesh Links</label>
+        {showLinks && (
+          <div style={{ display: 'flex', gap: 10, marginTop: 6, flexWrap: 'wrap' }}>
+            {Object.entries(COMM_LABELS).map(([type, label]) => (
+              <label key={type} style={{
+                display: 'flex', alignItems: 'center', gap: 4, fontSize: 11,
+                cursor: 'pointer', opacity: commFilters[type] ? 1 : 0.35,
+                transition: 'opacity 0.2s',
+              }}>
+                <input type="checkbox" checked={commFilters[type]}
+                  onChange={() => setCommFilters(f => ({ ...f, [type]: !f[type] }))}
+                  style={{ accentColor: COMM_COLORS[type], width: 12, height: 12 }} />
+                <span style={{ width: 20, height: 0, borderTop: type === 'vhf' ? '2px solid ' + COMM_COLORS[type] : type === 'cellular' ? '2px dashed ' + COMM_COLORS[type] : type === 'satellite' ? '2px dotted ' + COMM_COLORS[type] : '2px dashed ' + COMM_COLORS[type], display: 'inline-block' }} />
+                <span style={{ color: COMM_COLORS[type] }}>{label}</span>
+              </label>
+            ))}
+          </div>
+        )}
         <button className="btn btn-sm btn-warning" onClick={handleConsensus} disabled={triggering} style={{marginLeft: 'auto'}}>
           {triggering ? 'Voting...' : 'Trigger Consensus Vote'}
         </button>
@@ -132,9 +162,23 @@ export default function MeshNetwork() {
               <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" />
               <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}" />
 
-              {showLinks && links.map(link => (
+              {showLinks && links.filter(link => commFilters[link.link_type]).map(link => (
                 <Polyline key={link.key} positions={[link.from, link.to]}
-                  pathOptions={{color: link.quality >= 80 ? '#10b981' : link.quality >= 50 ? '#f59e0b' : '#ef4444', weight: 2, opacity: 0.6}} />
+                  pathOptions={{
+                    color: COMM_COLORS[link.link_type] || '#94a3b8',
+                    weight: link.link_type === 'satellite' ? 3 : link.link_type === 'hf' ? 2.5 : link.link_type === 'cellular' ? 2.5 : 2,
+                    opacity: link.quality >= 80 ? 0.8 : link.quality >= 50 ? 0.5 : 0.3,
+                    dashArray: COMM_DASH[link.link_type] || null,
+                  }}
+                >
+                  <Popup>
+                    <div style={{fontSize: 12}}>
+                      <div style={{fontWeight: 700, color: COMM_COLORS[link.link_type]}}>{COMM_LABELS[link.link_type]}</div>
+                      <div>Distance: {link.distance}nm</div>
+                      <div>Signal: {link.quality}%</div>
+                    </div>
+                  </Popup>
+                </Polyline>
               ))}
 
               {nodes.map(n => (
@@ -163,6 +207,42 @@ export default function MeshNetwork() {
                 return <Polyline key={'prop-' + i} positions={[[src.lat, src.lon], [tgt.lat, tgt.lon]]}
                   pathOptions={{color: '#a855f7', weight: 3, opacity: 0.7, dashArray: '10 8'}} />
               })}
+            
+              {/* Communication Link Legend */}
+              <div style={{
+                position: 'absolute', bottom: 16, left: 16, zIndex: 1000,
+                background: 'rgba(15, 23, 42, 0.92)', backdropFilter: 'blur(8px)',
+                border: '1px solid var(--border, #334155)', borderRadius: 10,
+                padding: '12px 16px', minWidth: 160,
+              }}>
+                <div style={{ fontWeight: 700, fontSize: 12, marginBottom: 8, color: '#f8fafc' }}>Communication Links</div>
+                {[
+                  ['#10b981', 'solid', 'VHF Radio', '< 60nm', 'Line of sight'],
+                  ['#3b82f6', 'dashed', 'Cellular', '< 108nm', 'Cell tower relay'],
+                  ['#a855f7', 'dotted', 'Satellite', '< 150nm', 'VSAT uplink'],
+                  ['#f59e0b', 'dashed', 'HF Radio', '> 150nm', 'Long range fallback'],
+                ].map(([color, style, label, range, desc]) => (
+                  <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                    <svg width="28" height="6" style={{ flexShrink: 0 }}>
+                      <line x1="0" y1="3" x2="28" y2="3"
+                        stroke={color} strokeWidth="2.5"
+                        strokeDasharray={style === 'dashed' ? '6 3' : style === 'dotted' ? '2 3' : 'none'} />
+                    </svg>
+                    <div>
+                      <div style={{ fontSize: 11, fontWeight: 600, color: color }}>{label}</div>
+                      <div style={{ fontSize: 9, color: '#64748b' }}>{range} • {desc}</div>
+                    </div>
+                  </div>
+                ))}
+                <div style={{ borderTop: '1px solid #334155', marginTop: 8, paddingTop: 8 }}>
+                  <div style={{ fontSize: 10, color: '#64748b' }}>Signal Quality</div>
+                  <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                    <span style={{ fontSize: 10, color: '#10b981' }}>● Strong (&gt;80%)</span>
+                    <span style={{ fontSize: 10, color: '#f59e0b' }}>● Fair (50-80%)</span>
+                    <span style={{ fontSize: 10, color: '#ef4444' }}>● Weak (&lt;50%)</span>
+                  </div>
+                </div>
+              </div>
             </MapContainer>
           </div>
         </div>

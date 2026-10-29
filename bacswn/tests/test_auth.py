@@ -9,23 +9,23 @@ from httpx import AsyncClient
 
 class TestRegister:
     @pytest.mark.anyio
-    async def test_register_success(self, client: AsyncClient):
-        resp = await client.post("/api/auth/register", json={
+    async def test_register_success(self, client: AsyncClient, admin_headers: dict):
+        resp = await client.post("/api/auth/register", headers=admin_headers, json={
             "username": "newuser",
-            "password": "securepass",
-            "confirm_password": "securepass",
+            "password": "securepass1234",
+            "confirm_password": "securepass1234",
             "first_name": "New",
             "last_name": "User",
         })
         assert resp.status_code == 201
         body = resp.json()
-        assert "token" in body
+        assert "token" not in body
         assert body["username"] == "newuser"
         assert body["role"] == "user"
 
     @pytest.mark.anyio
-    async def test_register_password_mismatch_returns_400(self, client: AsyncClient):
-        resp = await client.post("/api/auth/register", json={
+    async def test_register_password_mismatch_returns_400(self, client: AsyncClient, admin_headers: dict):
+        resp = await client.post("/api/auth/register", headers=admin_headers, json={
             "username": "mismatch",
             "password": "abc123",
             "confirm_password": "xyz789",
@@ -35,8 +35,8 @@ class TestRegister:
         assert resp.status_code == 400
 
     @pytest.mark.anyio
-    async def test_register_short_password_returns_400(self, client: AsyncClient):
-        resp = await client.post("/api/auth/register", json={
+    async def test_register_short_password_returns_400(self, client: AsyncClient, admin_headers: dict):
+        resp = await client.post("/api/auth/register", headers=admin_headers, json={
             "username": "shortpw",
             "password": "abc",
             "confirm_password": "abc",
@@ -46,27 +46,61 @@ class TestRegister:
         assert resp.status_code == 400
 
     @pytest.mark.anyio
-    async def test_register_short_username_returns_400(self, client: AsyncClient):
+    async def test_register_11_char_password_returns_400(self, client: AsyncClient, admin_headers: dict):
+        resp = await client.post("/api/auth/register", headers=admin_headers, json={
+            "username": "elevenchar",
+            "password": "abcdefghijk",
+            "confirm_password": "abcdefghijk",
+            "first_name": "E",
+            "last_name": "C",
+        })
+        assert resp.status_code == 400
+
+    @pytest.mark.anyio
+    async def test_register_unauthenticated_returns_401(self, client: AsyncClient):
         resp = await client.post("/api/auth/register", json={
+            "username": "anon",
+            "password": "password12345",
+            "confirm_password": "password12345",
+            "first_name": "A",
+            "last_name": "N",
+        })
+        assert resp.status_code == 401
+
+    @pytest.mark.anyio
+    async def test_register_non_admin_returns_403(self, client: AsyncClient, auth_token: str):
+        resp = await client.post("/api/auth/register",
+                                 headers={"Authorization": f"Bearer {auth_token}"}, json={
+            "username": "sneaky",
+            "password": "password12345",
+            "confirm_password": "password12345",
+            "first_name": "S",
+            "last_name": "N",
+        })
+        assert resp.status_code == 403
+
+    @pytest.mark.anyio
+    async def test_register_short_username_returns_400(self, client: AsyncClient, admin_headers: dict):
+        resp = await client.post("/api/auth/register", headers=admin_headers, json={
             "username": "ab",
-            "password": "password123",
-            "confirm_password": "password123",
+            "password": "password12345",
+            "confirm_password": "password12345",
             "first_name": "A",
             "last_name": "B",
         })
         assert resp.status_code == 400
 
     @pytest.mark.anyio
-    async def test_register_duplicate_username_returns_409(self, client: AsyncClient):
+    async def test_register_duplicate_username_returns_409(self, client: AsyncClient, admin_headers: dict):
         payload = {
             "username": "dupuser",
-            "password": "password123",
-            "confirm_password": "password123",
+            "password": "password12345",
+            "confirm_password": "password12345",
             "first_name": "D",
             "last_name": "U",
         }
-        await client.post("/api/auth/register", json=payload)
-        resp = await client.post("/api/auth/register", json=payload)
+        await client.post("/api/auth/register", headers=admin_headers, json=payload)
+        resp = await client.post("/api/auth/register", headers=admin_headers, json=payload)
         assert resp.status_code == 409
 
 
@@ -78,7 +112,7 @@ class TestLogin:
         """auth_token fixture registers testuser — login should succeed."""
         resp = await client.post("/api/auth/login", json={
             "username": "testuser",
-            "password": "testpass123",
+            "password": "testpass12345",
         })
         assert resp.status_code == 200
         body = resp.json()
@@ -105,7 +139,7 @@ class TestLogin:
     async def test_login_sets_cookie(self, client: AsyncClient, auth_token: str):
         resp = await client.post("/api/auth/login", json={
             "username": "testuser",
-            "password": "testpass123",
+            "password": "testpass12345",
         })
         assert resp.status_code == 200
         assert "access_token" in resp.cookies
@@ -153,13 +187,8 @@ class TestBruteForce:
     async def test_brute_force_lockout_after_5_failures(self, client: AsyncClient):
         """After 5 failed logins, the 6th returns 429."""
         # Register a user to lock
-        await client.post("/api/auth/register", json={
-            "username": "bruteuser",
-            "password": "correctpass",
-            "confirm_password": "correctpass",
-            "first_name": "B",
-            "last_name": "U",
-        })
+        from services.auth import create_user
+        await create_user("bruteuser", "correctpass")
         # Make 5 failed attempts
         for _ in range(5):
             resp = await client.post("/api/auth/login", json={
@@ -178,13 +207,8 @@ class TestBruteForce:
     @pytest.mark.anyio
     async def test_successful_login_clears_lockout(self, client: AsyncClient):
         """A successful login resets the failed-attempt counter."""
-        await client.post("/api/auth/register", json={
-            "username": "clearuser",
-            "password": "rightpass",
-            "confirm_password": "rightpass",
-            "first_name": "C",
-            "last_name": "L",
-        })
+        from services.auth import create_user
+        await create_user("clearuser", "rightpass")
         # Make 4 failed attempts (one less than lockout threshold)
         for _ in range(4):
             await client.post("/api/auth/login", json={

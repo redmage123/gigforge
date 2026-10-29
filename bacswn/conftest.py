@@ -36,23 +36,42 @@ async def _fresh_db(tmp_path, monkeypatch):
     yield
 
 
+_client_seq = 0
+
+
 @pytest_asyncio.fixture
 async def client():
     """Async test client for the FastAPI app."""
     from main import app
-    transport = ASGITransport(app=app)
+    # Fresh client IP per test so the app-wide rate limiter (200 req/min,
+    # keyed by IP) doesn't carry hits across tests and start returning 429s.
+    global _client_seq
+    _client_seq += 1
+    transport = ASGITransport(app=app, client=(f"10.0.{_client_seq // 250}.{_client_seq % 250 + 1}", 123))
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
 
 
 @pytest_asyncio.fixture
+async def admin_headers(client):
+    """Create an admin directly in the DB and return its Authorization header."""
+    from services.auth import create_user
+    await create_user("testadmin", "testadmin-password-123", role="admin",
+                      first_name="Test", last_name="Admin")
+    resp = await client.post("/api/auth/login", json={
+        "username": "testadmin",
+        "password": "testadmin-password-123",
+    })
+    return {"Authorization": f"Bearer {resp.json()['token']}"}
+
+
+@pytest_asyncio.fixture
 async def auth_token(client):
-    """Register a test user and return a valid JWT token."""
-    resp = await client.post("/api/auth/register", json={
+    """Create a regular test user and return a valid JWT token."""
+    from services.auth import create_user
+    await create_user("testuser", "testpass12345", first_name="Test", last_name="User")
+    resp = await client.post("/api/auth/login", json={
         "username": "testuser",
-        "password": "testpass123",
-        "confirm_password": "testpass123",
-        "first_name": "Test",
-        "last_name": "User",
+        "password": "testpass12345",
     })
     return resp.json()["token"]

@@ -103,13 +103,8 @@ class TestNoHardcodedCredentials:
     async def test_first_boot_skips_if_users_exist(self, client: AsyncClient):
         """If users already exist, ensure_default_admin should be a no-op."""
         # Register a user first
-        await client.post("/api/auth/register", json={
-            "username": "existing",
-            "password": "password123",
-            "confirm_password": "password123",
-            "first_name": "Existing",
-            "last_name": "User",
-        })
+        from services.auth import create_user
+        await create_user("existing", "password123")
         from services.auth import ensure_default_admin, get_user
         await ensure_default_admin()
         # admin should NOT have been created

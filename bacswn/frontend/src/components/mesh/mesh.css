@@ -1,6 +1,10 @@
 /* Distributed AI mesh — precog chamber + map markers */
 
-.mesh-kpis { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
+/* Hazard colours for TEXT (≥4.5:1 on page surfaces in each theme). Map symbols use brighter hex values. */
+:root { --hz-clear: #34d399; --hz-showers: #60a5fa; --hz-ifr: #c084fc; --hz-tsra: #fbbf24; --hz-squall: #f87171; }
+[data-theme="light"] { --hz-clear: #047857; --hz-showers: #1d4ed8; --hz-ifr: #7e22ce; --hz-tsra: #b45309; --hz-squall: #b91c1c; }
+
+.mesh-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 12px; }
 .mesh-kpi { background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
 .mesh-kpi label { display: block; font-size: 10.5px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; }
 .mesh-kpi b { font-size: 22px; font-weight: 700; }
@@ -14,7 +18,8 @@
   border-radius: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer;
 }
 .mesh-chip:hover { color: var(--text-primary); border-color: var(--text-muted); }
-.mesh-chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.mesh-chip { min-height: 28px; }
+.mesh-chip.on { background: var(--accent-strong); border-color: var(--accent-strong); color: #fff; }
 .mesh-chip.danger:hover { border-color: var(--danger); color: var(--danger); }
 
 .mesh-main { display: grid; grid-template-columns: minmax(0, 1fr) 430px; gap: 12px; margin-bottom: 12px; }
@@ -70,7 +75,7 @@
 .verdict .big { font-size: 22px; font-weight: 800; letter-spacing: .5px; }
 .verdict small { display: block; color: var(--text-muted); font-size: 11px; }
 
-.precogs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.precogs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; list-style: none; margin: 0; padding: 0; }
 .precog {
   border: 1px solid var(--border); border-radius: 10px; padding: 9px; position: relative;
   background: radial-gradient(ellipse at 50% 0%, rgba(59,130,246,.08), transparent 70%);
@@ -85,7 +90,7 @@
 .precog.quarantined { opacity: .55; border-style: dashed; }
 .precog.corrupted .eye { animation: mesh-glitch .35s steps(2) infinite; }
 @keyframes mesh-glitch { 50% { transform: translateX(2px); filter: hue-rotate(160deg); } }
-.precog .name { text-align: center; font-weight: 800; letter-spacing: 1.5px; font-size: 13px; }
+.precog .name { text-align: center; font-weight: 800; letter-spacing: 1.5px; font-size: 13px; margin: 0; }
 .precog .modality { text-align: center; font-size: 10px; color: var(--text-muted); min-height: 26px; line-height: 1.3; }
 .precog .call { text-align: center; font-weight: 800; font-size: 14px; }
 .precog .conf { height: 4px; background: var(--bg-primary); border-radius: 2px; overflow: hidden; }
@@ -93,11 +98,35 @@
 .precog .reason { font-size: 10.5px; color: var(--text-secondary); line-height: 1.35; word-break: break-word; max-height: 72px; overflow: hidden; }
 .precog .badge-row { display: flex; gap: 3px; justify-content: center; flex-wrap: wrap; min-height: 15px; }
 .mbadge { font-size: 9px; font-weight: 800; padding: 1px 5px; border-radius: 3px; letter-spacing: .4px; }
-.mbadge.amber { background: rgba(245,158,11,.18); color: #f59e0b; }
-.mbadge.red { background: rgba(239,68,68,.18); color: #ef4444; }
-.mbadge.grey { background: rgba(148,163,184,.15); color: #94a3b8; }
-.mbadge.green { background: rgba(16,185,129,.15); color: #10b981; }
-.mbadge.blue { background: rgba(59,130,246,.15); color: #60a5fa; }
+.mbadge.amber { background: rgba(245,158,11,.18); color: #fbbf24; }
+.mbadge.red { background: rgba(239,68,68,.18); color: #fca5a5; }
+.mbadge.grey { background: rgba(148,163,184,.15); color: #cbd5e1; }
+.mbadge.green { background: rgba(16,185,129,.15); color: #6ee7b7; }
+.mbadge.blue { background: rgba(59,130,246,.15); color: #93c5fd; }
+[data-theme="light"] .mbadge.amber { color: #92400e; }
+[data-theme="light"] .mbadge.red { color: #991b1b; }
+[data-theme="light"] .mbadge.grey { color: #334155; }
+[data-theme="light"] .mbadge.green { color: #065f46; }
+[data-theme="light"] .mbadge.blue { color: #1e40af; }
+/* Message types: text label + tint (the label carries the meaning). */
+.mbadge.msg-ALERT { background: rgba(239,68,68,.16); color: var(--hz-squall); }
+.mbadge.msg-HAZARD, .mbadge.msg-VOTE, .mbadge.msg-MAINT { background: rgba(245,158,11,.16); color: var(--hz-tsra); }
+.mbadge.msg-PROPAGATION { background: rgba(168,85,247,.16); color: var(--hz-ifr); }
+.mbadge.msg-HEARTBEAT { background: rgba(148,163,184,.15); color: var(--text-secondary); }
+.vote { font-weight: 800; }
+.vote-AGREE { color: var(--hz-clear); }
+.vote-DISAGREE { color: var(--hz-squall); }
+.vote-ABSTAIN { color: var(--text-secondary); }
+.link-btn {
+  background: none; border: 0; padding: 2px 2px; min-height: 24px; color: var(--accent); font: inherit; font-weight: 700;
+  cursor: pointer; text-decoration: underline; text-underline-offset: 2px;
+}
+.spawn-form { display: inline-flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12px; color: var(--text-secondary); }
+.spawn-form select {
+  background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border); border-radius: 6px;
+  padding: 3px 6px; min-height: 28px; font-size: 12px; max-width: 220px;
+}
+.mesh-toast { min-height: 18px; font-size: 12.5px; color: var(--text-secondary); margin: -4px 0 8px; }
 
 .sensor-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
 .sensor-grid div { background: var(--bg-primary); border-radius: 6px; padding: 5px 7px; }
@@ -118,7 +147,7 @@
 }
 .mesh-tabs button.on { color: var(--text-primary); border-bottom-color: var(--accent); }
 .mesh-tabs .n { font-size: 10.5px; color: var(--warning); margin-left: 4px; }
-.mesh-log { max-height: 320px; overflow-y: auto; }
+.mesh-log { max-height: 340px; overflow: auto; }
 .mesh-log table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 .mesh-log th { text-align: left; color: var(--text-muted); font-size: 10.5px; text-transform: uppercase; padding: 4px 8px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--bg-card); }
 .mesh-log td { padding: 5px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
@@ -126,7 +155,15 @@
 .mesh-log .dim { color: var(--text-muted); }
 
 @media (max-width: 1280px) {
-  .mesh-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .mesh-main { grid-template-columns: 1fr; }
   .chamber { max-height: none; }
+}
+@media (max-width: 640px) {
+  .mesh-map { height: 420px; }
+  .precogs { grid-template-columns: 1fr; }
+  .sensor-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .mesh-tabs { overflow-x: auto; flex-wrap: nowrap; }
+  .mesh-tabs button { white-space: nowrap; }
+  .mesh-toolbar .sep { display: none; }
+  .spawn-form select { max-width: 100%; }
 }

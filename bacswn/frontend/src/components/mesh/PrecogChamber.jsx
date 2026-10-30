@@ -1,6 +1,9 @@
+/** Bright hazard colours for map symbols drawn over satellite imagery. */
 export const HAZARD_COLORS = {
   CLEAR: '#10b981', SHOWERS: '#3b82f6', IFR: '#a855f7', TSRA: '#f59e0b', SQUALL: '#ef4444',
 }
+/** Hazard colour for TEXT on page surfaces — a CSS variable that meets 4.5:1 in both themes. */
+export const hz = (call) => `var(--hz-${String(call || 'clear').toLowerCase()})`
 
 const SENSOR_FIELDS = [
   ['temp_c', 'Temp', '°C', null],
@@ -14,23 +17,25 @@ const SENSOR_FIELDS = [
 ]
 
 function Precog({ pc, majority, split }) {
-  const color = HAZARD_COLORS[pc.call] || '#94a3b8'
+  const color = hz(pc.call)
   const dissent = !pc.quarantined && !split && pc.call !== majority
   const cls = ['precog', dissent && 'dissent', pc.quarantined && 'quarantined', pc.corrupted && 'corrupted'].filter(Boolean).join(' ')
   return (
-    <div className={cls} style={{ color }}>
-      <div className="eye" />
-      <div className="name" style={{ color: 'var(--text-primary)' }}>{pc.id}</div>
+    <li className={cls} style={{ color }}>
+      <div className="eye" aria-hidden="true" />
+      <h4 className="name" style={{ color: 'var(--text-primary)' }}>{pc.id}</h4>
       <div className="modality">{pc.modality}</div>
-      <div className="call">{pc.call}</div>
-      <div className="conf" title={`Confidence ${Math.round(pc.confidence * 100)}%`}><div style={{ width: `${pc.confidence * 100}%` }} /></div>
+      <div className="call"><span className="sr-only">Call: </span>{pc.call}</div>
+      <div className="conf" role="meter" aria-label={`${pc.id} confidence`} aria-valuemin={0} aria-valuemax={100}
+        aria-valuenow={Math.round(pc.confidence * 100)} aria-valuetext={`${Math.round(pc.confidence * 100)} percent`}
+        title={`Confidence ${Math.round(pc.confidence * 100)}%`}><div style={{ width: `${pc.confidence * 100}%` }} /></div>
       <div className="badge-row">
         {dissent && <span className="mbadge amber">MINORITY REPORT</span>}
         {pc.quarantined && <span className="mbadge grey">QUARANTINED</span>}
         {pc.corrupted && <span className="mbadge red">CORRUPTED</span>}
       </div>
-      <div className="reason" title={pc.reason}>{pc.reason}</div>
-    </div>
+      <div className="reason" title={pc.reason}><span className="sr-only">Reasoning: </span>{pc.reason}</div>
+    </li>
   )
 }
 
@@ -44,15 +49,15 @@ export default function PrecogChamber({ node, hub, onFault, onVerify, busy }) {
     )
   }
   const v = node.verdict
-  const vColor = HAZARD_COLORS[v.call]
+  const vColor = hz(v.call)
   const statusBadge = { healthy: 'green', caution: 'amber', degraded: 'red', offline: 'grey' }[node.status]
   const faulted = new Set(node.sensor_faults)
   const act = (fault) => onFault({ station: node.station, ...fault })
 
   return (
-    <div className="chamber">
+    <section className="chamber" aria-labelledby="chamber-h">
       <div className="chamber-head">
-        <h3>
+        <h3 id="chamber-h">
           {node.station} {node.is_hub && <span className="mbadge blue">HUB</span>}
           <span className={`mbadge ${statusBadge}`}>{node.status.toUpperCase()}</span>
         </h3>
@@ -74,22 +79,22 @@ export default function PrecogChamber({ node, hub, onFault, onVerify, busy }) {
               <div style={{ textAlign: 'right' }}>
                 <small>Agreement</small>
                 <div style={{ fontWeight: 800, fontSize: 18, color: v.split ? 'var(--warning)' : 'var(--text-primary)' }}>{v.agreement}</div>
-                <small>ground truth: <b style={{ color: HAZARD_COLORS[node.truth] }}>{node.truth}</b></small>
+                <small>ground truth: <b style={{ color: hz(node.truth) }}>{node.truth}</b></small>
               </div>
             </div>
             {v.split && <div className="mbadge amber" style={{ padding: 6, fontSize: 11 }}>ENSEMBLE SPLIT — no 2-of-3 majority, holding previous verdict, no autonomous action</div>}
             {node.suspect && <div className="mbadge red" style={{ padding: 6, fontSize: 11 }}>{node.suspect}</div>}
 
-            <div className="precogs">
+            <ul className="precogs" aria-label="Three-model ensemble">
               {node.precogs.map(pc => <Precog key={pc.id} pc={pc} majority={v.call} split={v.split} />)}
-            </div>
+            </ul>
 
             {node.warnings.length > 0 && (
               <div>
                 <div className="section-label">Inbound hand-offs from peers</div>
                 {node.warnings.map(w => (
                   <div key={w.from + w.call} style={{ fontSize: 12 }}>
-                    <b>{w.from}</b> → <span style={{ color: HAZARD_COLORS[w.call] }}>{w.call}</span> ETA {w.eta_ticks * 5} min
+                    <b>{w.from}</b> → <span style={{ color: hz(w.call) }}>{w.call}</span> ETA {w.eta_ticks * 5} min
                   </div>
                 ))}
               </div>
@@ -138,6 +143,6 @@ export default function PrecogChamber({ node, hub, onFault, onVerify, busy }) {
           </div>
         </div>
       </div>
-    </div>
+    </section>
   )
 }

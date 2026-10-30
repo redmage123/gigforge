@@ -16,6 +16,7 @@ const WatchOffice = lazy(() => import('./pages/WatchOffice'))
 const FlightOps = lazy(() => import('./pages/FlightOps'))
 const Emissions = lazy(() => import('./pages/Emissions'))
 const CarbonTrading = lazy(() => import('./pages/CarbonTrading'))
+const CarbonOversight = lazy(() => import('./pages/CarbonOversight'))
 const Emergency = lazy(() => import('./pages/Emergency'))
 const SensorNetwork = lazy(() => import('./pages/SensorNetwork'))
 const Training = lazy(() => import('./pages/Training'))
@@ -33,6 +34,7 @@ const NAV_ITEMS = [
   { path: '/flights', icon: '✈️', label: 'Flight Operations' },
   { path: '/emissions', icon: '🌱', label: 'Carbon & Emissions' },
   { path: '/carbon-trading', icon: '💹', label: 'Carbon Trading' },
+  { path: '/corsia-oversight', icon: '📒', label: 'CORSIA Oversight' },
   { path: '/emergency', icon: '🚨', label: 'Emergency Response' },
   { path: '/sensors', icon: '📡', label: 'Sensor Network' },
   { path: '/training', icon: '🎓', label: 'Training & Certs' },
@@ -156,6 +158,7 @@ export default function App() {
               <Route path="flights" element={<FlightOps />} />
               <Route path="emissions" element={<Emissions />} />
               <Route path="carbon-trading" element={<CarbonTrading />} />
+              <Route path="corsia-oversight" element={<CarbonOversight />} />
               <Route path="emergency" element={<Emergency />} />
               <Route path="sensors" element={<SensorNetwork />} />
               <Route path="training" element={<Training />} />

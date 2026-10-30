@@ -47,6 +47,7 @@ from api.hurricane import router as hurricane_router
 from api.mesh import router as mesh_router
 from api.simulation import router as simulation_router
 from api.trading import router as trading_router
+from api.carbon_oversight import router as carbon_oversight_router
 from api.verification import router as verification_router
 from api.climatology import router as climatology_router
 
@@ -171,9 +172,22 @@ async def lifespan(app: FastAPI):
                 logger.error(f"Carbon market step error: {e}")
             await asyncio.sleep(0.5)
 
+    async def _fir_observation_loop():
+        # BACSWN's own per-airline FIR sightings: independent evidence for the
+        # CORSIA oversight register's cross-check of operators' reports.
+        from services.opensky_client import fetch_flights
+        from services.carbon_oversight import record_observations, OBSERVE_INTERVAL
+        while True:
+            try:
+                await record_observations(await fetch_flights())
+            except Exception as e:
+                logger.error(f"FIR observation error: {e}")
+            await asyncio.sleep(OBSERVE_INTERVAL.total_seconds())
+
     asyncio.create_task(_ws_flights_loop())
     asyncio.create_task(_ws_weather_loop())
     asyncio.create_task(_market_loop())
+    asyncio.create_task(_fir_observation_loop())
     logger.info("WebSocket broadcast tasks started (flights: 5s, weather: 30s)")
 
     logger.info(f"Server ready at http://{HOST}:{PORT}")
@@ -232,6 +246,7 @@ app.include_router(hurricane_router, prefix="/api/hurricane", tags=["hurricane"]
 app.include_router(mesh_router, prefix="/api/mesh", tags=["mesh"])
 app.include_router(simulation_router, prefix="/api/simulation", tags=["simulation"])
 app.include_router(trading_router, prefix="/api/trading", tags=["trading"])
+app.include_router(carbon_oversight_router, prefix="/api/carbon-oversight", tags=["carbon-oversight"])
 app.include_router(verification_router, prefix="/api/verification", tags=["verification"])
 app.include_router(climatology_router, prefix="/api/climatology", tags=["climatology"])
 

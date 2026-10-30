@@ -18,6 +18,11 @@ _ALLOWED_TABLES = {
     "stations",
     "advisories",
     "forecast_verifications",
+    "carbon_operators",
+    "carbon_emission_reports",
+    "carbon_unit_claims",
+    "carbon_claim_reviews",
+    "carbon_fir_observations",
 }
 # Allows: column, column ASC, column DESC (case-insensitive)
 _COL_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*(\s+(ASC|DESC))?$", re.IGNORECASE)
@@ -179,6 +184,86 @@ CREATE TABLE IF NOT EXISTS forecast_verifications (
     status          TEXT    NOT NULL DEFAULT 'pending',
     created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
 );
+
+-- CORSIA oversight register (services/carbon_oversight.py). The state records
+-- what each attributed aircraft operator reports — verified emissions and the
+-- emissions units it says it cancelled — and reviews those claims. Evidence
+-- tables are append-only: revisions are new rows, reviews are new decisions.
+CREATE TABLE IF NOT EXISTS carbon_operators (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    icao_designator TEXT    NOT NULL UNIQUE,
+    name            TEXT    NOT NULL,
+    notes           TEXT    NOT NULL DEFAULT '',
+    created_by      TEXT    NOT NULL,
+    created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS carbon_emission_reports (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    operator_id     INTEGER NOT NULL REFERENCES carbon_operators(id),
+    year            INTEGER NOT NULL,
+    verified_co2_t  INTEGER NOT NULL CHECK (verified_co2_t >= 0),
+    growth_factor   REAL    NOT NULL CHECK (growth_factor >= 0 AND growth_factor <= 1),
+    verifier        TEXT    NOT NULL DEFAULT '',
+    reference       TEXT    NOT NULL DEFAULT '',
+    notes           TEXT    NOT NULL DEFAULT '',
+    created_by      TEXT    NOT NULL,
+    created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS carbon_unit_claims (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    operator_id        INTEGER NOT NULL REFERENCES carbon_operators(id),
+    compliance_period  TEXT    NOT NULL,
+    registry           TEXT    NOT NULL,
+    serial_block       TEXT    NOT NULL DEFAULT '',
+    serial_start       INTEGER,
+    serial_end         INTEGER,
+    quantity           INTEGER NOT NULL CHECK (quantity > 0),
+    vintage            INTEGER NOT NULL,
+    project_id         TEXT    NOT NULL DEFAULT '',
+    project_name       TEXT    NOT NULL DEFAULT '',
+    declared_eligible  INTEGER NOT NULL DEFAULT 1,
+    cancelled_on       TEXT    NOT NULL,
+    registry_reference TEXT    NOT NULL DEFAULT '',
+    notes              TEXT    NOT NULL DEFAULT '',
+    created_by         TEXT    NOT NULL,
+    created_at         TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS carbon_claim_reviews (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    claim_id    INTEGER NOT NULL REFERENCES carbon_unit_claims(id),
+    decision    TEXT    NOT NULL CHECK (decision IN ('VERIFIED', 'REJECTED', 'REOPENED')),
+    reason      TEXT    NOT NULL DEFAULT '',
+    created_by  TEXT    NOT NULL,
+    created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+-- BACSWN's own sightings: one row per continuous FIR segment of a flight.
+CREATE TABLE IF NOT EXISTS carbon_fir_observations (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    icao24      TEXT    NOT NULL,
+    callsign    TEXT    NOT NULL,
+    designator  TEXT    NOT NULL,
+    category    TEXT    NOT NULL,
+    simulated   INTEGER NOT NULL DEFAULT 0,
+    first_seen  TEXT    NOT NULL,
+    last_seen   TEXT    NOT NULL
+);
+
+CREATE TRIGGER IF NOT EXISTS carbon_reports_immutable_u BEFORE UPDATE ON carbon_emission_reports
+BEGIN SELECT RAISE(ABORT, 'carbon_emission_reports is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS carbon_reports_immutable_d BEFORE DELETE ON carbon_emission_reports
+BEGIN SELECT RAISE(ABORT, 'carbon_emission_reports is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS carbon_claims_immutable_u BEFORE UPDATE ON carbon_unit_claims
+BEGIN SELECT RAISE(ABORT, 'carbon_unit_claims is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS carbon_claims_immutable_d BEFORE DELETE ON carbon_unit_claims
+BEGIN SELECT RAISE(ABORT, 'carbon_unit_claims is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS carbon_reviews_immutable_u BEFORE UPDATE ON carbon_claim_reviews
+BEGIN SELECT RAISE(ABORT, 'carbon_claim_reviews is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS carbon_reviews_immutable_d BEFORE DELETE ON carbon_claim_reviews
+BEGIN SELECT RAISE(ABORT, 'carbon_claim_reviews is append-only'); END;
 """
 
 # Columns added after the initial release — applied as lightweight migrations.
@@ -204,6 +289,11 @@ CREATE INDEX IF NOT EXISTS idx_channel_sent ON channel_messages(sent_at);
 CREATE INDEX IF NOT EXISTS idx_fv_status ON forecast_verifications(status);
 CREATE INDEX IF NOT EXISTS idx_fv_valid ON forecast_verifications(valid_at);
 CREATE INDEX IF NOT EXISTS idx_fv_lookup ON forecast_verifications(station_id, issued_at, lead_h, variable);
+CREATE INDEX IF NOT EXISTS idx_reports_op_year ON carbon_emission_reports(operator_id, year);
+CREATE INDEX IF NOT EXISTS idx_claims_op_period ON carbon_unit_claims(operator_id, compliance_period);
+CREATE INDEX IF NOT EXISTS idx_reviews_claim ON carbon_claim_reviews(claim_id);
+CREATE INDEX IF NOT EXISTS idx_fir_obs_lookup ON carbon_fir_observations(icao24, callsign, last_seen);
+CREATE INDEX IF NOT EXISTS idx_fir_obs_designator ON carbon_fir_observations(designator, first_seen);
 """
 
 

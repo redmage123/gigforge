@@ -1,1 +1,0 @@
-import{r as n}from"./index-i9hF_s2U.js";import{u as o}from"./TileLayer-BWyr3k6R.js";function r(){return o().map}function p(e){const t=r();return n.useEffect(function(){return t.on(e),function(){t.off(e)}},[t,e]),t}export{p as a,r as u};

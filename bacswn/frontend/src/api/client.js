@@ -127,6 +127,23 @@ export const api = {
   tradingFlatten: (symbol) => request('/api/trading/positions/' + symbol + '/flatten', { method: 'POST' }),
   corsiaObligation: () => request('/api/trading/corsia-obligation'),
 
+  // CORSIA oversight register (state-side verification of aircraft operators)
+  oversightPeriods: () => request('/api/carbon-oversight/periods'),
+  oversightRegister: (period) => request('/api/carbon-oversight/register?period=' + encodeURIComponent(period)),
+  oversightOperator: (id) => request('/api/carbon-oversight/operators/' + id),
+  oversightCreateOperator: (data) => request('/api/carbon-oversight/operators', { method: 'POST', body: JSON.stringify(data) }),
+  oversightAddReport: (id, data) => request('/api/carbon-oversight/operators/' + id + '/reports', { method: 'POST', body: JSON.stringify(data) }),
+  oversightAddClaim: (id, data) => request('/api/carbon-oversight/operators/' + id + '/claims', { method: 'POST', body: JSON.stringify(data) }),
+  oversightReview: (claimId, data) => request('/api/carbon-oversight/claims/' + claimId + '/review', { method: 'POST', body: JSON.stringify(data) }),
+  oversightCsv: async (period) => {
+    const token = localStorage.getItem('token')
+    const resp = await fetch('/api/carbon-oversight/register.csv?period=' + encodeURIComponent(period), {
+      headers: token ? { Authorization: `Bearer ${token}` } : {}, credentials: 'include',
+    })
+    if (!resp.ok) throw new Error(`Export failed: ${resp.status}`)
+    return resp.blob()
+  },
+
   // Simulations
   simulationScenarios: () => request('/api/simulation/scenarios'),
   simulationRun: (id, step) => request('/api/simulation/run/' + id + '?step=' + step),

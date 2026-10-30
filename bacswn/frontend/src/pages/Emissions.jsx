@@ -35,6 +35,7 @@ export default function Emissions() {
           <p className="subtitle">ICAO CORSIA compliance monitoring — real-time</p>
         </div>
         <div style={{display: 'flex', gap: 10, alignItems: 'center'}}>
+          <Link to="/corsia-oversight" className="btn btn-primary btn-sm" style={{textDecoration: 'none'}}><span aria-hidden="true">📒</span> CORSIA Oversight</Link>
           <Link to="/carbon-trading" className="btn btn-primary btn-sm" style={{textDecoration: 'none'}}>💹 Hedge on Carbon Desk</Link>
           <div className="live-badge"><div className="live-dot" /> LIVE</div>
         </div>

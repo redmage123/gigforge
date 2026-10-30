@@ -52,21 +52,23 @@ function Layout() {
 
   return (
     <div className="app-layout">
-      <button className="hamburger" onClick={() => setSidebarOpen(!sidebarOpen)} aria-label="Toggle menu">
+      <a href="#main-content" className="skip-link">Skip to main content</a>
+      <button className="hamburger" onClick={() => setSidebarOpen(!sidebarOpen)}
+        aria-label={sidebarOpen ? 'Close menu' : 'Open menu'} aria-expanded={sidebarOpen} aria-controls="app-sidebar">
         <span /><span /><span />
       </button>
       {sidebarOpen && <div className="sidebar-overlay" onClick={() => setSidebarOpen(false)} />}
-      <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
+      <aside id="app-sidebar" className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
         <div className="sidebar-header">
           <h1>SKYWATCH</h1>
           <p>Bahamas Aviation & Weather</p>
         </div>
-        <nav className="sidebar-nav">
+        <nav className="sidebar-nav" aria-label="Main">
           {NAV_ITEMS.map(item => (
             <NavLink key={item.path} to={item.path} end={item.path === '/'}
               className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
               onClick={() => setSidebarOpen(false)}>
-              <span className="nav-icon">{item.icon}</span>
+              <span className="nav-icon" aria-hidden="true">{item.icon}</span>
               <span className="nav-label">{item.label}</span>
             </NavLink>
           ))}
@@ -76,14 +78,15 @@ function Layout() {
           <div style={{fontSize: 11, color: 'var(--text-muted)', marginBottom: 8}}>{user?.role}</div>
           <div style={{display: 'flex', gap: 6}}>
             <button className="btn btn-sm" onClick={toggleTheme}
+              aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
               style={{background: 'var(--bg-primary)', color: 'var(--text-primary)', border: '1px solid var(--border)', flex: 1}}>
-              {theme === 'dark' ? '☀️ Light' : '🌙 Dark'}
+              <span aria-hidden="true">{theme === 'dark' ? '☀️' : '🌙'}</span> {theme === 'dark' ? 'Light' : 'Dark'}
             </button>
             <button className="btn btn-sm btn-primary" onClick={logout} style={{flex: 1}}>Logout</button>
           </div>
         </div>
       </aside>
-      <main className="main-content">
+      <main className="main-content" id="main-content" tabIndex={-1}>
         <Outlet />
       </main>
     </div>

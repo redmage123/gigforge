@@ -20,11 +20,20 @@ _consensus_log = []
 _propagation_forecasts = []
 
 # Maximum radio range in degrees (approx 100nm ≈ 1.7 degrees)
-RADIO_RANGE_DEG = 1.8
+RADIO_RANGE_DEG = 2.5
 
 
 def _distance_deg(lat1, lon1, lat2, lon2):
-    return math.sqrt((lat1 - lat2) ** 2 + (lon1 - lon2) ** 2)
+    """Euclidean distance in degrees with latitude correction.
+
+    At ~25°N, a degree of longitude is cos(25°) ≈ 0.906 of a degree of latitude.
+    Applying the cosine factor corrects E-W distances so topology is accurate.
+    """
+    lat_mid = math.radians((lat1 + lat2) / 2)
+    cos_lat = math.cos(lat_mid)
+    dlat = lat1 - lat2
+    dlon = (lon1 - lon2) * cos_lat
+    return math.sqrt(dlat ** 2 + dlon ** 2)
 
 
 def _build_topology():
@@ -43,7 +52,7 @@ def _build_topology():
                     "station": code_b,
                     "distance_nm": round(dist * 60, 1),
                     "signal_quality": quality,
-                    "link_type": "vhf" if dist < 1.2 else "relay",
+                    "link_type": "vhf" if dist < 1.0 else "cellular" if dist < 1.8 else "satellite" if dist < 2.5 else "hf",
                     "latency_ms": int(5 + dist * 20 + random.randint(0, 15)),
                 })
         links[code_a] = sorted(peers, key=lambda p: p["distance_nm"])

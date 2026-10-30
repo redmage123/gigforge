@@ -46,8 +46,15 @@ async def get_emissions_summary():
     flights = await fetch_flights()
     emissions = estimate_airspace_emissions(flights)
 
-    heavy = [f for f in flights if f.get("category") == "heavy"]
-    large = [f for f in flights if f.get("category") == "large"]
+    # Handle both numeric (ICAO) and string categories
+    def cat_match(f, names, nums):
+        c = f.get("category")
+        return c in names or c in nums
+
+    heavy = [f for f in flights if cat_match(f, ["heavy"], [5, 6, 7])]
+    large = [f for f in flights if cat_match(f, ["large"], [4])]
+    medium = [f for f in flights if cat_match(f, ["medium"], [3])]
+    small = [f for f in flights if cat_match(f, ["small", "light"], [1, 2])]
 
     return {
         "current": emissions,
@@ -61,7 +68,7 @@ async def get_emissions_summary():
         "categories": {
             "heavy": len(heavy),
             "large": len(large),
-            "medium": len([f for f in flights if f.get("category") == "medium"]),
-            "small": len([f for f in flights if f.get("category") == "small"]),
+            "medium": len(medium),
+            "small": len(small),
         },
     }

@@ -1,0 +1,1 @@
+import"./index-a6cb7Og9.js";import{u as s,b as r,l as i,a as l,e as c}from"./TileLayer-DuDHV39P.js";function f(){return s().map}const g=r(function({positions:o,...t},e){const n=new i.Polygon(o,t);return l(n,c(e,{overlayContainer:n}))},function(o,t,e){t.positions!==e.positions&&o.setLatLngs(t.positions)});export{g as P,f as u};

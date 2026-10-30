@@ -49,12 +49,19 @@ async def login(req: LoginRequest):
     return response
 
 
+MIN_PASSWORD_LENGTH = 12
+
+
 @router.post("/register")
-async def register(req: RegisterRequest):
+async def register(req: RegisterRequest, request: Request):
+    """Create a user account. Admin-only — there is no public self-registration."""
+    caller = getattr(request.state, "user", None) or {}
+    if caller.get("role") != "admin":
+        return JSONResponse(status_code=403, content={"error": "Only administrators can create accounts"})
     if req.password != req.confirm_password:
         return JSONResponse(status_code=400, content={"error": "Passwords do not match"})
-    if len(req.password) < 6:
-        return JSONResponse(status_code=400, content={"error": "Password must be at least 6 characters"})
+    if len(req.password) < MIN_PASSWORD_LENGTH:
+        return JSONResponse(status_code=400, content={"error": f"Password must be at least {MIN_PASSWORD_LENGTH} characters"})
     if len(req.username) < 3:
         return JSONResponse(status_code=400, content={"error": "Username must be at least 3 characters"})
 
@@ -70,16 +77,13 @@ async def register(req: RegisterRequest):
         title=req.title,
         department=req.department,
     )
-    token = create_token(req.username, "user")
-    response = JSONResponse(status_code=201, content={
-        "token": token,
+    # No token/cookie: the admin creating the account stays logged in as themselves.
+    return JSONResponse(status_code=201, content={
         "username": req.username,
         "role": "user",
         "first_name": req.first_name,
         "last_name": req.last_name,
     })
-    response.set_cookie(key="access_token", value=token, httponly=True, samesite="lax", max_age=86400)
-    return response
 
 
 @router.post("/logout")

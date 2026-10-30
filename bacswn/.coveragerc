@@ -1,0 +1,16 @@
+[run]
+source = .
+omit =
+    tests/*
+    debug_*.py
+    generate_*.py
+    frontend/*
+    data/*
+    .venv/*
+    */__pycache__/*
+    conftest.py
+
+[report]
+fail_under = 80
+show_missing = True
+skip_empty = True

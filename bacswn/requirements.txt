@@ -9,3 +9,8 @@ python-dotenv==1.0.1
 websockets==14.1
 pydantic==2.10.3
 apscheduler==3.10.4
+
+# Forecast verification — METAR parsing, units, flight-category classification
+metpy==1.7.1
+# Forecast bias correction (MOS) — linear + gradient-boosted regressors
+scikit-learn==1.8.0

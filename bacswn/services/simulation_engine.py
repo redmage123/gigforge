@@ -1,3 +1,4 @@
+from services.websocket_manager import ws_manager
 """BACSWN — Simulation Engine for mesh network scenario demonstrations.
 
 Provides 6 pre-built scenarios that play out over 10 steps each, showing how

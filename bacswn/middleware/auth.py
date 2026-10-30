@@ -6,7 +6,6 @@ from services.auth import decode_token
 
 PUBLIC_PATHS = (
     "/api/auth/login",
-    "/api/auth/register",
     "/health",
     "/static/",
     "/favicon.ico",

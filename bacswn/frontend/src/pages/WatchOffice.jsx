@@ -83,6 +83,7 @@ export default function WatchOffice() {
   const { data: metarData, loading, refresh } = usePolling(useCallback(() => api.metars(), []), 120000)
   const { data: tafData } = usePolling(useCallback(() => api.tafs(), []), 600000)
   const { data: mapData } = usePolling(useCallback(() => api.mapLayers(), []), 60000)
+  const { data: climoData } = usePolling(useCallback(() => api.climatologyNormals(), []), 3600000)
   const lastUpdated = useLastUpdated(metarData)
 
   const [activeTab, setActiveTab] = useState('metar')
@@ -91,6 +92,30 @@ export default function WatchOffice() {
     hazard_type: 'TS', description: 'Embedded thunderstorms observed',
     severity: 'moderate', fl_base: 0, fl_top: 450,
   })
+  const [tooltip, setTooltip] = useState({ visible: false, text: '', x: 0, y: 0 })
+
+  const hazardDescriptions = {
+    TS: 'Active thunderstorms with lightning, heavy rain, possible hail, strong updrafts/downdrafts, and wind shear. Extremely hazardous to all aircraft.',
+    TURB: 'Clear air or convective turbulence. Causes altitude deviations, airspeed fluctuations, and structural stress. Can occur at any altitude.',
+    ICE: 'Supercooled water droplets freeze on aircraft surfaces. Degrades aerodynamic performance, adds weight, blocks pitot tubes.',
+    TC: 'Organized tropical weather system with sustained winds 34kt+. Massive area of extreme turbulence, heavy precipitation, and storm surge.',
+    CB: 'Towering cumulus clouds exceeding FL400. Contains severe turbulence, icing, hail, lightning, and microbursts.',
+    LLWS: 'Sudden wind speed/direction change below 2000ft AGL. Extremely dangerous during takeoff and landing.',
+    VA: 'Airborne particulate from volcanic eruptions. Causes engine flameout, windscreen abrasion. Zero tolerance — all aircraft must avoid.',
+  }
+
+  const severityDescriptions = {
+    light: 'Light (LGT): Minor turbulence or icing. Slight changes in altitude. No significant impact on flight safety.',
+    moderate: 'Moderate (MOD): Changes in altitude/attitude but aircraft in positive control. Occasional de-icing needed. Consider deviation.',
+    severe: 'Severe (SEV): Large, abrupt altitude/attitude changes. Aircraft may be momentarily out of control. Immediate deviation recommended.',
+    extreme: 'Extreme (EXTM): Virtually impossible to control aircraft. Structural failure risk. Avoid at all costs.',
+  }
+
+  const showTooltip = (e, text) => {
+    const rect = e.target.getBoundingClientRect()
+    setTooltip({ visible: true, text, x: rect.right + 8, y: rect.top })
+  }
+  const hideTooltip = () => setTooltip({ visible: false, text: '', x: 0, y: 0 })
   const [generating, setGenerating] = useState(false)
   const [generatedSigmets, setGeneratedSigmets] = useState([])
 
@@ -104,16 +129,41 @@ export default function WatchOffice() {
   })
   // Also include METAR-only stations that have lat/lon
   metars.forEach(m => {
-    if (m.lat && m.lon && !allStations.find(s => s.icao === m.station_id)) {
+    if (m.lat && m.lon && !allStations.find(s => (s.icao || s.station_id) === m.station_id)) {
       allStations.push({ ...m, icao: m.station_id })
     }
   })
   const mappableStations = allStations.filter(s => s.lat && s.lon)
+    .filter((s, i, arr) => arr.findIndex(x => (x.icao || x.station_id) === (s.icao || s.station_id)) === i)
 
   // TAF for selected station
   const selectedTaf = selectedStation
     ? (tafData?.tafs || []).find(t => t.icaoId === selectedStation.icao || t.icaoId === selectedStation.station_id)
     : null
+
+  // Climatology (ERA5 30-year normals) for the selected station's current month
+  const climoStations = climoData?.stations || {}
+  const climoBase = climoData?.base_period || 'ERA5 1991–2020'
+  const selectedClimo = selectedStation
+    ? climoStations[selectedStation.icao || selectedStation.station_id]
+    : null
+  const nowMonth = new Date().getUTCMonth() + 1
+  const climoNormal = selectedClimo
+    ? (selectedClimo.months || []).find(m => m.month === nowMonth)
+    : null
+  const climoAnomaly = (climoNormal && selectedStation?.temp_c != null && climoNormal.temp_mean != null)
+    ? Math.round((selectedStation.temp_c - climoNormal.temp_mean) * 10) / 10
+    : null
+
+  // Density altitude — the takeoff-performance number, from temp + pressure + elevation.
+  const densityAltitude = (() => {
+    const s = selectedStation
+    if (!s || s.temp_c == null || s.altimeter_inhg == null) return null
+    const elev = s.elevation_ft || 0
+    const pressureAlt = (29.92 - s.altimeter_inhg) * 1000 + elev   // ft
+    const isaTemp = 15 - 1.98 * (elev / 1000)                       // °C at field
+    return Math.round(pressureAlt + 120 * (s.temp_c - isaTemp))     // ft
+  })()
 
   const generateSigmet = async () => {
     setGenerating(true)
@@ -229,15 +279,31 @@ export default function WatchOffice() {
                       </div>
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
-                      {selectedStation.flight_category && (
+                      {selectedStation.flight_category && selectedStation.flight_category !== 'N/A' && (
                         <span className={`cat-badge cat-${selectedStation.flight_category}`}>
                           {selectedStation.flight_category}
                         </span>
                       )}
+                      {selectedStation.source === 'model' ? (
+                        <span title="Model nowcast from Open-Meteo — this airfield does not file METARs"
+                          style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.4, color: '#f59e0b', border: '1px solid #f59e0b', borderRadius: 4, padding: '1px 6px' }}>
+                          MODEL ESTIMATE
+                        </span>
+                      ) : selectedStation.source === 'metar' || selectedStation.raw_text || selectedStation.raw_metar ? (
+                        <span title="Live observation from the station METAR"
+                          style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.4, color: '#10b981', border: '1px solid #10b981', borderRadius: 4, padding: '1px 6px' }}>
+                          METAR OBSERVED
+                        </span>
+                      ) : null}
                       <button onClick={() => setSelectedStation(null)}
                         style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 20, lineHeight: 1 }}>×</button>
                     </div>
                   </div>
+                  {selectedStation.source === 'model' && (
+                    <div style={{ fontSize: 11, color: '#f59e0b', marginBottom: 12, marginTop: -4 }}>
+                      ⓘ This airfield does not file METARs — values are an Open-Meteo model nowcast, not a station observation. Visibility and dewpoint are unavailable.
+                    </div>
+                  )}
 
                   {/* Raw METAR */}
                   {(selectedStation.raw_text || selectedStation.raw_metar) && (
@@ -261,6 +327,7 @@ export default function WatchOffice() {
                         : '—'],
                       ['Visibility', selectedStation.visibility_sm != null ? selectedStation.visibility_sm + ' SM' : '—'],
                       ['Altimeter', selectedStation.altimeter_inhg != null ? selectedStation.altimeter_inhg + '" Hg' : '—'],
+                      ['Density Alt', densityAltitude != null ? densityAltitude.toLocaleString() + ' ft' : '—'],
                       ...(selectedStation.wx_string ? [['Wx Phenomena', selectedStation.wx_string]] : []),
                     ].map(([label, value]) => (
                       <div key={label} style={label === 'Wx Phenomena' ? { gridColumn: '1/-1' } : {}}>
@@ -269,6 +336,32 @@ export default function WatchOffice() {
                       </div>
                     ))}
                   </div>
+
+                  {/* Climatology — current month normals vs now (ERA5) */}
+                  {climoNormal && (
+                    <div style={{ marginBottom: 14, padding: '10px 12px', border: '1px solid var(--border)', borderRadius: 8, background: 'var(--bg-primary)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
+                        <span style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.4 }}>
+                          {climoNormal.label} climate normal
+                        </span>
+                        <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>{climoBase}</span>
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, fontSize: 12 }}>
+                        <div><div style={{ color: 'var(--text-muted)', fontSize: 10 }}>Avg High</div><div style={{ fontWeight: 600 }}>{climoNormal.temp_high ?? '—'}°C</div></div>
+                        <div><div style={{ color: 'var(--text-muted)', fontSize: 10 }}>Avg Low</div><div style={{ fontWeight: 600 }}>{climoNormal.temp_low ?? '—'}°C</div></div>
+                        <div><div style={{ color: 'var(--text-muted)', fontSize: 10 }}>Avg Rain</div><div style={{ fontWeight: 600 }}>{climoNormal.precip_mm ?? '—'} mm</div></div>
+                      </div>
+                      {climoAnomaly != null && (
+                        <div style={{ marginTop: 8, fontSize: 12 }}>
+                          Now <strong>{selectedStation.temp_c}°C</strong> ·{' '}
+                          <span style={{ fontWeight: 700, color: climoAnomaly > 0.2 ? '#ef4444' : climoAnomaly < -0.2 ? '#3b82f6' : 'var(--text-muted)' }}>
+                            {climoAnomaly > 0 ? '+' : ''}{climoAnomaly}°C {climoAnomaly > 0.2 ? 'above' : climoAnomaly < -0.2 ? 'below' : 'near'}
+                          </span>{' '}
+                          the {climoNormal.label} average of {climoNormal.temp_mean}°C
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {/* TAF section */}
                   {selectedTaf ? (
@@ -419,10 +512,16 @@ export default function WatchOffice() {
               <h3>AI SIGMET Generator</h3>
               <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>ICAO-formatted advisory</span>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 12, position: 'relative' }}>
               <div className="form-group">
-                <label>Hazard Type</label>
-                <select value={sigmetForm.hazard_type} onChange={e => setSigmetForm({ ...sigmetForm, hazard_type: e.target.value })} style={{ width: '100%' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  Hazard Type
+                  <span onClick={() => setTooltip(t => ({ ...t, visible: t.show === 'hazard' ? false : true, show: t.show === 'hazard' ? '' : 'hazard' }))}
+                    style={{ cursor: 'pointer', fontSize: 14, opacity: 0.6, userSelect: 'none' }}>&#9432;</span>
+                </label>
+                <select value={sigmetForm.hazard_type}
+                  onChange={e => setSigmetForm({ ...sigmetForm, hazard_type: e.target.value })}
+                  style={{ width: '100%' }}>
                   <option value="TS">Thunderstorm</option>
                   <option value="TURB">Turbulence</option>
                   <option value="ICE">Icing</option>
@@ -431,15 +530,43 @@ export default function WatchOffice() {
                   <option value="LLWS">Low Level Wind Shear</option>
                   <option value="VA">Volcanic Ash</option>
                 </select>
+                {tooltip.show === 'hazard' && (
+                  <div style={{ position: 'absolute', zIndex: 999, left: 0, top: '100%', marginTop: 4, width: 320, background: '#1e293b', border: '1px solid #334155', borderRadius: 8, padding: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.6)' }}>
+                    <div style={{ fontWeight: 700, marginBottom: 8, fontSize: 13 }}>Hazard Types</div>
+                    {Object.entries(hazardDescriptions).map(([k, v]) => (
+                      <div key={k} style={{ marginBottom: 6, fontSize: 11, lineHeight: 1.3, padding: '4px 0', borderBottom: '1px solid #334155' }}>
+                        <span style={{ fontWeight: 700, color: k === sigmetForm.hazard_type ? '#f59e0b' : '#94a3b8' }}>{k}</span>
+                        <span style={{ color: '#64748b' }}> {v}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
               <div className="form-group">
-                <label>Severity</label>
-                <select value={sigmetForm.severity} onChange={e => setSigmetForm({ ...sigmetForm, severity: e.target.value })} style={{ width: '100%' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  Severity
+                  <span onClick={() => setTooltip(t => ({ ...t, visible: t.show === 'severity' ? false : true, show: t.show === 'severity' ? '' : 'severity' }))}
+                    style={{ cursor: 'pointer', fontSize: 14, opacity: 0.6, userSelect: 'none' }}>&#9432;</span>
+                </label>
+                <select value={sigmetForm.severity}
+                  onChange={e => setSigmetForm({ ...sigmetForm, severity: e.target.value })}
+                  style={{ width: '100%' }}>
                   <option value="light">Light</option>
                   <option value="moderate">Moderate</option>
                   <option value="severe">Severe</option>
                   <option value="extreme">Extreme</option>
                 </select>
+                {tooltip.show === 'severity' && (
+                  <div style={{ position: 'absolute', zIndex: 999, left: 0, top: '100%', marginTop: 4, width: 320, background: '#1e293b', border: '1px solid #334155', borderRadius: 8, padding: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.6)' }}>
+                    <div style={{ fontWeight: 700, marginBottom: 8, fontSize: 13 }}>Severity Levels</div>
+                    {Object.entries(severityDescriptions).map(([k, v]) => (
+                      <div key={k} style={{ marginBottom: 6, fontSize: 11, lineHeight: 1.3, padding: '4px 0', borderBottom: '1px solid #334155' }}>
+                        <span style={{ fontWeight: 700, color: k === sigmetForm.severity ? sigmetColor(k) : '#94a3b8' }}>{k.toUpperCase()}</span>
+                        <span style={{ color: '#64748b' }}> {v}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
               <div className="form-group">
                 <label>FL Base / Top</label>

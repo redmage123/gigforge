@@ -1,9 +1,36 @@
 """BACSWN — SQLite database layer (aiosqlite + WAL mode)."""
 
+import re
 import aiosqlite
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 from config import DATA_DIR, DB_PATH
+
+# ── SQL injection guards (S1-003) ────────────────────────────────────────────
+_ALLOWED_TABLES = {
+    "users",
+    "weather_observations",
+    "flight_records",
+    "emissions",
+    "incidents",
+    "channel_messages",
+    "agent_activity",
+    "stations",
+    "advisories",
+    "forecast_verifications",
+}
+# Allows: column, column ASC, column DESC (case-insensitive)
+_COL_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*(\s+(ASC|DESC))?$", re.IGNORECASE)
+
+
+def _validate_table(table: str) -> None:
+    if table not in _ALLOWED_TABLES:
+        raise ValueError(f"Unknown table: {table!r}")
+
+
+def _validate_column(col: str) -> None:
+    if not _COL_RE.match(col.strip()):
+        raise ValueError(f"Invalid column name: {col!r}")
 
 _SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS users (
@@ -130,7 +157,38 @@ CREATE TABLE IF NOT EXISTS advisories (
     status          TEXT    NOT NULL DEFAULT 'draft',
     created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS forecast_verifications (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    station_id      TEXT    NOT NULL,
+    variable        TEXT    NOT NULL,
+    lead_h          INTEGER NOT NULL,
+    issued_at       TEXT    NOT NULL,
+    valid_at        TEXT    NOT NULL,
+    forecast_value  REAL,
+    observed_value  REAL,
+    signed_error    REAL,
+    abs_error       REAL,
+    forecast_cat    TEXT,
+    observed_cat    TEXT,
+    cat_hit         INTEGER,
+    corrected_value REAL,
+    corrected_signed_error REAL,
+    corrected_abs_error    REAL,
+    source          TEXT    NOT NULL DEFAULT 'live',
+    status          TEXT    NOT NULL DEFAULT 'pending',
+    created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
+);
 """
+
+# Columns added after the initial release — applied as lightweight migrations.
+_MIGRATIONS = {
+    "forecast_verifications": {
+        "corrected_value": "REAL",
+        "corrected_signed_error": "REAL",
+        "corrected_abs_error": "REAL",
+    },
+}
 
 _INDEX_SQL = """
 CREATE INDEX IF NOT EXISTS idx_wx_station ON weather_observations(station_id);
@@ -143,6 +201,9 @@ CREATE INDEX IF NOT EXISTS idx_agent_name ON agent_activity(agent_name);
 CREATE INDEX IF NOT EXISTS idx_agent_created ON agent_activity(created_at);
 CREATE INDEX IF NOT EXISTS idx_advisories_status ON advisories(status);
 CREATE INDEX IF NOT EXISTS idx_channel_sent ON channel_messages(sent_at);
+CREATE INDEX IF NOT EXISTS idx_fv_status ON forecast_verifications(status);
+CREATE INDEX IF NOT EXISTS idx_fv_valid ON forecast_verifications(valid_at);
+CREATE INDEX IF NOT EXISTS idx_fv_lookup ON forecast_verifications(station_id, issued_at, lead_h, variable);
 """
 
 
@@ -154,6 +215,13 @@ async def init_db() -> None:
         await db.execute("PRAGMA foreign_keys=ON")
         await db.executescript(_SCHEMA_SQL)
         await db.executescript(_INDEX_SQL)
+        # Apply additive column migrations (SQLite has no ADD COLUMN IF NOT EXISTS).
+        for table, cols in _MIGRATIONS.items():
+            cursor = await db.execute(f"PRAGMA table_info({table})")
+            existing = {row[1] for row in await cursor.fetchall()}
+            for col, decl in cols.items():
+                if col not in existing:
+                    await db.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
         await db.commit()
 
 
@@ -171,6 +239,7 @@ async def get_db() -> AsyncIterator[aiosqlite.Connection]:
 
 async def db_insert(table: str, data: dict) -> int:
     """Insert a row and return the new rowid."""
+    _validate_table(table)
     columns = ", ".join(data.keys())
     placeholders = ", ".join("?" for _ in data)
     async with get_db() as db:
@@ -184,6 +253,9 @@ async def db_insert(table: str, data: dict) -> int:
 
 async def db_select(table: str, where: dict | None = None, order_by: str = "", limit: int = 100) -> list[dict]:
     """Select rows as list of dicts."""
+    _validate_table(table)
+    if order_by:
+        _validate_column(order_by)
     sql = f"SELECT * FROM {table}"
     params = []
     if where:
@@ -201,6 +273,7 @@ async def db_select(table: str, where: dict | None = None, order_by: str = "", l
 
 async def db_update(table: str, data: dict, where: dict) -> int:
     """Update rows and return affected count."""
+    _validate_table(table)
     set_clause = ", ".join(f"{k} = ?" for k in data)
     where_clause = " AND ".join(f"{k} = ?" for k in where)
     params = list(data.values()) + list(where.values())
@@ -214,6 +287,7 @@ async def db_update(table: str, data: dict, where: dict) -> int:
 
 async def db_delete(table: str, where: dict) -> int:
     """Delete rows and return affected count."""
+    _validate_table(table)
     where_clause = " AND ".join(f"{k} = ?" for k in where)
     async with get_db() as db:
         cursor = await db.execute(
@@ -344,17 +418,23 @@ async def seed_demo_data() -> None:
         cursor = await db.execute("SELECT COUNT(*) FROM advisories")
         row = await cursor.fetchone()
         if row and row[0] == 0:
+            _ADV_COLS = "advisory_type, hazard_type, raw_text, severity, area, valid_from, valid_to, generated_by, status"
+            _ADV_PHS = "?, ?, ?, ?, ?, ?, ?, ?, ?"
             for adv in _DEMO_ADVISORIES:
-                cols = ", ".join(adv.keys())
-                phs = ", ".join("?" for _ in adv)
-                await db.execute(f"INSERT INTO advisories ({cols}) VALUES ({phs})", list(adv.values()))
+                await db.execute(
+                    f"INSERT INTO advisories ({_ADV_COLS}) VALUES ({_ADV_PHS})",
+                    [adv[k] for k in ("advisory_type", "hazard_type", "raw_text", "severity", "area", "valid_from", "valid_to", "generated_by", "status")],
+                )
 
         cursor = await db.execute("SELECT COUNT(*) FROM incidents")
         row = await cursor.fetchone()
         if row and row[0] == 0:
+            _INC_COLS = ", ".join(_DEMO_INCIDENTS[0].keys()) if _DEMO_INCIDENTS else ""
+            _INC_PHS = ", ".join("?" for _ in _DEMO_INCIDENTS[0]) if _DEMO_INCIDENTS else ""
             for inc in _DEMO_INCIDENTS:
-                cols = ", ".join(inc.keys())
-                phs = ", ".join("?" for _ in inc)
-                await db.execute(f"INSERT INTO incidents ({cols}) VALUES ({phs})", list(inc.values()))
+                await db.execute(
+                    "INSERT INTO incidents (" + _INC_COLS + ") VALUES (" + _INC_PHS + ")",
+                    list(inc.values()),
+                )
 
         await db.commit()

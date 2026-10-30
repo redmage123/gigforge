@@ -148,6 +148,7 @@ body {
 
 .main-content {
   flex: 1;
+  min-width: 0;            /* let wide tables scroll inside their containers instead of widening the page (reflow, WCAG 1.4.10) */
   margin-left: 260px;
   padding: 24px;
   min-height: 100vh;

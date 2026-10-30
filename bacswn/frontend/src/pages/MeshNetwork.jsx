@@ -1,8 +1,9 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { MapContainer, TileLayer, Marker, Polyline, Circle, CircleMarker, Tooltip, useMapEvents } from 'react-leaflet'
+import { MapContainer, TileLayer, Marker, Polyline, Circle, CircleMarker, Tooltip, useMap, useMapEvents } from 'react-leaflet'
 import L from 'leaflet'
 import { api } from '../api/client'
 import { usePolling } from '../hooks/usePolling'
+import { usePrefersReducedMotion } from '../hooks/useA11yPrefs'
 import PrecogChamber, { HAZARD_COLORS } from '../components/mesh/PrecogChamber'
 import MeshLogs from '../components/mesh/MeshLogs'
 import '../components/mesh/mesh.css'
@@ -15,6 +16,26 @@ const SCENARIOS = [
   ['sensor_fault', 'Stuck sensor @ Exuma', 'Visibility sensor sticks at ½ SM — fools two local models, peers reject it'],
   ['partition', 'Partition the south', 'Cut Inagua, Mayaguana & Ragged Island off — alerts queue (store-and-forward)'],
 ]
+
+// Map shapes with hover tooltips: Chrome makes them Tab stops with no accessible name.
+// They're visual only — the Stations / Storm cells / Links tables are the equivalent.
+const decorative = {
+  add: (e) => {
+    const el = e.target.getElement?.()
+    if (el) { el.setAttribute('tabindex', '-1'); el.setAttribute('aria-hidden', 'true') }
+  },
+}
+
+/** Name the map container (a Tab stop for keyboard panning) and give instructions. */
+function MapA11y() {
+  const map = useMap()
+  useEffect(() => {
+    const el = map.getContainer()
+    el.setAttribute('aria-label', 'Mesh map. Arrow keys pan, plus and minus zoom. Station markers are buttons that open the precog chamber.')
+    el.setAttribute('aria-roledescription', 'map')
+  }, [map])
+  return null
+}
 
 const dbzColor = (c) => c.kind === 'fog' ? '#cbd5e1'
   : c.intensity >= 52 ? '#d946ef' : c.intensity >= 45 ? '#ef4444' : c.intensity >= 38 ? '#f59e0b' : '#22c55e'
@@ -33,9 +54,10 @@ function nodeIcon(n, selected) {
 }
 
 /** Animated dots travelling hop-by-hop along recent message paths. */
-function MessagePulses({ messages, coords, tick }) {
-  const [phase, setPhase] = useState(0)
+function MessagePulses({ messages, coords, tick, reducedMotion }) {
+  const [phase, setPhase] = useState(0.5)
   useEffect(() => {
+    if (reducedMotion) { setPhase(0.5); return }   // static dots mid-route, no animation
     // Anchor to the first frame's timestamp: rAF times can precede performance.now(),
     // which would make the phase negative.
     let raf, start = null
@@ -46,7 +68,7 @@ function MessagePulses({ messages, coords, tick }) {
     }
     raf = requestAnimationFrame(loop)
     return () => cancelAnimationFrame(raf)
-  }, [])
+  }, [reducedMotion])
   const recent = messages.filter(m => tick - m.tick <= 1 && m.path.length > 1).slice(0, 18)
   return recent.map(m => {
     const pts = m.path.map(s => coords[s]).filter(Boolean)
@@ -56,8 +78,8 @@ function MessagePulses({ messages, coords, tick }) {
     const r = f - i
     const pos = [pts[i][0] + (pts[i + 1][0] - pts[i][0]) * r, pts[i][1] + (pts[i + 1][1] - pts[i][1]) * r]
     const color = MSG_COLORS[m.type] || '#fff'
-    return <CircleMarker key={m.id} center={pos} radius={m.type === 'ALERT' ? 6 : 4}
-      pathOptions={{ color, fillColor: color, fillOpacity: 1, weight: 2, opacity: 0.6 }} interactive={false} />
+    return <CircleMarker key={m.id} center={pos} radius={m.type === 'ALERT' ? 6 : 4} eventHandlers={decorative}
+      pathOptions={{ color, fillColor: color, fillOpacity: 1, weight: 2, opacity: 0.6, className: 'msg-pulse' }} interactive={false} />
   })
 }
 
@@ -73,12 +95,31 @@ export default function MeshNetwork() {
   const [busy, setBusy] = useState(false)
   const [toast, setToast] = useState(null)
   const toastTimer = useRef(null)
+  const reducedMotion = usePrefersReducedMotion()
+  const [spawnKind, setSpawnKind] = useState('squall')
+  const [spawnNear, setSpawnNear] = useState('MYBS')
+  const [verdictNote, setVerdictNote] = useState('')
 
   const d = data || {}
   const nodes = d.nodes || []
   const coords = useMemo(() => Object.fromEntries(nodes.map(n => [n.station, [n.lat, n.lon]])), [nodes])
   const node = nodes.find(n => n.station === selected)
   const routeLine = node?.route_to_hub?.path?.map(s => coords[s]).filter(Boolean)
+
+  // Announce changes to the selected station's verdict for screen-reader users
+  // (only the station they are watching, so the live region doesn't flood).
+  const lastVerdict = useRef({})
+  const verdictKey = node ? `${node.station}|${node.alive ? node.verdict.call : 'OFFLINE'}|${node.verdict.agreement}` : ''
+  useEffect(() => {
+    if (!node) return
+    const prev = lastVerdict.current
+    if (prev.station === node.station && prev.key !== verdictKey) {
+      setVerdictNote(node.alive
+        ? `${node.station} verdict now ${node.verdict.call}, ${node.verdict.split ? 'ensemble split' : node.verdict.agreement + ' models agree'}.`
+        : `${node.station} is offline.`)
+    }
+    lastVerdict.current = { station: node.station, key: verdictKey }
+  }, [verdictKey]) // eslint-disable-line react-hooks/exhaustive-deps
   const c = d.counters || {}
   const quarantined = nodes.reduce((a, n) => a + n.precogs.filter(p => p.quarantined).length, 0)
   const openReports = (d.minority_reports || []).filter(r => r.status === 'OPEN').length
@@ -131,23 +172,50 @@ export default function MeshNetwork() {
         ))}
         <button className="mesh-chip danger" disabled={busy} onClick={() => run(() => api.meshScenario('reset'), 'Simulation reset')}>Reset</button>
         <span className="sep" />
-        <span className="label">Click map to spawn</span>
+        <span className="label" id="spawn-click-label">Click map to spawn</span>
         {['squall', 'convective', 'fog'].map(k => (
-          <button key={k} className={`mesh-chip ${spawnMode === k ? 'on' : ''}`} onClick={() => setSpawnMode(spawnMode === k ? null : k)}>{k}</button>
+          <button key={k} type="button" className={`mesh-chip ${spawnMode === k ? 'on' : ''}`} aria-pressed={spawnMode === k}
+            aria-describedby="spawn-click-label" onClick={() => setSpawnMode(spawnMode === k ? null : k)}>{k}</button>
         ))}
-        {toast && <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--text-secondary)' }}>{toast}</span>}
+        <span className="sep" />
+        {/* Keyboard / screen-reader equivalent of clicking the map */}
+        <form className="spawn-form" aria-label="Spawn a storm near a station"
+          onSubmit={(e) => {
+            e.preventDefault()
+            const n = nodes.find(x => x.station === spawnNear)
+            if (n) run(() => api.meshStorm({ kind: spawnKind, lat: n.lat + 0.35, lon: n.lon - 0.45 }), `${spawnKind} cell spawned just west of ${spawnNear}`)
+          }}>
+          <label htmlFor="spawn-kind">Spawn</label>
+          <select id="spawn-kind" value={spawnKind} onChange={e => setSpawnKind(e.target.value)}>
+            <option value="squall">squall</option><option value="convective">convective</option><option value="fog">fog</option>
+          </select>
+          <label htmlFor="spawn-near">near</label>
+          <select id="spawn-near" value={spawnNear} onChange={e => setSpawnNear(e.target.value)}>
+            {nodes.map(n => <option key={n.station} value={n.station}>{n.station} — {n.name}</option>)}
+          </select>
+          <button type="submit" className="mesh-chip" disabled={busy}>Spawn</button>
+        </form>
       </div>
+      <div role="status" aria-live="polite" className="mesh-toast">{toast}</div>
+      <div className="sr-only" aria-live="polite">{verdictNote}</div>
 
       <div className="mesh-main">
-        <div className={`mesh-map ${spawnMode ? 'spawning' : ''}`}>
-          <MapContainer bounds={[[20.7, -79.8], [27.1, -72.8]]} style={{ height: '100%', width: '100%' }} zoomControl={false}>
+        <div className={`mesh-map ${spawnMode ? 'spawning' : ''}`} role="region" aria-label="Mesh network map"
+          aria-describedby="mesh-map-note">
+          <p id="mesh-map-note" className="sr-only">
+            Station markers can be reached with Tab and opened with Enter. Everything on the map is also listed in the
+            Stations, Storm cells and Links tabs below.
+          </p>
+          <MapContainer bounds={[[20.7, -79.8], [27.1, -72.8]]} style={{ height: '100%', width: '100%' }} zoomControl={false}
+            zoomAnimation={!reducedMotion} fadeAnimation={!reducedMotion} markerZoomAnimation={!reducedMotion}>
+            <MapA11y />
             <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" />
             <ClickToSpawn mode={spawnMode} onSpawn={(ll) => run(() => api.meshStorm({ kind: spawnMode, lat: ll.lat, lon: ll.lng }),
               `${spawnMode} cell spawned`)} />
 
             {(d.cells || []).map(cell => (
               <Fragment key={cell.id}>
-                <Circle center={[cell.lat, cell.lon]} radius={cell.radius_nm * 1852 * 0.9}
+                <Circle center={[cell.lat, cell.lon]} radius={cell.radius_nm * 1852 * 0.9} eventHandlers={decorative}
                   pathOptions={{ color: dbzColor(cell), fillColor: dbzColor(cell), fillOpacity: cell.kind === 'fog' ? 0.28 : 0.22, weight: 1 }}>
                   <Tooltip>{cell.id} · {cell.kind} · {cell.kind === 'fog' ? `density ${cell.intensity}` : `${cell.intensity} dBZ`} · {cell.direction} {cell.speed_kt} kt</Tooltip>
                 </Circle>
@@ -158,7 +226,7 @@ export default function MeshNetwork() {
             ))}
 
             {(d.links || []).map(l => coords[l.a] && coords[l.b] && (
-              <Polyline key={l.a + l.b} positions={[coords[l.a], coords[l.b]]}
+              <Polyline key={l.a + l.b} positions={[coords[l.a], coords[l.b]]} eventHandlers={decorative}
                 pathOptions={{
                   color: l.up ? LINK_COLORS[l.type] : '#ef4444',
                   weight: l.up ? 1.5 + Math.min(4, l.traffic / 2) : 1.5,
@@ -173,18 +241,27 @@ export default function MeshNetwork() {
               <Polyline positions={routeLine} pathOptions={{ color: '#22d3ee', weight: 5, opacity: 0.85 }} interactive={false} />
             )}
 
-            <MessagePulses messages={[...(d.messages || []), ...(d.heartbeats || [])]} coords={coords} tick={d.tick} />
+            <MessagePulses messages={[...(d.messages || []), ...(d.heartbeats || [])]} coords={coords} tick={d.tick} reducedMotion={reducedMotion} />
 
             {nodes.map(n => (
               <Marker key={n.station} position={[n.lat, n.lon]} icon={nodeIcon(n, n.station === selected)}
-                eventHandlers={{ click: () => setSelected(n.station) }} />
+                title={`${n.station} ${n.name}${n.is_hub ? ' (hub)' : ''}: ${n.alive ? `${n.verdict.call}, ${n.verdict.split ? 'models split' : n.verdict.agreement + ' agree'}` : 'offline'}, ${n.status}${n.station === selected ? ', selected' : ''}`}
+                eventHandlers={{
+                  click: () => setSelected(n.station),
+                  // Leaflet only maps Enter to "open popup"; these markers have none, so
+                  // activate them ourselves (role="button" contract: Enter and Space).
+                  keypress: (e) => {
+                    const k = e.originalEvent.key
+                    if (k === 'Enter' || k === ' ') { e.originalEvent.preventDefault(); setSelected(n.station) }
+                  },
+                }} />
             ))}
           </MapContainer>
 
-          <div className="mesh-clock">
+          <div className="mesh-clock" aria-label={`Simulated time ${d.sim_time?.slice(11, 16)} UTC`}>
             {d.sim_time?.slice(11, 16)}Z <small>sim · {d.sim_minutes_per_tick} min per second</small>
           </div>
-          <div className="mesh-legend">
+          <div className="mesh-legend" aria-hidden="true">
             {Object.entries(HAZARD_COLORS).map(([h, col]) => <span key={h}><i style={{ background: col }} />{h}</span>)}
             <span><s style={{ borderColor: LINK_COLORS.vhf }} />VHF</span>
             <span><s style={{ borderColor: LINK_COLORS.cellular, borderTopStyle: 'dashed' }} />Cellular</span>

@@ -12,6 +12,9 @@ services:
     environment:
       - HOST=0.0.0.0
       - PORT=8060
+      # Trust X-Forwarded-For from nginx so rate limits are per real client, not
+      # per Docker gateway. Safe: the port is bound to localhost, only nginx reaches it.
+      - FORWARDED_ALLOW_IPS=*
       - JWT_SECRET=${JWT_SECRET:?JWT_SECRET must be set in .env}
       - OPENSKY_USERNAME=${OPENSKY_USERNAME:-}
       - OPENSKY_PASSWORD=${OPENSKY_PASSWORD:-}

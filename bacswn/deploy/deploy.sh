@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Run FROM A DEV MACHINE, from a clean checkout of master:  deploy/deploy.sh <domain>
-# <domain> must already have an A record pointing at the prod host.
+# <domain> must already have an A record pointing at the prod host, either
+# direct (Let's Encrypt cert via certbot) or through the Cloudflare proxy
+# (Cloudflare serves public TLS; origin uses the shared gigforge cert).
 #
 # 1. Pre-flight: DNS, prod .env has JWT_SECRET, clean checkout.
 # 2. Backup: SQLite snapshot inside the data volume + tag the running image
@@ -21,8 +23,18 @@ HERE=$(cd "$(dirname "$0")/.." && pwd)
 TS=$(date +%Y%m%d-%H%M%S)
 
 echo "==> Pre-flight"
-ip=$(dig +short "$DOMAIN" A | tail -1)
-[ "$ip" = "78.47.104.139" ] || { echo "DNS for $DOMAIN resolves to '$ip', not 78.47.104.139"; exit 1; }
+# Ask the zone's authoritative server — local resolvers may still cache a miss.
+NS=$(dig +short NS "${DOMAIN#*.}" | head -1)
+ip=$(dig +short ${NS:+@$NS} "$DOMAIN" A | tail -1)
+if [ "$ip" = "78.47.104.139" ]; then
+  MODE=direct
+elif python3 -c 'import ipaddress,sys; ip=ipaddress.ip_address(sys.argv[1]); sys.exit(not any(ip in ipaddress.ip_network(n) for n in ("104.16.0.0/13","104.24.0.0/14","172.64.0.0/13","162.158.0.0/15","188.114.96.0/20","141.101.64.0/18","108.162.192.0/18","173.245.48.0/20","190.93.240.0/20","198.41.128.0/17","197.234.240.0/22","103.21.244.0/22","103.22.200.0/22","103.31.4.0/22","131.0.72.0/22")))' "${ip:-0.0.0.0}"; then
+  MODE=cloudflare
+else
+  echo "DNS for $DOMAIN resolves to '$ip' — neither 78.47.104.139 nor Cloudflare"; exit 1
+fi
+CURL_RESOLVE=(--resolve "$DOMAIN:443:$ip")
+echo "$DOMAIN -> $ip ($MODE)"
 ssh "$HOST" "grep -Eq '^JWT_SECRET=.{16,}' $REMOTE_DIR/.env" \
   || { echo "prod $REMOTE_DIR/.env has no JWT_SECRET (>=16 chars)"; exit 1; }
 git -C "$HERE" diff --quiet HEAD -- . || { echo "uncommitted changes in $HERE — deploy from a clean checkout"; exit 1; }
@@ -56,19 +68,22 @@ for i in $(seq 1 60); do
 done
 ssh "$HOST" "curl -sf http://127.0.0.1:8060/health/" >/dev/null || { echo "container not healthy — see: docker logs bacswn-skywatch"; exit 1; }
 
-echo "==> nginx vhost + TLS"
+echo "==> nginx vhost + TLS ($MODE)"
+TEMPLATE=bacswn.nginx.conf; [ "$MODE" = cloudflare ] && TEMPLATE=bacswn.nginx.cloudflare.conf
 ssh "$HOST" "set -e
-  sed 's/__DOMAIN__/$DOMAIN/' $REMOTE_DIR/bacswn.nginx.conf | sudo tee /etc/nginx/sites-available/bacswn >/dev/null
+  sed 's/__DOMAIN__/$DOMAIN/' $REMOTE_DIR/$TEMPLATE | sudo tee /etc/nginx/sites-available/bacswn >/dev/null
   sudo ln -sf /etc/nginx/sites-available/bacswn /etc/nginx/sites-enabled/bacswn
-  sudo nginx -t && sudo systemctl reload nginx
-  sudo certbot --nginx -d $DOMAIN --non-interactive --agree-tos --redirect --reinstall"  # reuses the host's existing certbot account
+  sudo nginx -t && sudo systemctl reload nginx"
+if [ "$MODE" = direct ]; then  # reuses the host's existing certbot account
+  ssh "$HOST" "sudo certbot --nginx -d $DOMAIN --non-interactive --agree-tos --redirect --reinstall"
+fi
 
 echo "==> Verify"
 for i in $(seq 1 30); do
-  curl -sf "https://$DOMAIN/health/" >/dev/null && break
+  curl -sf "${CURL_RESOLVE[@]}" "https://$DOMAIN/health/" >/dev/null && break
   sleep 2
 done
-curl -sf "https://$DOMAIN/health/" | head -c 200; echo
+curl -sf "${CURL_RESOLVE[@]}" "https://$DOMAIN/health/" | head -c 200; echo
 ssh "$HOST" "curl -s http://127.0.0.1:8060/openapi.json" | python3 -c '
 import sys, json
 paths = json.load(sys.stdin)["paths"]
@@ -78,7 +93,7 @@ for prefix in ("/api/trading/", "/api/mesh/scenario"):
     assert n, f"no {prefix} routes — old build still running?"'
 code=$(curl -s -m 5 -o /dev/null -w '%{http_code}' "http://78.47.104.139:8060/health/" || true)
 echo "public :8060 -> $code (expect 000 = unreachable)"
-code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "https://$DOMAIN/api/auth/register" \
+code=$(curl -s "${CURL_RESOLVE[@]}" -o /dev/null -w '%{http_code}' -X POST "https://$DOMAIN/api/auth/register" \
   -H 'content-type: application/json' -d '{}')
 echo "anonymous register -> $code (expect 401)"
 

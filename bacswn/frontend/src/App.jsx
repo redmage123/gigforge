@@ -15,6 +15,7 @@ const CommandCenter = lazy(() => import('./pages/CommandCenter'))
 const WatchOffice = lazy(() => import('./pages/WatchOffice'))
 const FlightOps = lazy(() => import('./pages/FlightOps'))
 const Emissions = lazy(() => import('./pages/Emissions'))
+const CarbonTrading = lazy(() => import('./pages/CarbonTrading'))
 const Emergency = lazy(() => import('./pages/Emergency'))
 const SensorNetwork = lazy(() => import('./pages/SensorNetwork'))
 const Training = lazy(() => import('./pages/Training'))
@@ -31,6 +32,7 @@ const NAV_ITEMS = [
   { path: '/verification', icon: '📈', label: 'Forecast Skill' },
   { path: '/flights', icon: '✈️', label: 'Flight Operations' },
   { path: '/emissions', icon: '🌱', label: 'Carbon & Emissions' },
+  { path: '/carbon-trading', icon: '💹', label: 'Carbon Trading' },
   { path: '/emergency', icon: '🚨', label: 'Emergency Response' },
   { path: '/sensors', icon: '📡', label: 'Sensor Network' },
   { path: '/training', icon: '🎓', label: 'Training & Certs' },
@@ -150,6 +152,7 @@ export default function App() {
               <Route path="watch-office" element={<WatchOffice />} />
               <Route path="flights" element={<FlightOps />} />
               <Route path="emissions" element={<Emissions />} />
+              <Route path="carbon-trading" element={<CarbonTrading />} />
               <Route path="emergency" element={<Emergency />} />
               <Route path="sensors" element={<SensorNetwork />} />
               <Route path="training" element={<Training />} />

@@ -46,6 +46,7 @@ from api.chat import router as chat_router
 from api.hurricane import router as hurricane_router
 from api.mesh import router as mesh_router
 from api.simulation import router as simulation_router
+from api.trading import router as trading_router
 from api.verification import router as verification_router
 from api.climatology import router as climatology_router
 
@@ -161,8 +162,18 @@ async def lifespan(app: FastAPI):
                 logger.error(f"WS weather broadcast error: {e}")
             await asyncio.sleep(30)
 
+    async def _market_loop():
+        from services.carbon_exchange import venue
+        while True:
+            try:
+                venue.step()
+            except Exception as e:
+                logger.error(f"Carbon market step error: {e}")
+            await asyncio.sleep(0.5)
+
     asyncio.create_task(_ws_flights_loop())
     asyncio.create_task(_ws_weather_loop())
+    asyncio.create_task(_market_loop())
     logger.info("WebSocket broadcast tasks started (flights: 5s, weather: 30s)")
 
     logger.info(f"Server ready at http://{HOST}:{PORT}")
@@ -220,6 +231,7 @@ app.include_router(chat_router, prefix="/api/chat", tags=["chat"])
 app.include_router(hurricane_router, prefix="/api/hurricane", tags=["hurricane"])
 app.include_router(mesh_router, prefix="/api/mesh", tags=["mesh"])
 app.include_router(simulation_router, prefix="/api/simulation", tags=["simulation"])
+app.include_router(trading_router, prefix="/api/trading", tags=["trading"])
 app.include_router(verification_router, prefix="/api/verification", tags=["verification"])
 app.include_router(climatology_router, prefix="/api/climatology", tags=["climatology"])
 

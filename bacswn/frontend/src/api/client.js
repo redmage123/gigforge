@@ -23,7 +23,7 @@ async function request(path, options = {}) {
   }
 
   const data = await resp.json()
-  if (!resp.ok) throw new Error(data.error || `Request failed: ${resp.status}`)
+  if (!resp.ok) throw new Error(data.error || data.reason || `Request failed: ${resp.status}`)
   return data
 }
 
@@ -112,7 +112,20 @@ export const api = {
   // Mesh Network
   meshStatus: () => request('/api/mesh/status'),
   meshNode: (id) => request('/api/mesh/node/' + id),
-  meshConsensus: (type) => request('/api/mesh/consensus?event_type=' + (type || 'weather_alert'), { method: 'POST' }),
+  meshConsensus: (station) => request('/api/mesh/consensus?station=' + (station || 'MYNN'), { method: 'POST' }),
+  meshFault: (fault) => request('/api/mesh/fault', { method: 'POST', body: JSON.stringify(fault) }),
+  meshStorm: (storm) => request('/api/mesh/storm', { method: 'POST', body: JSON.stringify(storm) }),
+  meshScenario: (name) => request('/api/mesh/scenario/' + name, { method: 'POST' }),
+
+  // Carbon trading (simulated CME offset futures)
+  tradingSpecs: () => request('/api/trading/specs'),
+  tradingCandles: (symbol, minutes) => request('/api/trading/candles/' + symbol + '?minutes=' + (minutes || 1) + '&limit=240'),
+  tradingAccount: () => request('/api/trading/account'),
+  tradingSubmit: (order) => request('/api/trading/orders', { method: 'POST', body: JSON.stringify(order) }),
+  tradingCancel: (id) => request('/api/trading/orders/' + id, { method: 'DELETE' }),
+  tradingCancelAll: (symbol) => request('/api/trading/orders/cancel-all' + (symbol ? '?symbol=' + symbol : ''), { method: 'POST' }),
+  tradingFlatten: (symbol) => request('/api/trading/positions/' + symbol + '/flatten', { method: 'POST' }),
+  corsiaObligation: () => request('/api/trading/corsia-obligation'),
 
   // Simulations
   simulationScenarios: () => request('/api/simulation/scenarios'),

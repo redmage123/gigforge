@@ -1,4 +1,5 @@
 import { useCallback } from 'react'
+import { Link } from 'react-router-dom'
 import { Bar } from 'react-chartjs-2'
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend } from 'chart.js'
 import { api } from '../api/client'
@@ -33,7 +34,10 @@ export default function Emissions() {
           <h2>Carbon & Emissions Dashboard</h2>
           <p className="subtitle">ICAO CORSIA compliance monitoring — real-time</p>
         </div>
-        <div className="live-badge"><div className="live-dot" /> LIVE</div>
+        <div style={{display: 'flex', gap: 10, alignItems: 'center'}}>
+          <Link to="/carbon-trading" className="btn btn-primary btn-sm" style={{textDecoration: 'none'}}>💹 Hedge on Carbon Desk</Link>
+          <div className="live-badge"><div className="live-dot" /> LIVE</div>
+        </div>
       </div>
 
       {/* KPIs */}

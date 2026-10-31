@@ -1085,4 +1085,4 @@ main:focus { outline: none; }
 .situation-tables code { font-size: 11.5px; white-space: normal; word-break: break-word; }
 .situation-tables tbody th { text-align: left; font-weight: 700; }
 .situation-list { padding-left: 20px; line-height: 1.7; }
-.table-scroll { overflow-x: auto; }
+.table-scroll { overflow-x: auto; position: relative; }  /* contains .sr-only cells, else they widen the page */

@@ -1,0 +1,1 @@
+import{r as e}from"./index-QVgX-F-2.js";function g(r,s=3e4){const[l,o]=e.useState(null),[u,c]=e.useState(!0),[i,n]=e.useState(null),a=e.useCallback(async()=>{try{const t=await r();o(t),n(null)}catch(t){n(t.message)}finally{c(!1)}},[r]);return e.useEffect(()=>{a();const t=setInterval(a,s);return()=>clearInterval(t)},[a,s]),{data:l,loading:u,error:i,refresh:a}}export{g as u};

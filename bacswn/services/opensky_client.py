@@ -124,6 +124,7 @@ def _generate_simulated_flights() -> list[dict]:
             "geo_altitude": sf["baro_altitude"] + random.randint(-100, 100),
             "squawk": random.choice(["1200", "2000", "7500", None]),
             "category": _categorize_aircraft(sf["baro_altitude"]),
+            "simulated": True,  # never count as evidence (e.g. carbon oversight cross-checks)
         })
     return flights
 

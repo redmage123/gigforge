@@ -65,3 +65,35 @@ wall-clock second is 5 simulated minutes):
   store-and-forward queue and are delivered when the mesh heals.
 - **Fault injection / scenarios:** `POST /api/mesh/fault`, `/api/mesh/storm`, and
   `/api/mesh/scenario/{squall_line|rogue_precog|sensor_fault|partition|reset}`.
+
+## CORSIA oversight register (`/corsia-oversight`)
+
+**Who holds credits.** Under CORSIA the offsetting obligation sits with aircraft operators: they buy
+CORSIA-eligible units and cancel them in the issuing registry (Verra, Gold Standard, ACR, …). The state
+that administers an operator verifies its emissions reports and its cancellations, then reports to ICAO.
+The Bahamian government and ATC therefore do not acquire credits; BACSWN models the state's oversight role.
+(The Carbon Desk's hedging view is an operator's perspective and is kept as a market demo.)
+
+**What is recorded** (`services/carbon_oversight.py`, `api/carbon_oversight.py`):
+
+| Table | Meaning |
+|---|---|
+| `carbon_operators` | Operators attributed to the Bahamas, by ICAO designator |
+| `carbon_emission_reports` | Verified annual CO₂ and the ICAO growth factor → offsetting requirement. A new report for the same year supersedes the old one; both are kept |
+| `carbon_unit_claims` | Units an operator says it cancelled: registry, serial block/range, vintage, project, registry reference |
+| `carbon_claim_reviews` | The state's decisions on each claim (VERIFIED / REJECTED / REOPENED), with reviewer and reason |
+| `carbon_fir_observations` | BACSWN's own sightings: one row per continuous FIR segment of an airline flight |
+
+Evidence tables are **append-only**, enforced by SQLite triggers. Writes require the `admin` role; reads are
+open to any signed-in user. The claims register exports to CSV, with formula-injection neutralised.
+
+**Findings** (computed per compliance period): units claimed twice (overlapping serial ranges in the same
+registry/block, across operators and periods), units not declared CORSIA-eligible, vintages outside the
+phase window, missing annual reports, closed-period shortfalls, and reports **lower than the CO₂ BACSWN
+observed inside the FIR** (an operator's network-wide total can never be below its FIR slice; 10% tolerance
+for the category-based estimate). Sightings from the simulated fallback flight feed are stored and shown
+but never used as evidence.
+
+Vintage windows for the pilot (2016–2020) and first phase (2021–2026) follow ICAO's CORSIA Eligible
+Emissions Units document; later phases have no window yet. Check `PERIODS` against the current ICAO
+document before relying on it for real compliance work.

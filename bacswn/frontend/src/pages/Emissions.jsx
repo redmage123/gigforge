@@ -4,6 +4,7 @@ import { Bar } from 'react-chartjs-2'
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend } from 'chart.js'
 import { api } from '../api/client'
 import { usePolling } from '../hooks/usePolling'
+import ChartTable, { chartTextColor, summarise } from '../components/a11y/ChartTable'
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend)
 
@@ -17,8 +18,10 @@ export default function Emissions() {
   const compliance = summary.compliance || {}
   const categories = summary.categories || {}
 
+  const catLabels = Object.keys(categories).map(k => k.charAt(0).toUpperCase() + k.slice(1))
+  const tickColor = chartTextColor()
   const categoryChartData = {
-    labels: Object.keys(categories).map(k => k.charAt(0).toUpperCase() + k.slice(1)),
+    labels: catLabels,
     datasets: [{
       label: 'Flights',
       data: Object.values(categories),
@@ -34,9 +37,9 @@ export default function Emissions() {
           <h2>Carbon & Emissions Dashboard</h2>
           <p className="subtitle">ICAO CORSIA compliance monitoring — real-time</p>
         </div>
-        <div style={{display: 'flex', gap: 10, alignItems: 'center'}}>
+        <div style={{display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap'}}>
           <Link to="/corsia-oversight" className="btn btn-primary btn-sm" style={{textDecoration: 'none'}}><span aria-hidden="true">📒</span> CORSIA Oversight</Link>
-          <Link to="/carbon-trading" className="btn btn-primary btn-sm" style={{textDecoration: 'none'}}>💹 Hedge on Carbon Desk</Link>
+          <Link to="/carbon-trading" className="btn btn-primary btn-sm" style={{textDecoration: 'none'}}><span aria-hidden="true">💹</span> Hedge on Carbon Desk</Link>
           <div className="live-badge"><div className="live-dot" /> LIVE</div>
         </div>
       </div>
@@ -66,14 +69,16 @@ export default function Emissions() {
       </div>
 
       {/* Charts */}
-      <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16}}>
+      <div className="grid-2" style={{marginBottom: 16}}>
         <div className="card">
           <div className="card-header"><h3>Flights by Aircraft Category</h3></div>
-          <Bar data={categoryChartData} options={{
+          <Bar data={categoryChartData} aria-label={`Bar chart, monitored flights by aircraft category: ${summarise(catLabels, Object.values(categories))}`} options={{
             responsive: true,
             plugins: { legend: { display: false } },
-            scales: { y: { grid: { color: '#1e293b' } }, x: { grid: { display: false } } },
+            scales: { y: { grid: { color: 'rgba(148,163,184,0.2)' }, ticks: { color: tickColor } }, x: { grid: { display: false }, ticks: { color: tickColor } } },
           }} />
+          <ChartTable caption="Monitored flights by aircraft category" labels={catLabels}
+            series={[{ name: 'Flights', values: Object.values(categories) }]} />
         </div>
         <div className="card">
           <div className="card-header"><h3>CORSIA Compliance Summary</h3></div>
@@ -84,7 +89,7 @@ export default function Emissions() {
             </div>
             <div style={{display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid var(--border)'}}>
               <span style={{color: 'var(--text-secondary)'}}>Monitoring Coverage</span>
-              <strong style={{color: 'var(--success)'}}>{compliance.monitoring_coverage_pct ?? 100}%</strong>
+              <strong style={{color: 'var(--success-text)'}}>{compliance.monitoring_coverage_pct ?? 100}%</strong>
             </div>
             <div style={{display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid var(--border)'}}>
               <span style={{color: 'var(--text-secondary)'}}>Emission Factor</span>
@@ -104,28 +109,28 @@ export default function Emissions() {
 
       {/* Per-flight emissions table */}
       <div className="card">
-        <div className="card-header"><h3>Per-Flight Emissions</h3></div>
-        <div style={{overflowX: 'auto'}}>
+        <div className="card-header"><h3 id="per-flight-h">Per-Flight Emissions</h3></div>
+        <div className="table-scroll" tabIndex={0} role="region" aria-labelledby="per-flight-h">
           <table className="data-table">
             <thead>
               <tr>
-                <th>Callsign</th>
-                <th>Category</th>
-                <th>Fuel Burn (kg)</th>
-                <th>CO2 (kg)</th>
-                <th>CO2 (tonnes)</th>
-                <th>Methodology</th>
+                <th scope="col">Callsign</th>
+                <th scope="col">Category</th>
+                <th scope="col">Fuel Burn (kg)</th>
+                <th scope="col">CO₂ (kg)</th>
+                <th scope="col">CO₂ (tonnes)</th>
+                <th scope="col">Methodology</th>
               </tr>
             </thead>
             <tbody>
               {flights.slice(0, 30).map((f, i) => (
                 <tr key={i}>
-                  <td style={{fontWeight: 600}}>{f.callsign || '—'}</td>
+                  <th scope="row" style={{fontWeight: 600}}>{f.callsign || '—'}</th>
                   <td><span className="cat-badge cat-MVFR">{f.aircraft_category}</span></td>
                   <td>{f.fuel_burn_kg?.toLocaleString()}</td>
                   <td>{f.co2_kg?.toLocaleString()}</td>
                   <td>{f.co2_tonnes}</td>
-                  <td style={{color: 'var(--text-muted)'}}>{f.methodology}</td>
+                  <td style={{color: 'var(--text-secondary)'}}>{f.methodology}</td>
                 </tr>
               ))}
             </tbody>

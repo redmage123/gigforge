@@ -3,6 +3,7 @@ import { MapContainer, TileLayer, Marker, Popup, Polygon, Polyline, Circle, useM
 import L from 'leaflet'
 import { api } from '../api/client'
 import { usePolling } from '../hooks/usePolling'
+import { usePrefersReducedMotion } from '../hooks/useA11yPrefs'
 
 // ─── Category colors & labels ───────────────────────────────────────
 const CAT_COLORS = {
@@ -13,6 +14,7 @@ const CAT_LABELS = {
   3: 'Category 3', 4: 'Category 4', 5: 'Category 5',
 }
 const SAFFIR_SIMPSON_REF = {
+  0: { wind_mph: '39-73', surge_ft: '1-3', action: 'Monitor & secure loose objects' },
   1: { wind_mph: '74-95', surge_ft: '4-5', action: 'Monitor & secure' },
   2: { wind_mph: '96-110', surge_ft: '6-8', action: 'Board windows, prepare evacuation' },
   3: { wind_mph: '111-129', surge_ft: '9-12', action: 'Evacuate coastal areas' },
@@ -129,26 +131,51 @@ const islandLabelIcon = (name) => L.divIcon({
 
 const zoneIcon = (zone, color) => L.divIcon({
   className: '',
-  html: `<div style="background:${color};border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:white;border:2px solid rgba(255,255,255,0.9);box-shadow:0 2px 10px rgba(0,0,0,0.6)">Z${zone}</div>`,
+  html: `<div style="background:${color};border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:#111827;border:2px solid rgba(255,255,255,0.9);box-shadow:0 2px 10px rgba(0,0,0,0.6)">Z${zone}</div>`,
   iconSize: [26, 26],
   iconAnchor: [13, 13],
 })
 
-const shelterIcon = (status) => L.divIcon({
+// Nudge point markers that would overlap at the default zoom into free slots
+// around their location, so every marker stays a separate ≥24 px target (WCAG 2.5.8).
+const DEFAULT_ZOOM = 7
+const project = (lat, lon) => {
+  const scale = 256 * 2 ** DEFAULT_ZOOM
+  const r = (lat * Math.PI) / 180
+  return [((lon + 180) / 360) * scale, (1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * scale]
+}
+const SLOTS = [[0, 0], [0, 28], [0, -28], [28, 0], [-28, 0], [28, 28], [-28, 28], [28, -28], [-28, -28], [0, 56], [0, -56]]
+function layoutMarkers(points) {
+  const placed = [], out = {}
+  for (const pt of points) {
+    const [x, y] = project(pt.lat, pt.lon)
+    const bx = x + pt.dx
+    const slot = SLOTS.find(([sx, sy]) => placed.every(([px, py]) => Math.abs(bx + sx - px) >= 28 || Math.abs(y + sy - py) >= 28)) || [0, 0]
+    placed.push([bx + slot[0], y + slot[1]])
+    out[pt.key] = slot
+  }
+  return out
+}
+
+const shelterIcon = (status, [ox, oy] = [0, 0]) => L.divIcon({
   className: 'station-marker',
-  html: `<div style="width:20px;height:20px;display:flex;align-items:center;justify-content:center;background:${status === 'open' ? '#10b981' : status === 'at_capacity' ? '#ef4444' : '#64748b'};border-radius:4px;border:2px solid white;font-size:11px;color:white;font-weight:700">S</div>`,
-  iconSize: [20, 20], iconAnchor: [10, 10],
+  html: `<div style="width:26px;height:26px;display:flex;align-items:center;justify-content:center;background:${status === 'open' ? '#047857' : status === 'at_capacity' ? '#b91c1c' : '#475569'};border-radius:4px;border:2px solid white;font-size:12px;color:white;font-weight:700">S</div>`,
+  // Shelters sit just left of their point and airports just right, so a shelter
+  // and an airport in the same town never stack (24 px target spacing, WCAG 2.5.8).
+  iconSize: [26, 26], iconAnchor: [28 - ox, 13 - oy],
 })
 
-const airportIcon = (status) => L.divIcon({
+const airportIcon = (status, [ox, oy] = [0, 0]) => L.divIcon({
   className: 'station-marker',
-  html: `<div style="width:20px;height:20px;display:flex;align-items:center;justify-content:center;background:${status === 'operational' ? '#10b981' : status === 'limited' ? '#f59e0b' : '#ef4444'};border-radius:4px;border:2px solid white;font-size:10px;color:white;font-weight:700">AP</div>`,
-  iconSize: [20, 20], iconAnchor: [10, 10],
+  html: `<div style="width:26px;height:26px;display:flex;align-items:center;justify-content:center;background:${status === 'operational' ? '#047857' : status === 'limited' ? '#b45309' : '#b91c1c'};border-radius:4px;border:2px solid white;font-size:11px;color:white;font-weight:700">AP</div>`,
+  iconSize: [26, 26], iconAnchor: [-2 - ox, 13 - oy],
 })
 
 // ─── Canvas: animated past track drawing ─────────────────────────────
-function StormTrackCanvas({ pastTrack }) {
+function StormTrackCanvas({ pastTrack, still }) {
   const map = useMap()
+  const stillRef = useRef(still)
+  stillRef.current = still
   const animRef = useRef(null)
   const canvasRef = useRef(null)
 
@@ -175,7 +202,7 @@ function StormTrackCanvas({ pastTrack }) {
 
     const frame = () => {
       const elapsed = Date.now() - start
-      const t = Math.min(1, elapsed / DURATION)
+      const t = stillRef.current ? 1 : Math.min(1, elapsed / DURATION)
       const ctx = canvas.getContext('2d')
       ctx.clearRect(0, 0, canvas.width, canvas.height)
 
@@ -189,7 +216,7 @@ function StormTrackCanvas({ pastTrack }) {
         const p1 = pts[i], p2 = pts[i + 1]
         const ex = p1.x + (p2.x - p1.x) * frac
         const ey = p1.y + (p2.y - p1.y) * frac
-        const color = CAT_COLORS[pastTrack[i]?.category || 1]
+        const color = CAT_COLORS[pastTrack[i]?.category ?? 1]
 
         // Outer glow
         ctx.beginPath()
@@ -231,7 +258,7 @@ function StormTrackCanvas({ pastTrack }) {
       // Pulsing ring at current position
       if (t >= 0.85) {
         const last = pts[pts.length - 1]
-        const pulse = (Math.sin(Date.now() / 350) + 1) * 0.5
+        const pulse = stillRef.current ? 0.5 : (Math.sin(Date.now() / 350) + 1) * 0.5
         // Inner ring
         ctx.beginPath()
         ctx.arc(last.x, last.y, 14 + pulse * 8, 0, Math.PI * 2)
@@ -302,7 +329,7 @@ export default function HurricaneOps() {
   const d = data || {}
   const apiStorms = d.active_storms || []
   const storms = apiStorms.length > 0 ? apiStorms : [DEMO_STORM]
-  const maxCat = d.max_category || storms[0]?.category || 4
+  const maxCat = d.max_category ?? storms[0]?.category ?? 4
   const surge = d.surge_zones || {}
   const shelters = d.shelters?.list || []
   const airports = d.airports?.list || []
@@ -310,8 +337,13 @@ export default function HurricaneOps() {
   const historical = d.historical_storms || []
   const comparisons = d.historical_comparisons || []
 
-  const cat = selectedCat || maxCat || 4
+  const cat = selectedCat || (maxCat ?? 4)   // 0 = tropical storm, a real value
   const catColor = CAT_COLORS[cat]
+  const still = usePrefersReducedMotion()
+  const slots = layoutMarkers([
+    ...(showLayer.airports ? airports.map(a => ({ key: 'a-' + a.icao, lat: a.lat, lon: a.lon, dx: 13 })) : []),
+    ...(showLayer.shelters ? shelters.map(s => ({ key: 's-' + s.id, lat: s.lat, lon: s.lon, dx: -15 })) : []),
+  ])
   const activeStorm = storms[0]
 
   const handleEscalate = async () => {
@@ -339,7 +371,7 @@ export default function HurricaneOps() {
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <span style={{
             padding: '6px 18px', borderRadius: 20, fontWeight: 700, fontSize: 14,
-            background: catColor + '22', color: catColor, border: '1px solid ' + catColor, letterSpacing: 1,
+            background: catColor + '22', color: 'var(--text-primary)', border: '2px solid ' + catColor, letterSpacing: 1,
           }}>
             {CAT_LABELS[cat]}
           </span>
@@ -351,8 +383,8 @@ export default function HurricaneOps() {
       <div className="card-grid" style={{ marginBottom: 16 }}>
         <div className="stat-card" style={{ borderTop: '3px solid ' + catColor }}>
           <span className="stat-label">Storm</span>
-          <span className="stat-value" style={{ fontSize: 22, color: catColor }}>{activeStorm?.name || 'Helena'}</span>
-          <span className="stat-detail">{CAT_LABELS[activeStorm?.category || 4]}</span>
+          <span className="stat-value" style={{ fontSize: 22 }}>{activeStorm?.name || 'Helena'}</span>
+          <span className="stat-detail">{CAT_LABELS[activeStorm?.category ?? 4]}</span>
         </div>
         <div className="stat-card" style={{ borderTop: '3px solid #ef4444' }}>
           <span className="stat-label">Max Sustained Winds</span>
@@ -375,40 +407,40 @@ export default function HurricaneOps() {
       <div className="card" style={{ marginBottom: 16 }}>
         <div className="card-header">
           <h3>Scenario Planner</h3>
-          <button className="btn btn-sm btn-danger" onClick={handleEscalate} disabled={escalating}>
-            {escalating ? 'Dispatching...' : '🚨 Escalate & Dispatch to 42 Channels'}
+          <button type="button" className="btn btn-sm btn-danger" onClick={handleEscalate} disabled={escalating}>
+            {escalating ? 'Dispatching…' : <><span aria-hidden="true">🚨 </span>Escalate &amp; Dispatch to 42 Channels</>}
           </button>
         </div>
-        {escalateResult && (
+        <div role="status">{escalateResult && (
           <div style={{
             marginBottom: 12, padding: '10px 14px', borderRadius: 8, fontSize: 13,
             background: escalateResult.status === 'dispatched' ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)',
-            color: escalateResult.status === 'dispatched' ? 'var(--success)' : 'var(--danger)',
+            color: escalateResult.status === 'dispatched' ? 'var(--success-text)' : 'var(--danger-text)',
             border: '1px solid ' + (escalateResult.status === 'dispatched' ? 'var(--success)' : 'var(--danger)'),
           }}>
             {escalateResult.status === 'dispatched'
-              ? `✅ Alert dispatched to ${escalateResult.channels_reached || 38}/${escalateResult.total_channels || 42} channels`
+              ? `Alert dispatched to ${escalateResult.channels_reached || 38}/${escalateResult.total_channels || 42} channels`
               : escalateResult.message || 'Alert already dispatched'}
           </div>
-        )}
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+        )}</div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }} role="group" aria-label="Scenario category">
           {[1, 2, 3, 4, 5].map(c => (
-            <button key={c} className="btn btn-sm" onClick={() => setSelectedCat(c)} style={{
-              background: cat === c ? CAT_COLORS[c] : 'var(--bg-primary)',
-              color: cat === c ? '#fff' : 'var(--text-secondary)',
-              border: '1px solid ' + CAT_COLORS[c], minWidth: 64,
+            <button key={c} type="button" className="btn btn-sm" onClick={() => setSelectedCat(c)} aria-pressed={cat === c} style={{
+              background: cat === c ? CAT_COLORS[c] + '33' : 'var(--bg-primary)',
+              color: 'var(--text-primary)', fontWeight: cat === c ? 800 : 500,
+              border: (cat === c ? '3px solid ' : '1px solid ') + CAT_COLORS[c], minWidth: 64,
             }}>Cat {c}</button>
           ))}
         </div>
         <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
           <strong style={{ color: 'var(--text-primary)' }}>Winds:</strong> {SAFFIR_SIMPSON_REF[cat]?.wind_mph} mph &nbsp;|&nbsp;
           <strong style={{ color: 'var(--text-primary)' }}>Surge:</strong> {SAFFIR_SIMPSON_REF[cat]?.surge_ft} ft &nbsp;|&nbsp;
-          <strong style={{ color: 'var(--text-primary)' }}>Action:</strong> <span style={{ color: catColor }}>{SAFFIR_SIMPSON_REF[cat]?.action}</span>
+          <strong style={{ color: 'var(--text-primary)' }}>Action:</strong> <span style={{ color: 'var(--text-primary)' }}>{SAFFIR_SIMPSON_REF[cat]?.action}</span>
         </div>
       </div>
 
       {/* Layer toggles */}
-      <div className="layer-toggles" style={{ marginBottom: 10 }}>
+      <div className="layer-toggles" style={{ marginBottom: 10 }} role="group" aria-label="Map layers">
         {[
           ['windRings', 'Wind Rings'], ['surge', 'Storm Surge'], ['evacZones', 'Evac Zones'],
           ['shelters', 'Shelters'], ['airports', 'Airports'], ['routes', 'Evac Routes'], ['islands', 'Islands'],
@@ -429,15 +461,16 @@ export default function HurricaneOps() {
       {/* Map + side panel */}
       <div style={{ display: 'flex', gap: 12 }}>
         {/* Map */}
-        <div className="card" style={{ padding: 0, overflow: 'hidden', flex: 1, position: 'relative' }}>
+        <div className="card" style={{ padding: 0, overflow: 'hidden', flex: 1, position: 'relative', minWidth: 0 }}
+          role="region" aria-label={`Hurricane map: ${activeStorm?.name || 'storm'}, ${CAT_LABELS[activeStorm?.category ?? 4]}. Details as text below the map.`}>
           {/* Intensity badge overlay */}
           <div style={{
             position: 'absolute', top: 12, right: 12, zIndex: 1000,
             background: 'rgba(0,0,0,0.85)', border: '1px solid ' + catColor,
             borderRadius: 10, padding: '10px 16px', backdropFilter: 'blur(8px)',
             pointerEvents: 'none',
-          }}>
-            <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 1 }}>
+          }} aria-hidden="true">
+            <div style={{ fontSize: 11, color: '#cbd5e1', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 1 }}>
               Active Storm
             </div>
             <div style={{ fontSize: 13, fontWeight: 700, color: catColor, marginBottom: 8 }}>
@@ -445,16 +478,16 @@ export default function HurricaneOps() {
             </div>
             <div style={{ display: 'flex', gap: 14, fontSize: 13, marginBottom: 10 }}>
               <div>
-                <div style={{ fontSize: 9, color: 'var(--text-muted)', textTransform: 'uppercase' }}>CATEGORY</div>
-                <div style={{ fontSize: 24, fontWeight: 900, color: catColor, lineHeight: 1 }}>{activeStorm?.category || 4}</div>
+                <div style={{ fontSize: 10.5, color: '#cbd5e1', textTransform: 'uppercase' }}>CATEGORY</div>
+                <div style={{ fontSize: 24, fontWeight: 900, color: catColor, lineHeight: 1 }}>{(activeStorm?.category ?? 4) || 'TS'}</div>
               </div>
               <div style={{ borderLeft: '1px solid var(--border)', paddingLeft: 14 }}>
-                <div style={{ fontSize: 9, color: 'var(--text-muted)', textTransform: 'uppercase' }}>WINDS</div>
-                <div style={{ fontSize: 18, fontWeight: 700 }}>{activeStorm?.wind_mph || 145} mph</div>
+                <div style={{ fontSize: 10.5, color: '#cbd5e1', textTransform: 'uppercase' }}>WINDS</div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: '#f8fafc' }}>{activeStorm?.wind_mph || 145} mph</div>
               </div>
               <div style={{ borderLeft: '1px solid var(--border)', paddingLeft: 14 }}>
-                <div style={{ fontSize: 9, color: 'var(--text-muted)', textTransform: 'uppercase' }}>PRESSURE</div>
-                <div style={{ fontSize: 18, fontWeight: 700 }}>{activeStorm?.pressure_mb || 937} mb</div>
+                <div style={{ fontSize: 10.5, color: '#cbd5e1', textTransform: 'uppercase' }}>PRESSURE</div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: '#f8fafc' }}>{activeStorm?.pressure_mb || 937} mb</div>
               </div>
             </div>
             {/* Wind ring legend */}
@@ -466,7 +499,7 @@ export default function HurricaneOps() {
               ].map(([c, label]) => (
                 <div key={c} style={{ display: 'flex', gap: 7, alignItems: 'center', marginBottom: 3 }}>
                   <div style={{ width: 14, height: 2, background: c, borderRadius: 1, flexShrink: 0 }} />
-                  <span style={{ color: 'var(--text-muted)' }}>{label}</span>
+                  <span style={{ color: '#cbd5e1' }}>{label}</span>
                 </div>
               ))}
             </div>
@@ -479,7 +512,7 @@ export default function HurricaneOps() {
               <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}" />
 
               {/* Animated past track */}
-              <StormTrackCanvas pastTrack={activeStorm?.past_track || DEMO_STORM.past_track} />
+              <StormTrackCanvas still={still} pastTrack={activeStorm?.past_track || DEMO_STORM.past_track} />
 
               {/* Wind field rings */}
               {showLayer.windRings && (
@@ -500,11 +533,11 @@ export default function HurricaneOps() {
               {(activeStorm?.forecast_track || DEMO_STORM.forecast_track).slice(1).map((pt, i) => (
                 <Circle key={'fcst-' + i} center={[pt.lat, pt.lon]} radius={18000}
                   pathOptions={{
-                    color: CAT_COLORS[pt.category || 3],
-                    fillColor: CAT_COLORS[pt.category || 3],
+                    color: CAT_COLORS[pt.category ?? 3],
+                    fillColor: CAT_COLORS[pt.category ?? 3],
                     fillOpacity: 0.5, weight: 2,
                   }}>
-                  <Popup><div style={{ color: '#000', fontSize: 13 }}><strong>+{pt.hours}h</strong> — {CAT_LABELS[pt.category || 3]}</div></Popup>
+                  <Popup><div style={{ color: '#000', fontSize: 13 }}><strong>+{pt.hours}h</strong> — {CAT_LABELS[pt.category ?? 3]}</div></Popup>
                 </Circle>
               ))}
 
@@ -513,11 +546,12 @@ export default function HurricaneOps() {
                 pathOptions={{ color: '#ef4444', weight: 1.5, fillColor: '#ef4444', fillOpacity: 0.10, dashArray: '6 4' }} />
 
               {/* Hurricane eye icon */}
-              <Marker position={[activeStorm.lat, activeStorm.lon]} icon={hurricaneMapIcon}>
+              <Marker position={[activeStorm.lat, activeStorm.lon]} icon={hurricaneMapIcon}
+                title={`${activeStorm.name}, ${CAT_LABELS[activeStorm.category ?? 4]}, ${activeStorm.wind_mph || 145} mph`}>
                 <Popup>
                   <div style={{ color: '#000', minWidth: 220, fontSize: 13, lineHeight: 1.7 }}>
                     <div style={{ fontWeight: 700, fontSize: 16, color: '#dc2626', marginBottom: 4 }}>{activeStorm.name}</div>
-                    <div style={{ fontWeight: 600 }}>{CAT_LABELS[activeStorm.category || 4]}</div>
+                    <div style={{ fontWeight: 600 }}>{CAT_LABELS[activeStorm.category ?? 4]}</div>
                     <div><strong>Winds:</strong> {activeStorm.wind_mph || 145} mph</div>
                     <div><strong>Pressure:</strong> {activeStorm.pressure_mb || 937} mb</div>
                     <div><strong>Movement:</strong> {activeStorm.movement || 'NNW at 12 mph'}</div>
@@ -539,7 +573,7 @@ export default function HurricaneOps() {
                       </div>
                     </Popup>
                   </Polygon>
-                  <Marker position={z.center} icon={zoneIcon(z.zone, z.color)} />
+                  <Marker position={z.center} icon={zoneIcon(z.zone, z.color)} interactive={false} keyboard={false} />
                 </span>
               ))}
 
@@ -571,7 +605,8 @@ export default function HurricaneOps() {
 
               {/* Shelters */}
               {showLayer.shelters && shelters.map(s => (
-                <Marker key={s.id} position={[s.lat, s.lon]} icon={shelterIcon(s.status)}>
+                <Marker key={s.id} position={[s.lat, s.lon]} icon={shelterIcon(s.status, slots['s-' + s.id])}
+                  title={`Shelter: ${s.name}, ${String(s.status).replace('_', ' ')}, ${s.occupancy} of ${s.capacity}`}>
                   <Popup>
                     <div style={{ color: '#000', minWidth: 200 }}>
                       <div style={{ fontWeight: 700 }}>{s.name}</div>
@@ -583,7 +618,8 @@ export default function HurricaneOps() {
 
               {/* Airports */}
               {showLayer.airports && airports.map(a => (
-                <Marker key={a.icao} position={[a.lat, a.lon]} icon={airportIcon(a.status)}>
+                <Marker key={a.icao} position={[a.lat, a.lon]} icon={airportIcon(a.status, slots['a-' + a.icao])}
+                  title={`Airport ${a.icao} ${a.name}: ${a.status}`}>
                   <Popup>
                     <div style={{ color: '#000', minWidth: 200 }}>
                       <div style={{ fontWeight: 700 }}>{a.icao} — {a.name}</div>
@@ -595,13 +631,47 @@ export default function HurricaneOps() {
 
               {/* Island labels */}
               {showLayer.islands && ISLAND_LABELS.map(island => (
-                <Marker key={island.name} position={[island.lat, island.lon]} icon={islandLabelIcon(island.name)} />
+                <Marker key={island.name} position={[island.lat, island.lon]} icon={islandLabelIcon(island.name)}
+                  interactive={false} keyboard={false} />
               ))}
 
               {/* Historical track */}
               {showLayer.historical && <HistoricalTrack stormId={showLayer.historical} />}
             </MapContainer>
           </div>
+          <details className="chart-data" style={{ padding: '6px 12px 10px' }}>
+            <summary>Map details as text</summary>
+            <h4 style={{ fontSize: 13, margin: '8px 0 4px' }}>Storm</h4>
+            <p style={{ fontSize: 13 }}>{activeStorm?.name}: {CAT_LABELS[activeStorm?.category ?? 4]}, {activeStorm?.wind_mph || 145} mph,
+              {' '}{activeStorm?.pressure_mb || 937} mb, moving {activeStorm?.movement || 'NNW at 12 mph'}, at {activeStorm?.lat}°N {Math.abs(activeStorm?.lon)}°W.
+              {' '}Tropical-storm-force winds extend {activeStorm?.wind_34kt_radius_nm || DEMO_STORM.wind_34kt_radius_nm} nm; hurricane-force {activeStorm?.wind_64kt_radius_nm || DEMO_STORM.wind_64kt_radius_nm} nm.</p>
+            <h4 style={{ fontSize: 13, margin: '8px 0 4px' }}>Forecast track</h4>
+            <ul style={{ fontSize: 13, paddingLeft: 18 }}>
+              {(activeStorm?.forecast_track || DEMO_STORM.forecast_track).slice(1).map((pt, i) => (
+                <li key={i}>+{pt.hours} h: {pt.lat}°N {Math.abs(pt.lon)}°W, {CAT_LABELS[pt.category ?? 3]}</li>
+              ))}
+            </ul>
+            {shelters.length > 0 && <>
+              <h4 style={{ fontSize: 13, margin: '8px 0 4px' }}>Shelters</h4>
+              <ul style={{ fontSize: 13, paddingLeft: 18 }}>{shelters.map(s => (
+                <li key={s.id}>{s.name}: {String(s.status).replace('_', ' ')}, {s.occupancy} of {s.capacity} places</li>
+              ))}</ul>
+            </>}
+            {airports.length > 0 && <>
+              <h4 style={{ fontSize: 13, margin: '8px 0 4px' }}>Airports</h4>
+              <ul style={{ fontSize: 13, paddingLeft: 18 }}>{airports.map(a => <li key={a.icao}>{a.icao} {a.name}: {a.status}</li>)}</ul>
+            </>}
+            {(surge.zones || []).length > 0 && <>
+              <h4 style={{ fontSize: 13, margin: '8px 0 4px' }}>Storm surge zones</h4>
+              <ul style={{ fontSize: 13, paddingLeft: 18 }}>{surge.zones.map((z, i) => (
+                <li key={i}>{z.name}: {z.risk_level} risk, {z.surge_min_ft}–{z.surge_max_ft} ft, {z.population_at_risk?.toLocaleString()} people</li>
+              ))}</ul>
+            </>}
+            {routes.length > 0 && <>
+              <h4 style={{ fontSize: 13, margin: '8px 0 4px' }}>Evacuation routes</h4>
+              <ul style={{ fontSize: 13, paddingLeft: 18 }}>{routes.map((r, i) => <li key={i}>{r.name} ({r.priority})</li>)}</ul>
+            </>}
+          </details>
         </div>
 
         {/* Side panel */}
@@ -610,17 +680,17 @@ export default function HurricaneOps() {
           <div className="card" style={{ marginBottom: 12 }}>
             <h3 style={{ fontSize: 14, marginBottom: 12 }}>Saffir-Simpson Scale</h3>
             {[1, 2, 3, 4, 5].map(c => (
-              <div key={c} onClick={() => setSelectedCat(c)} style={{
-                display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, cursor: 'pointer',
-                opacity: cat === c ? 1 : 0.45, transition: 'opacity 0.2s',
-                background: cat === c ? CAT_COLORS[c] + '15' : 'transparent',
+              <button key={c} type="button" onClick={() => setSelectedCat(c)} aria-pressed={cat === c} style={{
+                display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, cursor: 'pointer', width: '100%',
+                font: 'inherit', color: 'var(--text-primary)', textAlign: 'left', minHeight: 28,
+                background: cat === c ? CAT_COLORS[c] + '22' : 'transparent',
                 borderRadius: 6, padding: '4px 6px',
-                border: cat === c ? '1px solid ' + CAT_COLORS[c] + '50' : '1px solid transparent',
+                border: cat === c ? '2px solid ' + CAT_COLORS[c] : '1px solid var(--border)',
               }}>
-                <div style={{ width: 10, height: 10, borderRadius: 2, background: CAT_COLORS[c], flexShrink: 0 }} />
+                <span aria-hidden="true" style={{ width: 10, height: 10, borderRadius: 2, background: CAT_COLORS[c], flexShrink: 0 }} />
                 <span style={{ fontSize: 12, flex: 1, fontWeight: cat === c ? 700 : 400 }}>Cat {c}: {SAFFIR_SIMPSON_REF[c]?.wind_mph} mph</span>
-                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{SAFFIR_SIMPSON_REF[c]?.surge_ft} ft</span>
-              </div>
+                <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>surge {SAFFIR_SIMPSON_REF[c]?.surge_ft} ft</span>
+              </button>
             ))}
           </div>
 
@@ -632,8 +702,8 @@ export default function HurricaneOps() {
                 <div style={{
                   width: 26, height: 26, borderRadius: '50%', background: z.color,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 11, fontWeight: 800, color: 'white', flexShrink: 0,
-                }}>Z{z.zone}</div>
+                  fontSize: 11, fontWeight: 800, color: '#111827', flexShrink: 0,
+                }}><span className="sr-only">Zone </span>{z.zone}</div>
                 <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.4 }}>{z.label}</div>
               </div>
             ))}
@@ -646,10 +716,11 @@ export default function HurricaneOps() {
               {shelters.map(s => (
                 <div key={s.id} style={{ marginBottom: 8 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
-                    <span style={{ color: 'var(--text-secondary)' }}>{s.name.length > 22 ? s.name.substring(0, 22) + '…' : s.name}</span>
-                    <span style={{ fontWeight: 700, color: s.status === 'open' ? 'var(--success)' : s.status === 'at_capacity' ? 'var(--danger)' : 'var(--text-muted)' }}>{s.occupancy_pct}%</span>
+                    <span style={{ color: 'var(--text-secondary)' }}>{s.name}</span>
+                    <span style={{ fontWeight: 700, color: s.status === 'open' ? 'var(--success-text)' : s.status === 'at_capacity' ? 'var(--danger-text)' : 'var(--text-secondary)' }}>
+                      {s.occupancy_pct}%<span className="sr-only"> full, {String(s.status).replace('_', ' ')}</span></span>
                   </div>
-                  <div style={{ height: 4, background: 'var(--bg-primary)', borderRadius: 2, marginTop: 2 }}>
+                  <div aria-hidden="true" style={{ height: 4, background: 'var(--bg-primary)', borderRadius: 2, marginTop: 2 }}>
                     <div style={{ width: s.occupancy_pct + '%', height: '100%', borderRadius: 2, background: s.occupancy_pct > 80 ? 'var(--danger)' : s.occupancy_pct > 50 ? 'var(--warning)' : 'var(--success)', transition: 'width 0.5s' }} />
                   </div>
                 </div>
@@ -663,8 +734,8 @@ export default function HurricaneOps() {
               <h3 style={{ fontSize: 14, marginBottom: 10 }}>Similar Past Storms</h3>
               {comparisons.slice(0, 4).map((c, i) => (
                 <div key={i} style={{ marginBottom: 8, paddingBottom: 8, borderBottom: '1px solid var(--border)' }}>
-                  <div style={{ fontWeight: 600, fontSize: 12, color: CAT_COLORS[c.peak_category] }}>{c.name}</div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Cat {c.peak_category} | {c.year}</div>
+                  <div style={{ fontWeight: 600, fontSize: 12, color: 'var(--text-primary)', borderLeft: '3px solid ' + CAT_COLORS[c.peak_category], paddingLeft: 6 }}>{c.name}</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-secondary)', paddingLeft: 9 }}>Cat {c.peak_category} · {c.year}</div>
                 </div>
               ))}
             </div>

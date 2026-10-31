@@ -1,20 +1,24 @@
 import { useState, useCallback, useEffect } from 'react'
 import { api } from '../api/client'
 import { usePolling } from '../hooks/usePolling'
+import Dialog from '../components/a11y/Dialog'
 
 // ── Data-mode badge ──────────────────────────────────────────────────────
 const MODE_BADGE = {
-  live: { text: 'LIVE DATA', color: '#10b981', detail: 'Forecasts verified against station observations' },
-  backfill: { text: 'REANALYSIS BACKFILL', color: '#3b82f6', detail: 'Open-Meteo ERA5 reanalysis (real)' },
-  mixed: { text: 'MIXED (incl. seed)', color: '#f59e0b', detail: 'Contains illustrative seed data' },
-  seed: { text: 'SEED DATA — ILLUSTRATIVE', color: '#f59e0b', detail: 'Reanalysis unavailable; placeholder numbers' },
-  empty: { text: 'ACCUMULATING', color: '#64748b', detail: 'Capturing forecasts — verification builds over time' },
+  live: { text: 'LIVE DATA', color: '#047857', detail: 'Forecasts verified against station observations' },
+  backfill: { text: 'REANALYSIS BACKFILL', color: '#1d4ed8', detail: 'Open-Meteo ERA5 reanalysis (real)' },
+  mixed: { text: 'MIXED (incl. seed)', color: '#b45309', detail: 'Contains illustrative seed data' },
+  seed: { text: 'SEED DATA — ILLUSTRATIVE', color: '#b45309', detail: 'Reanalysis unavailable; placeholder numbers' },
+  empty: { text: 'ACCUMULATING', color: '#475569', detail: 'Capturing forecasts — verification builds over time' },
 }
 
 const fmt = (v, suffix = '') => (v === null || v === undefined ? '—' : v + suffix)
 // Error magnitudes (MAE) — prefix with ± so they never read as absolute readings.
 const fmtErr = (v, unit = '') => (v === null || v === undefined ? '—' : `±${v}${unit}`)
-const accColor = (p) => (p === null || p === undefined ? '#64748b' : p >= 85 ? '#10b981' : p >= 70 ? '#3b82f6' : p >= 50 ? '#f59e0b' : '#ef4444')
+// Text colours from theme tokens (≥4.5:1 in dark and light); the number itself carries the meaning.
+const accColor = (p) => (p === null || p === undefined ? 'var(--text-muted)' : p >= 85 ? 'var(--success-text)' : p >= 70 ? 'var(--accent-text)' : p >= 50 ? 'var(--warning-text)' : 'var(--danger-text)')
+const lowerBetter = (v, good, ok) => (v == null ? 'var(--text-muted)' : v <= good ? 'var(--success-text)' : v <= ok ? 'var(--warning-text)' : 'var(--danger-text)')
+const higherBetter = (v, good, ok) => (v == null ? 'var(--text-muted)' : v >= good ? 'var(--success-text)' : v >= ok ? 'var(--warning-text)' : 'var(--danger-text)')
 
 // ── Plain-language explanations ────────────────────────────────────────────
 const CARD_INFO = {
@@ -49,62 +53,42 @@ const LB_COL_INFO = {
   n: "Number of verified forecasts behind this station's scores.",
 }
 
-// ── Click-to-open info popup ────────────────────────────────────────────────
-function InfoModal({ title, body, onClose }) {
-  useEffect(() => {
-    const h = e => { if (e.key === 'Escape') onClose() }
-    window.addEventListener('keydown', h)
-    return () => window.removeEventListener('keydown', h)
-  }, [onClose])
+// ── Info popup and its trigger ──────────────────────────────────────────────
+function InfoModal({ info, onClose }) {
   return (
-    <div onClick={onClose} style={{
-      position: 'fixed', inset: 0, background: 'rgba(2,6,23,0.6)', zIndex: 5000,
-      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
-    }}>
-      <div onClick={e => e.stopPropagation()} className="card" style={{ maxWidth: 460, width: '100%' }}>
-        <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h3 style={{ margin: 0, fontSize: 15 }}>{title}</h3>
-          <button className="btn btn-sm" onClick={onClose}>✕</button>
-        </div>
-        <div style={{ padding: '14px 16px', fontSize: 13, lineHeight: 1.55, color: 'var(--text-primary)' }}>{body}</div>
-      </div>
-    </div>
+    <Dialog open={!!info} title={info?.title} onClose={onClose}>
+      <p>{info?.body}</p>
+    </Dialog>
   )
 }
 
-// Small "i" badge that opens the info popup on click
-function InfoDot({ onClick }) {
+// Small "i" button that opens the explanation for `title`
+function InfoDot({ title, onClick }) {
   return (
-    <span
-      onClick={e => { e.stopPropagation(); onClick() }}
-      title="What is this?"
-      style={{
-        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-        width: 16, height: 16, borderRadius: '50%', border: '1px solid var(--text-muted)',
-        color: 'var(--text-muted)', fontSize: 10, fontWeight: 700, cursor: 'pointer',
-        marginLeft: 6, lineHeight: 1, fontStyle: 'italic', flexShrink: 0,
-      }}>i</span>
+    <button type="button" className="info-dot" aria-label={`About ${title}`}
+      onClick={e => { e.stopPropagation(); onClick() }}>i</button>
   )
 }
 
-// Clickable stat card
+// Stat card that opens its explanation (a real button: keyboard + screen reader)
 function StatCard({ label, value, valueColor, detail, info, openInfo }) {
   return (
-    <div className="stat-card" onClick={() => openInfo(label, info)}
-      style={{ cursor: 'pointer', position: 'relative' }} title="Click for explanation">
-      <span style={{ position: 'absolute', top: 8, right: 10, color: 'var(--text-muted)', fontSize: 11, fontStyle: 'italic', fontWeight: 700 }}>ⓘ</span>
+    <button type="button" className="stat-card" onClick={() => openInfo(label, info)}>
+      <span aria-hidden="true" style={{ position: 'absolute', top: 8, right: 10, color: 'var(--text-muted)', fontSize: 11, fontStyle: 'italic', fontWeight: 700 }}>ⓘ</span>
       <span className="stat-label">{label}</span>
       <span className="stat-value" style={valueColor ? { color: valueColor } : undefined}>{value}</span>
       <span className="stat-detail">{detail}</span>
-    </div>
+      <span className="sr-only">. Explain this figure</span>
+    </button>
   )
 }
 
 // Table header cell — click opens the column explanation
 function Th({ label, info, openInfo, style }) {
   return (
-    <th style={{ ...style, cursor: 'pointer' }} onClick={() => openInfo(label, info)} title="Click for explanation">
-      <span style={{ borderBottom: '1px dotted var(--text-muted)' }}>{label}</span>
+    <th scope="col" style={style}>
+      <button type="button" className="th-btn" onClick={() => openInfo(label, info)}
+        aria-label={`${label === 'n' ? 'n (sample size)' : label === '#' ? '# (rank)' : label}, explain column`}>{label}</button>
     </th>
   )
 }
@@ -119,7 +103,8 @@ function LeadCurve({ byLead, big }) {
   const maxMae = Math.max(...rows.map(r => r.temp_mae), 1) * 1.2
   const bw = (W - padL - 10) / rows.length
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto' }}>
+    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto' }} role="img"
+      aria-label={`Bar chart: average temperature error by lead time, from ±${rows[0].temp_mae} °C at +${rows[0].lead_h}h to ±${rows[rows.length - 1].temp_mae} °C at +${rows[rows.length - 1].lead_h}h. Values are in the table below.`}>
       {[0, 0.25, 0.5, 0.75, 1].map((f, i) => {
         const y = padT + (H - padT - padB) * (1 - f)
         return (
@@ -135,7 +120,7 @@ function LeadCurve({ byLead, big }) {
         const y = H - padB - h
         return (
           <g key={r.lead_h}>
-            <rect x={x} y={y} width={bw * 0.64} height={h} rx="3" fill="#3b82f6" opacity="0.85" />
+            <rect x={x} y={y} width={bw * 0.64} height={h} rx="3" fill="var(--accent)" opacity="0.9" />
             <text x={x + bw * 0.32} y={y - 4} textAnchor="middle" fontSize={lfs} fill="var(--text-primary)">{r.temp_mae}</text>
             <text x={x + bw * 0.32} y={H - padB + (big ? 18 : 14)} textAnchor="middle" fontSize={lfs} fill="var(--text-muted)">+{r.lead_h}h</text>
           </g>
@@ -189,9 +174,11 @@ function ForecastVsObserved({ points, unit, big }) {
   const line = (key) => pts.map((p, i) => { const [x, y] = xy(p[key], i); return `${i ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}` }).join(' ')
   const tlabel = (s) => { try { const d = new Date(s); return `${d.getUTCMonth() + 1}/${d.getUTCDate()} ${String(d.getUTCHours()).padStart(2, '0')}Z` } catch { return '' } }
   const xticks = big ? [0, Math.floor((pts.length - 1) / 2), pts.length - 1] : []
+  const mae = pts.reduce((a, p) => a + Math.abs(p.forecast_value - p.observed_value), 0) / pts.length
   return (
     <div>
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto' }}>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto' }} role="img"
+        aria-label={`Line chart of forecast versus observed, ${pts.length} verified pairs from ${tlabel(pts[0].valid_at)} to ${tlabel(pts[pts.length - 1].valid_at)}; values range ${min.toFixed(1)} to ${max.toFixed(1)} ${unit}; average difference ${mae.toFixed(1)} ${unit}. Expand "Show data as a table" for every value.`}>
         {[0, 0.25, 0.5, 0.75, 1].map((f, i) => {
           const y = padT + (H - padT - padB) * (1 - f)
           return (
@@ -201,11 +188,11 @@ function ForecastVsObserved({ points, unit, big }) {
             </g>
           )
         })}
-        <path d={line('observed_value')} fill="none" stroke="#10b981" strokeWidth={sw} />
-        <path d={line('forecast_value')} fill="none" stroke="#3b82f6" strokeWidth={sw} strokeDasharray="5 3" />
+        <path d={line('observed_value')} fill="none" stroke="var(--success)" strokeWidth={sw} />
+        <path d={line('forecast_value')} fill="none" stroke="var(--accent)" strokeWidth={sw} strokeDasharray="5 3" />
         {dot > 0 && pts.map((p, i) => {
           const [ox, oy] = xy(p.observed_value, i); const [fx, fy] = xy(p.forecast_value, i)
-          return <g key={i}><circle cx={ox} cy={oy} r={dot} fill="#10b981" /><circle cx={fx} cy={fy} r={dot} fill="#3b82f6" /></g>
+          return <g key={i}><circle cx={ox} cy={oy} r={dot} fill="var(--success)" /><circle cx={fx} cy={fy} r={dot} fill="var(--accent)" /></g>
         })}
         {xticks.map((i) => {
           const [x] = xy(pts[i].observed_value, i)
@@ -213,10 +200,22 @@ function ForecastVsObserved({ points, unit, big }) {
         })}
       </svg>
       <div style={{ display: 'flex', gap: 18, fontSize: big ? 13 : 12, marginTop: 4 }}>
-        <span><span style={{ display: 'inline-block', width: 18, height: 3, background: '#10b981', verticalAlign: 'middle', marginRight: 6 }} />Observed</span>
-        <span><span style={{ display: 'inline-block', width: 18, height: 3, background: '#3b82f6', verticalAlign: 'middle', marginRight: 6 }} />Forecast</span>
+        <span><span style={{ display: 'inline-block', width: 18, height: 3, background: 'var(--success)', verticalAlign: 'middle', marginRight: 6 }} />Observed</span>
+        <span><span style={{ display: 'inline-block', width: 18, height: 3, background: 'var(--accent)', verticalAlign: 'middle', marginRight: 6 }} />Forecast</span>
         <span style={{ color: 'var(--text-muted)' }}>{pts.length} verified pairs ({unit})</span>
       </div>
+      <details className="chart-data">
+        <summary>Show data as a table</summary>
+        <div className="table-scroll" tabIndex={0} role="region" aria-label="Forecast versus observed values">
+          <table className="data-table">
+            <thead><tr><th scope="col">Valid time (UTC)</th><th scope="col">Forecast ({unit})</th><th scope="col">Observed ({unit})</th><th scope="col">Difference</th></tr></thead>
+            <tbody>{pts.map((p, i) => (
+              <tr key={i}><th scope="row">{tlabel(p.valid_at)}</th><td>{p.forecast_value}</td><td>{p.observed_value}</td>
+                <td>{(p.forecast_value - p.observed_value > 0 ? '+' : '') + (p.forecast_value - p.observed_value).toFixed(1)}</td></tr>
+            ))}</tbody>
+          </table>
+        </div>
+      </details>
     </div>
   )
 }
@@ -231,7 +230,7 @@ function BriefingCard({ data }) {
         <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
           📋 Operations Briefing
           <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.4, padding: '1px 7px', borderRadius: 4,
-            color: d.llm_used ? '#a855f7' : '#10b981', border: `1px solid ${d.llm_used ? '#a855f7' : '#10b981'}` }}>
+            color: d.llm_used ? 'var(--cat-lifr-text)' : 'var(--success-text)', border: '1px solid currentColor' }}>
             {d.llm_used ? 'AI-POLISHED' : 'RULE-BASED'}
           </span>
         </h3>
@@ -249,7 +248,7 @@ function BriefingCard({ data }) {
             ))}
             {d.recommendations && d.recommendations.length > 0 && (
               <div style={{ marginTop: 8 }}>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 4 }}>Recommended actions</div>
+                <h4 style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 4 }}>Recommended actions</h4>
                 <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13 }}>
                   {d.recommendations.map((r, i) => <li key={i} style={{ marginBottom: 2 }}>{r}</li>)}
                 </ul>
@@ -276,51 +275,55 @@ function WarningSkillCard({ data, openInfo }) {
   const cell = { padding: '8px 10px', textAlign: 'center', border: '1px solid var(--border)' }
   return (
     <div className="card" style={{ marginBottom: 16, borderLeft: '3px solid #ef4444' }}>
-      <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
-        onClick={() => setOpen(v => !v)}>
+      <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
         <h3 style={{ display: 'flex', alignItems: 'center' }}>
-          <span style={{ marginRight: 6, color: 'var(--text-muted)' }}>{open ? '▾' : '▸'}</span>
-          IFR/LIFR Warning Skill<InfoDot onClick={() => openInfo('IFR/LIFR Warning Skill', SECTION_INFO.warnings)} />
+          <button type="button" className="th-btn" style={{ borderBottom: 'none', fontWeight: 600 }}
+            aria-expanded={open} aria-controls="warn-skill-body" onClick={() => setOpen(v => !v)}>
+            <span aria-hidden="true" style={{ marginRight: 6, color: 'var(--text-muted)' }}>{open ? '▾' : '▸'}</span>
+            IFR/LIFR Warning Skill
+          </button>
+          <InfoDot title="IFR/LIFR Warning Skill" onClick={() => openInfo('IFR/LIFR Warning Skill', SECTION_INFO.warnings)} />
         </h3>
-        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+        <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
           {open ? `${fmt(o.events)} instrument-condition events`
-                : `POD ${fmt(o.pod, '%')} · FAR ${fmt(o.far, '%')} · CSI ${fmt(o.csi, '%')} — click to expand`}
+                : `POD ${fmt(o.pod, '%')} · FAR ${fmt(o.far, '%')} · CSI ${fmt(o.csi, '%')}`}
         </span>
       </div>
-      <div style={{ padding: '10px 14px', display: open ? 'block' : 'none' }}>
+      <div id="warn-skill-body" style={{ padding: '10px 14px', display: open ? 'block' : 'none' }}>
         <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10 }}>
           How well we forecast dangerous instrument conditions ({d.warning_definition || 'IFR or LIFR'}).
         </div>
         <div className="card-grid" style={{ marginBottom: 14 }}>
           <StatCard label="Detection (POD)" value={fmt(o.pod, '%')} valueColor={accColor(o.pod)}
             detail="of real IFR/LIFR events caught" info={SECTION_INFO.warnings} openInfo={openInfo} />
-          <StatCard label="False Alarms (FAR)" value={fmt(o.far, '%')} valueColor={o.far == null ? '#64748b' : o.far <= 20 ? '#10b981' : o.far <= 40 ? '#f59e0b' : '#ef4444'}
+          <StatCard label="False Alarms (FAR)" value={fmt(o.far, '%')} valueColor={lowerBetter(o.far, 20, 40)}
             detail="of our warnings that didn't verify (lower better)" info={SECTION_INFO.warnings} openInfo={openInfo} />
           <StatCard label="Critical Success (CSI)" value={fmt(o.csi, '%')} valueColor={accColor(o.csi)}
             detail="overall warning skill" info={SECTION_INFO.warnings} openInfo={openInfo} />
-          <StatCard label="Heidke Skill (HSS)" value={fmt(o.hss)} valueColor={o.hss == null ? '#64748b' : o.hss >= 0.5 ? '#10b981' : o.hss >= 0.2 ? '#f59e0b' : '#ef4444'}
+          <StatCard label="Heidke Skill (HSS)" value={fmt(o.hss)} valueColor={higherBetter(o.hss, 0.5, 0.2)}
             detail="skill vs random chance (1 = perfect)" info={SECTION_INFO.warnings} openInfo={openInfo} />
         </div>
         {/* 2x2 contingency table */}
         <div style={{ overflowX: 'auto' }}>
           <table style={{ borderCollapse: 'collapse', fontSize: 12, margin: '0 auto' }}>
+            <caption className="sr-only">Contingency table: forecast against observed instrument conditions</caption>
             <thead>
               <tr>
-                <th style={{ ...cell, background: 'transparent', border: 'none' }}></th>
-                <th style={{ ...cell, background: 'var(--bg-primary)' }}>Observed IFR/LIFR</th>
-                <th style={{ ...cell, background: 'var(--bg-primary)' }}>Observed VFR/MVFR</th>
+                <td style={{ ...cell, background: 'transparent', border: 'none' }}></td>
+                <th scope="col" style={{ ...cell, background: 'var(--bg-primary)' }}>Observed IFR/LIFR</th>
+                <th scope="col" style={{ ...cell, background: 'var(--bg-primary)' }}>Observed VFR/MVFR</th>
               </tr>
             </thead>
             <tbody>
               <tr>
-                <td style={{ ...cell, background: 'var(--bg-primary)', fontWeight: 600 }}>Forecast IFR/LIFR</td>
-                <td style={{ ...cell, color: '#10b981', fontWeight: 700 }}>{fmt(o.hits)}<div style={{ fontSize: 9, color: 'var(--text-muted)' }}>hits</div></td>
-                <td style={{ ...cell, color: '#f59e0b', fontWeight: 700 }}>{fmt(o.false_alarms)}<div style={{ fontSize: 9, color: 'var(--text-muted)' }}>false alarms</div></td>
+                <th scope="row" style={{ ...cell, background: 'var(--bg-primary)', fontWeight: 600 }}>Forecast IFR/LIFR</th>
+                <td style={{ ...cell, color: 'var(--success-text)', fontWeight: 700 }}>{fmt(o.hits)}<div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>hits</div></td>
+                <td style={{ ...cell, color: 'var(--warning-text)', fontWeight: 700 }}>{fmt(o.false_alarms)}<div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>false alarms</div></td>
               </tr>
               <tr>
-                <td style={{ ...cell, background: 'var(--bg-primary)', fontWeight: 600 }}>Forecast VFR/MVFR</td>
-                <td style={{ ...cell, color: '#ef4444', fontWeight: 700 }}>{fmt(o.misses)}<div style={{ fontSize: 9, color: 'var(--text-muted)' }}>misses</div></td>
-                <td style={{ ...cell, color: 'var(--text-muted)', fontWeight: 700 }}>{fmt(o.correct_negatives)}<div style={{ fontSize: 9, color: 'var(--text-muted)' }}>correct</div></td>
+                <th scope="row" style={{ ...cell, background: 'var(--bg-primary)', fontWeight: 600 }}>Forecast VFR/MVFR</th>
+                <td style={{ ...cell, color: 'var(--danger-text)', fontWeight: 700 }}>{fmt(o.misses)}<div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>misses</div></td>
+                <td style={{ ...cell, color: 'var(--text-secondary)', fontWeight: 700 }}>{fmt(o.correct_negatives)}<div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>correct</div></td>
               </tr>
             </tbody>
           </table>
@@ -355,9 +358,10 @@ function ImprovementBadge({ pct }) {
   if (pct === null || pct === undefined) return null
   const better = pct > 0.5
   const worse = pct < -0.5
-  const color = better ? '#10b981' : worse ? '#ef4444' : 'var(--text-muted)'
+  const color = better ? 'var(--success-text)' : worse ? 'var(--danger-text)' : 'var(--text-muted)'
   const arrow = better ? '▼' : worse ? '▲' : '→'
-  return <span style={{ color, fontWeight: 700, fontSize: 12 }}>{arrow} {Math.abs(pct)}%</span>
+  const words = better ? 'error down' : worse ? 'error up' : 'no change'
+  return <span style={{ color, fontWeight: 700, fontSize: 12 }}><span aria-hidden="true">{arrow}</span> <span className="sr-only">{words} </span>{Math.abs(pct)}%</span>
 }
 
 function CorrectionCard({ data, openInfo }) {
@@ -367,7 +371,7 @@ function CorrectionCard({ data, openInfo }) {
   return (
     <div className="card" style={{ marginBottom: 16, borderLeft: '3px solid #10b981' }}>
       <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h3 style={{ display: 'flex', alignItems: 'center' }}>Forecast Bias Correction (MOS)<InfoDot onClick={() => openInfo('Forecast Bias Correction (MOS)', SECTION_INFO.correction)} /></h3>
+        <h3 style={{ display: 'flex', alignItems: 'center' }}>Forecast Bias Correction (MOS)<InfoDot title="Forecast Bias Correction (MOS)" onClick={() => openInfo('Forecast Bias Correction (MOS)', SECTION_INFO.correction)} /></h3>
         {d.overall_raw_accuracy_pct != null && (
           <span style={{ fontSize: 13 }}>
             <span style={{ color: 'var(--text-muted)' }}>accuracy </span>
@@ -393,16 +397,16 @@ function CorrectionCard({ data, openInfo }) {
                     <span style={{ fontSize: 12 }}>
                       <span style={{ color: 'var(--text-muted)' }}>{v.raw_mae} {v.unit}</span>
                       <span style={{ color: 'var(--text-muted)' }}> → </span>
-                      <span style={{ color: '#10b981', fontWeight: 700 }}>{v.corr_mae} {v.unit}</span>
+                      <span style={{ color: 'var(--success-text)', fontWeight: 700 }}>{v.corr_mae} {v.unit}</span>
                       <span style={{ marginLeft: 8 }}><ImprovementBadge pct={v.improvement_pct} /></span>
                     </span>
                   </div>
                   {/* raw (grey) vs corrected (green) bar, shared per-variable scale */}
-                  <div style={{ position: 'relative', height: 18 }}>
+                  <div style={{ position: 'relative', height: 18 }} aria-hidden="true">
                     <div style={{ position: 'absolute', top: 0, left: 0, height: 8, width: `${100 * v.raw_mae / maxMae}%`, background: '#475569', borderRadius: 3 }} />
                     <div style={{ position: 'absolute', top: 10, left: 0, height: 8, width: `${100 * v.corr_mae / maxMae}%`, background: '#10b981', borderRadius: 3 }} />
                   </div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
                     bias {v.raw_bias} → {v.corr_bias} {v.unit} · n={v.n_eval}
                   </div>
                 </div>
@@ -447,37 +451,23 @@ function StationDetailModal({ stationId, windowHours, onClose, openInfo }) {
   useEffect(() => {
     if (stationId) api.verificationTimeseries(stationId, sel.variable, sel.lead_h).then(setSeries).catch(() => setSeries(null))
   }, [stationId, sel])
-  useEffect(() => {
-    const h = e => { if (e.key === 'Escape') onClose() }
-    window.addEventListener('keydown', h)
-    return () => window.removeEventListener('keydown', h)
-  }, [onClose])
-
   if (!stationId) return null
   const d = detail || {}
   const vars = d.variables || {}
   const leads = (d.by_lead || []).map(r => r.lead_h)
   const selUnit = vars[sel.variable]?.unit || ''
   const CAT_ORDER = ['VFR', 'MVFR', 'IFR', 'LIFR']
-  const CAT_COLORS = { VFR: '#10b981', MVFR: '#3b82f6', IFR: '#ef4444', LIFR: '#a855f7' }
+  const CAT_COLORS = { VFR: 'var(--cat-vfr-text)', MVFR: 'var(--cat-mvfr-text)', IFR: 'var(--cat-ifr-text)', LIFR: 'var(--cat-lifr-text)' }
 
   return (
-    <div onClick={onClose} style={{
-      position: 'fixed', inset: 0, background: 'rgba(2,6,23,0.7)', zIndex: 3000,
-      display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '4vh 16px', overflowY: 'auto',
-    }}>
-      <div onClick={e => e.stopPropagation()} className="card" style={{ maxWidth: 760, width: '100%', maxHeight: '92vh', overflowY: 'auto' }}>
-        <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, background: 'var(--bg-secondary, #0f172a)', zIndex: 1 }}>
-          <h3 style={{ margin: 0 }}>
-            {d.station_id || stationId}{d.name ? ` — ${d.name}` : ''}
-            {d.overall_accuracy_pct != null && (
-              <span style={{ marginLeft: 10, fontSize: 13, fontWeight: 700, color: accColor(d.overall_accuracy_pct) }}>
-                {d.overall_accuracy_pct}% overall
-              </span>
-            )}
-          </h3>
-          <button className="btn btn-sm" onClick={onClose}>✕</button>
-        </div>
+    <Dialog open wide onClose={onClose} title={<>
+      {d.station_id || stationId}{d.name ? ` — ${d.name}` : ''}
+      {d.overall_accuracy_pct != null && (
+        <span style={{ marginLeft: 10, fontSize: 13, fontWeight: 700, color: accColor(d.overall_accuracy_pct) }}>
+          {d.overall_accuracy_pct}% overall
+        </span>
+      )}
+    </>}>
 
         {!detail && <div style={{ padding: 24, color: 'var(--text-muted)' }}>Loading station detail…</div>}
 
@@ -520,7 +510,7 @@ function StationDetailModal({ stationId, windowHours, onClose, openInfo }) {
 
             {/* Per-lead table */}
             <div className="card" style={{ marginBottom: 14 }}>
-              <div className="card-header"><h3 style={{ fontSize: 14 }}>Accuracy by Lead Time</h3></div>
+              <div className="card-header"><h4 style={{ fontSize: 14 }}>Accuracy by Lead Time</h4></div>
               <table className="data-table">
                 <thead><tr>
                   <Th label="Lead" info={LEAD_COL_INFO.Lead} openInfo={openInfo} />
@@ -542,13 +532,13 @@ function StationDetailModal({ stationId, windowHours, onClose, openInfo }) {
 
             {/* Forecast vs observed for this station */}
             <div className="card">
-              <div className="card-header"><h3 style={{ fontSize: 14 }}>Forecast vs. Observed</h3></div>
+              <div className="card-header"><h4 style={{ fontSize: 14 }}>Forecast vs. Observed</h4></div>
               <div style={{ padding: '8px 12px' }}>
                 <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
-                  <select value={sel.variable} onChange={e => setSel(s => ({ ...s, variable: e.target.value }))} className="btn btn-sm">
+                  <select aria-label="Variable" value={sel.variable} onChange={e => setSel(s => ({ ...s, variable: e.target.value }))} className="btn btn-sm">
                     {Object.entries(vars).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
                   </select>
-                  <select value={sel.lead_h} onChange={e => setSel(s => ({ ...s, lead_h: Number(e.target.value) }))} className="btn btn-sm">
+                  <select aria-label="Lead time" value={sel.lead_h} onChange={e => setSel(s => ({ ...s, lead_h: Number(e.target.value) }))} className="btn btn-sm">
                     {(leads.length ? leads : [6, 24, 48, 72]).map(l => <option key={l} value={l}>+{l}h</option>)}
                   </select>
                 </div>
@@ -557,8 +547,7 @@ function StationDetailModal({ stationId, windowHours, onClose, openInfo }) {
             </div>
           </div>
         )}
-      </div>
-    </div>
+    </Dialog>
   )
 }
 
@@ -581,11 +570,6 @@ export default function Verification() {
   useEffect(() => {
     api.verificationTimeseries(sel.station, sel.variable, sel.lead_h).then(setSeries).catch(() => setSeries(null))
   }, [sel])
-  useEffect(() => {
-    const h = e => { if (e.key === 'Escape') { setExpanded(false); setLeadExpanded(false) } }
-    window.addEventListener('keydown', h)
-    return () => window.removeEventListener('keydown', h)
-  }, [])
 
   const board = sb || {}
   const mode = MODE_BADGE[board.data_mode] || MODE_BADGE.empty
@@ -597,17 +581,17 @@ export default function Verification() {
 
   return (
     <div className="page">
-      {info && <InfoModal title={info.title} body={info.body} onClose={() => setInfo(null)} />}
+      <InfoModal info={info} onClose={() => setInfo(null)} />
       {detailStation && (
         <StationDetailModal stationId={detailStation} windowHours={windowHours} onClose={() => setDetailStation(null)} openInfo={openInfo} />
       )}
 
       <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 10 }}>
         <div>
-          <h1>Forecast Verification</h1>
+          <h2>Forecast Verification</h2>
           <p style={{ color: 'var(--text-muted)', margin: '4px 0 0' }}>
             How accurate our forecasts were against what was actually observed — bias, error, and skill by lead time.
-            <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}> Click any card, column header, or station row for details.</span>
+            <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}> Select any card, column header or station for an explanation or detail.</span>
           </p>
         </div>
         <div style={{ textAlign: 'right' }}>
@@ -619,12 +603,12 @@ export default function Verification() {
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 14 }}>
-        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Window:</span>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 14, flexWrap: 'wrap' }} role="group" aria-labelledby="win-label">
+        <span id="win-label" style={{ fontSize: 12, color: 'var(--text-muted)' }}>Window:</span>
         {[{ h: 24, l: '24h' }, { h: 72, l: '3d' }, { h: 168, l: '7d' }, { h: 720, l: '30d' }].map(w => (
-          <button key={w.h} className={`btn btn-sm ${windowHours === w.h ? 'btn-primary' : ''}`} onClick={() => setWindowHours(w.h)}>{w.l}</button>
+          <button key={w.h} type="button" aria-pressed={windowHours === w.h} className={`btn btn-sm ${windowHours === w.h ? 'btn-primary' : ''}`} onClick={() => setWindowHours(w.h)}>{w.l}</button>
         ))}
-        <button className="btn btn-sm" onClick={refresh} style={{ marginLeft: 'auto' }}>↻ Refresh</button>
+        <button type="button" className="btn btn-sm" onClick={refresh} style={{ marginLeft: 'auto' }}><span aria-hidden="true">↻</span> Refresh</button>
       </div>
 
       {/* Operations briefing synthesized from live data */}
@@ -646,17 +630,15 @@ export default function Verification() {
         ))}
       </div>
 
-      <div className="card-grid" style={{ gridTemplateColumns: '1fr 1fr', marginBottom: 16 }}>
+      <div className="grid-2" style={{ marginBottom: 16 }}>
         {/* Lead-time skill curve */}
         <div className="card">
           <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h3 style={{ display: 'flex', alignItems: 'center' }}>Skill vs. Lead Time<InfoDot onClick={() => openInfo('Skill vs. Lead Time', SECTION_INFO.lead)} /></h3>
-            <button className="btn btn-sm" onClick={() => setLeadExpanded(true)} title="Expand chart">⤢ Expand</button>
+            <h3 style={{ display: 'flex', alignItems: 'center' }}>Skill vs. Lead Time<InfoDot title="Skill vs. Lead Time" onClick={() => openInfo('Skill vs. Lead Time', SECTION_INFO.lead)} /></h3>
+            <button type="button" className="btn btn-sm" onClick={() => setLeadExpanded(true)} aria-label="Expand Skill vs. Lead Time chart"><span aria-hidden="true">⤢</span> Expand</button>
           </div>
           <div style={{ padding: '8px 12px' }}>
-            <div onClick={() => setLeadExpanded(true)} style={{ cursor: 'zoom-in' }} title="Click to expand">
-              <LeadCurve byLead={board.by_lead} />
-            </div>
+            <LeadCurve byLead={board.by_lead} />
             <LeadTable byLead={board.by_lead} openInfo={openInfo} />
           </div>
         </div>
@@ -664,83 +646,49 @@ export default function Verification() {
         {/* Forecast vs observed */}
         <div className="card">
           <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h3 style={{ display: 'flex', alignItems: 'center' }}>Forecast vs. Observed<InfoDot onClick={() => openInfo('Forecast vs. Observed', SECTION_INFO.fvo)} /></h3>
-            <button className="btn btn-sm" onClick={() => setExpanded(true)} title="Expand chart">⤢ Expand</button>
+            <h3 style={{ display: 'flex', alignItems: 'center' }}>Forecast vs. Observed<InfoDot title="Forecast vs. Observed" onClick={() => openInfo('Forecast vs. Observed', SECTION_INFO.fvo)} /></h3>
+            <button type="button" className="btn btn-sm" onClick={() => setExpanded(true)} aria-label="Expand Forecast vs. Observed chart"><span aria-hidden="true">⤢</span> Expand</button>
           </div>
           <div style={{ padding: '8px 12px' }}>
             <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
-              <select value={sel.station} onChange={e => setSel(s => ({ ...s, station: e.target.value }))} className="btn btn-sm">
+              <select aria-label="Station" value={sel.station} onChange={e => setSel(s => ({ ...s, station: e.target.value }))} className="btn btn-sm">
                 {stations.length ? stations.map(s => <option key={s.station_id} value={s.station_id}>{s.station_id}</option>)
                   : <option value="MYNN">MYNN</option>}
               </select>
-              <select value={sel.variable} onChange={e => setSel(s => ({ ...s, variable: e.target.value }))} className="btn btn-sm">
+              <select aria-label="Variable" value={sel.variable} onChange={e => setSel(s => ({ ...s, variable: e.target.value }))} className="btn btn-sm">
                 {Object.entries(vars).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
               </select>
-              <select value={sel.lead_h} onChange={e => setSel(s => ({ ...s, lead_h: Number(e.target.value) }))} className="btn btn-sm">
+              <select aria-label="Lead time" value={sel.lead_h} onChange={e => setSel(s => ({ ...s, lead_h: Number(e.target.value) }))} className="btn btn-sm">
                 {leads.map(l => <option key={l} value={l}>+{l}h</option>)}
               </select>
             </div>
-            <div onClick={() => setExpanded(true)} style={{ cursor: 'zoom-in' }} title="Click to expand">
-              <ForecastVsObserved points={series?.points} unit={selUnit} />
-            </div>
+            <ForecastVsObserved points={series?.points} unit={selUnit} />
           </div>
         </div>
       </div>
 
-      {/* Expanded forecast-vs-observed view */}
-      {expanded && (
-        <div onClick={() => setExpanded(false)} style={{
-          position: 'fixed', inset: 0, background: 'rgba(2,6,23,0.75)', zIndex: 3500,
-          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '3vh 16px',
-        }}>
-          <div onClick={e => e.stopPropagation()} className="card" style={{ maxWidth: 1100, width: '100%', maxHeight: '94vh', overflowY: 'auto' }}>
-            <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h3 style={{ margin: 0 }}>Forecast vs. Observed — {sel.station} · {vars[sel.variable]?.label || sel.variable} · +{sel.lead_h}h</h3>
-              <button className="btn btn-sm" onClick={() => setExpanded(false)} title="Contract">⤡ Close</button>
-            </div>
-            <div style={{ padding: '10px 16px' }}>
-              <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
-                <select value={sel.station} onChange={e => setSel(s => ({ ...s, station: e.target.value }))} className="btn btn-sm">
-                  {stations.length ? stations.map(s => <option key={s.station_id} value={s.station_id}>{s.station_id} — {s.name}</option>)
-                    : <option value="MYNN">MYNN</option>}
-                </select>
-                <select value={sel.variable} onChange={e => setSel(s => ({ ...s, variable: e.target.value }))} className="btn btn-sm">
-                  {Object.entries(vars).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-                </select>
-                <select value={sel.lead_h} onChange={e => setSel(s => ({ ...s, lead_h: Number(e.target.value) }))} className="btn btn-sm">
-                  {leads.map(l => <option key={l} value={l}>+{l}h</option>)}
-                </select>
-              </div>
-              <div onClick={() => setExpanded(false)} style={{ cursor: 'zoom-out' }} title="Click to contract">
-                <ForecastVsObserved points={series?.points} unit={selUnit} big />
-              </div>
-              <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8 }}>Click the chart, press Esc, or use Close to contract.</p>
-            </div>
-          </div>
+      {/* Expanded views */}
+      <Dialog open={expanded} wide onClose={() => setExpanded(false)}
+        title={`Forecast vs. Observed — ${sel.station} · ${vars[sel.variable]?.label || sel.variable} · +${sel.lead_h}h`}>
+        <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
+          <select aria-label="Station" value={sel.station} onChange={e => setSel(s => ({ ...s, station: e.target.value }))} className="btn btn-sm">
+            {stations.length ? stations.map(s => <option key={s.station_id} value={s.station_id}>{s.station_id} — {s.name}</option>)
+              : <option value="MYNN">MYNN</option>}
+          </select>
+          <select aria-label="Variable" value={sel.variable} onChange={e => setSel(s => ({ ...s, variable: e.target.value }))} className="btn btn-sm">
+            {Object.entries(vars).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+          </select>
+          <select aria-label="Lead time" value={sel.lead_h} onChange={e => setSel(s => ({ ...s, lead_h: Number(e.target.value) }))} className="btn btn-sm">
+            {leads.map(l => <option key={l} value={l}>+{l}h</option>)}
+          </select>
         </div>
-      )}
-
-      {/* Expanded skill-vs-lead-time view */}
-      {leadExpanded && (
-        <div onClick={() => setLeadExpanded(false)} style={{
-          position: 'fixed', inset: 0, background: 'rgba(2,6,23,0.75)', zIndex: 3500,
-          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '3vh 16px',
-        }}>
-          <div onClick={e => e.stopPropagation()} className="card" style={{ maxWidth: 1100, width: '100%', maxHeight: '94vh', overflowY: 'auto' }}>
-            <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h3 style={{ margin: 0, display: 'flex', alignItems: 'center' }}>Skill vs. Lead Time<InfoDot onClick={() => openInfo('Skill vs. Lead Time', SECTION_INFO.lead)} /></h3>
-              <button className="btn btn-sm" onClick={() => setLeadExpanded(false)} title="Contract">⤡ Close</button>
-            </div>
-            <div style={{ padding: '10px 16px' }}>
-              <div onClick={() => setLeadExpanded(false)} style={{ cursor: 'zoom-out' }} title="Click to contract">
-                <LeadCurve byLead={board.by_lead} big />
-              </div>
-              <LeadTable byLead={board.by_lead} openInfo={openInfo} />
-              <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8 }}>Click the chart, press Esc, or use Close to contract.</p>
-            </div>
-          </div>
-        </div>
-      )}
+        <ForecastVsObserved points={series?.points} unit={selUnit} big />
+      </Dialog>
+      <Dialog open={leadExpanded} wide onClose={() => setLeadExpanded(false)} title="Skill vs. Lead Time"
+        actions={<InfoDot title="Skill vs. Lead Time" onClick={() => openInfo('Skill vs. Lead Time', SECTION_INFO.lead)} />}>
+        <LeadCurve byLead={board.by_lead} big />
+        <LeadTable byLead={board.by_lead} openInfo={openInfo} />
+      </Dialog>
 
       {/* IFR/LIFR warning verification (safety-critical) */}
       <WarningSkillCard data={warn} openInfo={openInfo} />
@@ -751,10 +699,10 @@ export default function Verification() {
       {/* Per-station leaderboard (rows clickable) */}
       <div className="card">
         <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h3 style={{ display: 'flex', alignItems: 'center' }}>Station Accuracy Leaderboard<InfoDot onClick={() => openInfo('Station Accuracy Leaderboard', SECTION_INFO.leaderboard)} /></h3>
-          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Click a row for full detail →</span>
+          <h3 id="lb-h" style={{ display: 'flex', alignItems: 'center' }}>Station Accuracy Leaderboard<InfoDot title="Station Accuracy Leaderboard" onClick={() => openInfo('Station Accuracy Leaderboard', SECTION_INFO.leaderboard)} /></h3>
+          <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Select a station for full detail</span>
         </div>
-        <div style={{ overflowX: 'auto' }}>
+        <div className="table-scroll" tabIndex={0} role="region" aria-labelledby="lb-h">
           <table className="data-table">
             <thead><tr>
               <Th label="#" info={LB_COL_INFO['#']} openInfo={openInfo} />
@@ -769,11 +717,11 @@ export default function Verification() {
             <tbody>
               {stations.length === 0 && <tr><td colSpan={8} style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 16 }}>No verified forecasts in this window yet.</td></tr>}
               {stations.map((s, i) => (
-                <tr key={s.station_id} onClick={() => setDetailStation(s.station_id)}
-                  style={{ cursor: 'pointer' }} title={`Click for ${s.station_id} detail`}>
+                <tr key={s.station_id} onClick={() => setDetailStation(s.station_id)} style={{ cursor: 'pointer' }}>
                   <td>{i + 1}</td>
-                  <td style={{ fontWeight: 700 }}>{s.station_id}</td>
-                  <td style={{ color: 'var(--text-muted)' }}>{s.name}</td>
+                  <th scope="row"><button type="button" className="link-btn" aria-label={`${s.station_id} ${s.name}, open detail`}
+                    onClick={e => { e.stopPropagation(); setDetailStation(s.station_id) }}>{s.station_id}</button></th>
+                  <td style={{ color: 'var(--text-secondary)' }}>{s.name}</td>
                   <td><span style={{ fontWeight: 700, color: accColor(s.accuracy_pct) }}>{fmt(s.accuracy_pct, '%')}</span></td>
                   <td>{fmtErr(s.temp_mae, '°C')}</td>
                   <td>{fmtErr(s.wind_mae, 'kt')}</td>

@@ -33,19 +33,19 @@ export default function Login() {
         <p className="subtitle">Bahamas Aviation, Climate & Severe Weather Network</p>
         <form onSubmit={handleSubmit}>
           <div className="form-group">
-            <label>Username</label>
-            <input type="text" value={username} onChange={e => setUsername(e.target.value)}
+            <label htmlFor="login-user">Username</label>
+            <input id="login-user" type="text" autoComplete="username" value={username} onChange={e => setUsername(e.target.value)}
               placeholder="Enter username" autoFocus required />
           </div>
           <div className="form-group">
-            <label>Password</label>
-            <input type="password" value={password} onChange={e => setPassword(e.target.value)}
+            <label htmlFor="login-pass">Password</label>
+            <input id="login-pass" type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)}
               placeholder="Enter password" required />
           </div>
           <button className="btn btn-primary login-btn" type="submit" disabled={loading}>
             {loading ? 'Signing in...' : 'Sign In'}
           </button>
-          {error && <p className="error-msg">{error}</p>}
+          <p className="error-msg" role="alert">{error}</p>
         </form>
         <p style={{textAlign: 'center', marginTop: 20, fontSize: 12, color: 'var(--text-muted)'}}>
           Demo: admin / admin | meteorologist / weather

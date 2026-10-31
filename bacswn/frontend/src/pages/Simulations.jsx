@@ -101,7 +101,7 @@ function ActivityToasts({ alerts, messages, nodes }) {
   }, [alerts, messages, nodes])
 
   return toasts.map(t => (
-    <Marker key={t.id} position={[t.lat, t.lon]} interactive={false}
+    <Marker key={t.id} position={[t.lat, t.lon]} interactive={false} keyboard={false}
       icon={L.divIcon({
         className: 'station-marker',
         html: '<div class="sim-toast" style="background:' + t.bg + ';border:1px solid ' + t.color + ';color:#fff;font-size:9px;padding:3px 7px;border-radius:6px;white-space:nowrap;max-width:220px;overflow:hidden;text-overflow:ellipsis;box-shadow:0 2px 8px rgba(0,0,0,0.4)">'
@@ -166,7 +166,8 @@ function SimMap({ nodes, messageLines, propLines, hubLines, alerts, messages, hu
 
       {/* Station nodes with radar tower icons */}
       {nodes.map(n => (
-        <Marker key={n.station} position={[n.lat, n.lon]} icon={nodeIcon(n.status, n.hub_connected, n.alert_level)}>
+        <Marker key={n.station} position={[n.lat, n.lon]} icon={nodeIcon(n.status, n.hub_connected, n.alert_level)}
+          title={`${n.station} ${n.name}: ${n.status}, alert level ${n.alert_level || 'normal'}${n.hub_connected ? '' : ', hub disconnected'}`}>
           <Popup>
             <div style={{ color: '#000', minWidth: 240, fontSize: 12, lineHeight: 1.5 }}>
               <div style={{ fontWeight: 700, fontSize: 14, borderBottom: '1px solid #ddd', paddingBottom: 4, marginBottom: 4 }}>
@@ -216,7 +217,8 @@ function SimMap({ nodes, messageLines, propLines, hubLines, alerts, messages, hu
 
       {/* Hurricane overlay */}
       {hurricane && hurricane.lat && (
-        <Marker position={[hurricane.lat, hurricane.lon]} icon={hurricaneMapIcon(hurricane.category || 1)}>
+        <Marker position={[hurricane.lat, hurricane.lon]} icon={hurricaneMapIcon(hurricane.category || 1)}
+          title={`${hurricane.name || 'Hurricane'}, category ${hurricane.category || 1}`}>
           <Popup>
             <div style={{ color: '#000', minWidth: 200 }}>
               <div style={{ fontWeight: 700, fontSize: 16, color: CAT_COLORS[hurricane.category] || '#ef4444' }}>{String(hurricane.name)}</div>
@@ -241,7 +243,7 @@ function SimMap({ nodes, messageLines, propLines, hubLines, alerts, messages, hu
 
       {/* Station labels */}
       {nodes.map(n => (
-        <Marker key={'label-' + n.station} position={[n.lat, n.lon]} icon={nodeLabel(n.station)} interactive={false} />
+        <Marker key={'label-' + n.station} position={[n.lat, n.lon]} icon={nodeLabel(n.station)} interactive={false} keyboard={false} />
       ))}
 
       {/* Activity toast overlays */}
@@ -321,21 +323,21 @@ export default function Simulations() {
         </div>
         <div className="card-grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))' }}>
           {scenarios.map(s => (
-            <div key={s.id} className="card" style={{ padding: 20, cursor: 'pointer', transition: 'transform 0.15s, box-shadow 0.15s' }}
-              onClick={() => startScenario(s)}
+            <div key={s.id} className="card" style={{ padding: 20, transition: 'transform 0.15s, box-shadow 0.15s' }}
               onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 8px 25px rgba(0,0,0,0.3)' }}
               onMouseLeave={e => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = '' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-                <span style={{ fontSize: 32 }}>{SCENARIO_ICONS[s.icon] || '\u{1F4E1}'}</span>
+                <span aria-hidden="true" style={{ fontSize: 32 }}>{SCENARIO_ICONS[s.icon] || '\u{1F4E1}'}</span>
                 <div>
-                  <div style={{ fontWeight: 700, fontSize: 15 }}>{String(s.name)}</div>
-                  <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: 'rgba(59,130,246,0.15)', color: '#3b82f6', fontWeight: 600 }}>
+                  <h3 style={{ fontWeight: 700, fontSize: 15 }}>{String(s.name)}</h3>
+                  <span style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, background: 'rgba(59,130,246,0.15)', color: 'var(--accent-text)', fontWeight: 600 }}>
                     {String(s.category || '').replace(/_/g, ' ').toUpperCase()}
                   </span>
                 </div>
               </div>
               <p style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: 14 }}>{String(s.description)}</p>
-              <button className="btn btn-primary" style={{ width: '100%' }} onClick={e => { e.stopPropagation(); startScenario(s) }}>Run Simulation</button>
+              <button type="button" className="btn btn-primary" style={{ width: '100%' }} onClick={() => startScenario(s)}
+                aria-label={`Run simulation: ${String(s.name)}`}>Run Simulation</button>
             </div>
           ))}
         </div>
@@ -387,58 +389,73 @@ export default function Simulations() {
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {playing && <div className="live-badge"><div className="live-dot" /> RUNNING</div>}
-          <button className="btn btn-sm" onClick={handleReset} style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)', border: '1px solid var(--border)' }}>Back to Scenarios</button>
+          <button type="button" className="btn btn-sm" onClick={handleReset} style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)', border: '1px solid var(--border)' }}>Back to Scenarios</button>
         </div>
       </div>
 
       <div className="card" style={{ padding: '12px 16px', marginBottom: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <button className="btn btn-sm" onClick={() => { setPlaying(false); if (currentStep > 0) fetchStep(activeScenario.id, currentStep - 1) }}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }} role="group" aria-label="Playback">
+          <button type="button" aria-label="Previous step" className="btn btn-sm" onClick={() => { setPlaying(false); if (currentStep > 0) fetchStep(activeScenario.id, currentStep - 1) }}
             disabled={currentStep <= 0 || loadingStep} style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)', border: '1px solid var(--border)', fontSize: 16, padding: '4px 10px' }}>&#9664;&#9664;</button>
           {playing ? (
-            <button className="btn btn-sm btn-warning" onClick={() => setPlaying(false)} style={{ fontSize: 16, padding: '4px 12px' }}>&#9646;&#9646;</button>
+            <button type="button" aria-label="Pause" className="btn btn-sm btn-warning" onClick={() => setPlaying(false)} style={{ fontSize: 16, padding: '4px 12px' }}><span aria-hidden="true">&#9646;&#9646;</span></button>
           ) : (
-            <button className="btn btn-sm btn-primary" onClick={handlePlay} disabled={loadingStep} style={{ fontSize: 16, padding: '4px 12px' }}>&#9654;</button>
+            <button type="button" aria-label="Play" className="btn btn-sm btn-primary" onClick={handlePlay} disabled={loadingStep} style={{ fontSize: 16, padding: '4px 12px' }}><span aria-hidden="true">&#9654;</span></button>
           )}
-          <button className="btn btn-sm" onClick={() => { setPlaying(false); if (currentStep < totalSteps - 1) fetchStep(activeScenario.id, currentStep + 1) }}
+          <button type="button" aria-label="Next step" className="btn btn-sm" onClick={() => { setPlaying(false); if (currentStep < totalSteps - 1) fetchStep(activeScenario.id, currentStep + 1) }}
             disabled={currentStep >= totalSteps - 1 || loadingStep} style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)', border: '1px solid var(--border)', fontSize: 16, padding: '4px 10px' }}>&#9654;&#9654;</button>
-          <div style={{ flex: 1, height: 8, background: 'var(--border)', borderRadius: 4, overflow: 'hidden' }}>
+          <div role="progressbar" aria-label="Scenario progress" aria-valuemin={1} aria-valuemax={totalSteps} aria-valuenow={currentStep + 1}
+            aria-valuetext={`Step ${currentStep + 1} of ${totalSteps}`} style={{ flex: 1, height: 8, background: 'var(--border)', borderRadius: 4, overflow: 'hidden' }}>
             <div style={{ width: progressPct + '%', height: '100%', background: 'linear-gradient(90deg, #3b82f6, #8b5cf6)', borderRadius: 4, transition: 'width 0.3s ease' }} />
           </div>
-          <span style={{ fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{String(currentStep + 1)}/{String(totalSteps)}</span>
+          <span aria-hidden="true" style={{ fontSize: 12, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>{String(currentStep + 1)}/{String(totalSteps)}</span>
         </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, padding: '0 44px' }}>
+        <ol aria-label="Jump to step" style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, padding: '0 32px', listStyle: 'none', flexWrap: 'wrap' }}>
           {Array.from({ length: totalSteps }, (_, i) => (
-            <div key={i} onClick={() => { setPlaying(false); fetchStep(activeScenario.id, i) }}
-              style={{ width: 10, height: 10, borderRadius: '50%', cursor: 'pointer', background: i <= currentStep ? '#3b82f6' : 'var(--border)', border: i === currentStep ? '2px solid #8b5cf6' : '2px solid transparent', transition: 'all 0.2s' }}
-              title={'Step ' + (i + 1)} />
+            <li key={i}><button type="button" onClick={() => { setPlaying(false); fetchStep(activeScenario.id, i) }}
+              aria-label={`Step ${i + 1}`} aria-current={i === currentStep ? 'step' : undefined}
+              style={{ width: 24, height: 24, padding: 0, display: 'grid', placeItems: 'center', background: 'none', border: 'none', cursor: 'pointer' }}>
+              <span aria-hidden="true" style={{ width: 12, height: 12, borderRadius: '50%', background: i <= currentStep ? 'var(--accent)' : 'var(--border)', border: i === currentStep ? '2px solid var(--text-primary)' : '2px solid transparent' }} />
+            </button></li>
           ))}
-        </div>
+        </ol>
       </div>
 
-      <div style={{ display: 'flex', gap: 12 }}>
-        <div className="card" style={{ padding: 0, overflow: 'hidden', flex: 1 }}>
+      <div className="sim-layout">
+        <div className="card" style={{ padding: 0, overflow: 'hidden', minWidth: 0 }} role="region"
+          aria-label={`Simulation map, ${nodes.length} stations. Station states are listed as text in the panel.`}>
           <div className="map-container">
             <SimMap nodes={nodes} messageLines={messageLines} propLines={propLines} hubLines={hubLines} alerts={alerts} messages={messages} hurricane={simState?.hurricane || null} step={currentStep} />
           </div>
         </div>
 
-        <div style={{ width: 320, flexShrink: 0, maxHeight: 700, overflowY: 'auto' }}>
-          <div className="card" style={{ marginBottom: 12, padding: 16, borderLeft: '4px solid #3b82f6' }}>
-            <h3 style={{ fontSize: 13, marginBottom: 8, color: '#3b82f6' }}>Narration</h3>
-            <p style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--text-primary)' }}>{String(narration)}</p>
+        <div className="sim-side" tabIndex={0} role="region" aria-label="Simulation details">
+          <div className="card" style={{ marginBottom: 12, padding: 16, borderLeft: '4px solid var(--accent)' }}>
+            <h3 style={{ fontSize: 13, marginBottom: 8, color: 'var(--accent-text)' }}>Narration</h3>
+            <p role="status" style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--text-primary)' }}>{String(narration)}</p>
           </div>
+
+          <details className="card chart-data" style={{ marginBottom: 12, padding: 12 }}>
+            <summary>Station states as text ({nodes.length})</summary>
+            <ul style={{ fontSize: 12, paddingLeft: 18, marginTop: 6 }}>
+              {nodes.map(n => (
+                <li key={n.station}><b>{String(n.station)}</b> {String(n.name)}: {String(n.status)}, alert {String(n.alert_level || 'normal')}
+                  {n.hub_connected ? '' : ', hub disconnected'}{n.autonomous_mode ? ', autonomous mode' : ''}
+                  {n.detection ? `, detection: ${String(n.detection).replace(/_/g, ' ')}` : ''}</li>
+              ))}
+            </ul>
+          </details>
 
           {alerts.length > 0 && (
             <div className="card" style={{ marginBottom: 12, padding: 12 }}>
-              <h3 style={{ fontSize: 13, marginBottom: 8, color: '#ef4444' }}>Active Alerts</h3>
+              <h3 style={{ fontSize: 13, marginBottom: 8, color: 'var(--danger-text)' }}>Active Alerts</h3>
               {alerts.map((a, i) => (
                 <div key={i} style={{ padding: '8px 10px', marginBottom: 6, borderRadius: 6, background: a.type === 'EMERGENCY' ? 'rgba(220,38,38,0.15)' : 'rgba(239,68,68,0.1)', border: '1px solid rgba(220,38,38,0.3)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                    <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 3, color: '#fff', background: a.type === 'EMERGENCY' ? '#dc2626' : '#ef4444' }}>{String(a.type)}</span>
-                    <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{String(a.station)}</span>
+                    <span style={{ fontSize: 11, fontWeight: 700, padding: '1px 6px', borderRadius: 3, color: '#fff', background: a.type === 'EMERGENCY' ? '#991b1b' : '#b91c1c' }}>{String(a.type)}</span>
+                    <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{String(a.station)}</span>
                   </div>
-                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.4 }}>{String(a.text)}</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.4 }}>{String(a.text)}</div>
                 </div>
               ))}
             </div>
@@ -446,18 +463,18 @@ export default function Simulations() {
 
           {consensus.length > 0 && (
             <div className="card" style={{ marginBottom: 12, padding: 12 }}>
-              <h3 style={{ fontSize: 13, marginBottom: 8, color: '#f59e0b' }}>Consensus Votes</h3>
+              <h3 style={{ fontSize: 13, marginBottom: 8, color: 'var(--warning-text)' }}>Consensus Votes</h3>
               {consensus.map((c, i) => (
                 <div key={i} style={{ padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
                   <div style={{ fontWeight: 700, fontSize: 12, marginBottom: 4 }}>{String(c.event)}</div>
                   <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 4 }}>
                     {Object.entries(c.votes || {}).map(([s, v]) => (
-                      <span key={s} style={{ fontSize: 9, padding: '2px 6px', borderRadius: 4, fontWeight: 700, background: v === 'AGREE' ? 'rgba(16,185,129,0.2)' : v === 'DISAGREE' ? 'rgba(239,68,68,0.2)' : 'rgba(100,116,139,0.2)', color: v === 'AGREE' ? '#10b981' : v === 'DISAGREE' ? '#ef4444' : '#64748b' }}>
+                      <span key={s} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, fontWeight: 700, background: v === 'AGREE' ? 'rgba(16,185,129,0.2)' : v === 'DISAGREE' ? 'rgba(239,68,68,0.2)' : 'rgba(100,116,139,0.2)', color: v === 'AGREE' ? 'var(--success-text)' : v === 'DISAGREE' ? 'var(--danger-text)' : 'var(--text-secondary)' }}>
                         {String(s)}: {String(v)}
                       </span>
                     ))}
                   </div>
-                  <div style={{ fontSize: 10, fontWeight: 600, color: c.result === 'REACHED' ? '#10b981' : '#ef4444' }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: c.result === 'REACHED' ? 'var(--success-text)' : 'var(--danger-text)' }}>
                     {c.result === 'REACHED' ? 'CONSENSUS REACHED' : 'CONSENSUS NOT REACHED'}
                   </div>
                 </div>
@@ -467,16 +484,16 @@ export default function Simulations() {
 
           {messages.length > 0 && (
             <div className="card" style={{ marginBottom: 12, padding: 12 }}>
-              <h3 style={{ fontSize: 13, marginBottom: 8, color: '#8b5cf6' }}>Station Communications</h3>
+              <h3 style={{ fontSize: 13, marginBottom: 8, color: 'var(--cat-lifr-text)' }}>Station Communications</h3>
               {messages.map((m, i) => (
-                <div key={i} style={{ fontSize: 10, padding: '5px 0', borderBottom: '1px solid var(--border)', lineHeight: 1.4 }}>
+                <div key={i} style={{ fontSize: 12, padding: '5px 0', borderBottom: '1px solid var(--border)', lineHeight: 1.4 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2 }}>
-                    <span style={{ display: 'inline-block', padding: '0 5px', borderRadius: 3, fontSize: 9, fontWeight: 700, background: (MSG_TYPE_COLORS[m.type] || '#64748b') + '25', color: MSG_TYPE_COLORS[m.type] || '#64748b' }}>{String(m.type)}</span>
+                    <span style={{ display: 'inline-block', padding: '0 5px', borderRadius: 3, fontSize: 11, fontWeight: 700, background: (MSG_TYPE_COLORS[m.type] || '#64748b') + '25', color: 'var(--text-primary)', border: '1px solid ' + (MSG_TYPE_COLORS[m.type] || '#64748b') }}>{String(m.type)}</span>
                     <span style={{ fontWeight: 600 }}>{String(m.from)}</span>
-                    <span style={{ color: 'var(--text-muted)' }}>&rarr;</span>
+                    <span aria-label="to" style={{ color: 'var(--text-secondary)' }}>&rarr;</span>
                     <span style={{ fontWeight: 600 }}>{String(m.to)}</span>
                   </div>
-                  <div style={{ color: 'var(--text-secondary)', fontSize: 10 }}>{String(m.text)}</div>
+                  <div style={{ color: 'var(--text-secondary)', fontSize: 12 }}>{String(m.text)}</div>
                 </div>
               ))}
             </div>

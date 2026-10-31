@@ -35,7 +35,12 @@ Market Data over WebSocket.
   move it.
 - Risk: initial-margin buying-power check, ±20% price banding, 500-lot max. P&L is marked to last; fees are
   $1.85 per contract per side.
-- State is in memory per process and resets on restart. Contract specs are realistic; **prices are synthetic.**
+- The engine matches in memory; `services/trading_store.py` writes changes behind to SQLite every
+  second (market data every 15 s) and on shutdown, and restores them at startup: accounts, positions,
+  open orders (back in the book in time priority), order history, fills, spot levels, instrument stats
+  and 1-minute bars. A crash loses at most the last second. Positions in contracts that expired while
+  the server was down are closed at their last price (an `EXPIRY` fill) and their orders cancelled.
+  Contract specs are realistic; **prices are synthetic.**
 - `GET /api/trading/corsia-obligation` turns BACSWN's live CORSIA fuel-burn emissions for Bahamas FIR traffic
   into an annualised offset requirement (illustrative 10% sector growth factor). It measures coverage by
   long GEO positions, and the UI can load a hedge ticket from it.

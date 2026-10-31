@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import { hz } from './PrecogChamber'
+import { useTourEvent } from '../../tour/bus'
 
 const simClock = (iso) => new Date(iso).toISOString().slice(11, 16) + 'Z'
 const Hz = ({ h }) => <b style={{ color: hz(h) }}>{h}</b>
@@ -203,6 +204,7 @@ function Events({ rows, onSelect }) {
 export default function MeshLogs({ data, onSelect }) {
   const [tab, setTab] = useState('stations')
   const refs = useRef({})
+  useTourEvent('mesh-tab', ({ tab: t }) => setTab(t))
   const tabs = [
     ['stations', 'Stations', 0],
     ['cells', 'Storm cells', (data.cells || []).length],

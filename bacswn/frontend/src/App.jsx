@@ -26,6 +26,7 @@ const MeshNetwork = lazy(() => import('./pages/MeshNetwork'))
 const Simulations = lazy(() => import('./pages/Simulations'))
 const Verification = lazy(() => import('./pages/Verification'))
 const Login = lazy(() => import('./pages/Login'))
+const GuidedTour = lazy(() => import('./components/tour/GuidedTour'))
 
 const NAV_ITEMS = [
   { path: '/', icon: '🎯', label: 'Command Center' },
@@ -51,6 +52,7 @@ function Layout() {
   const { user, logout } = useAuth()
   const { theme, toggleTheme } = useTheme()
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [tourOpen, setTourOpen] = useState(() => new URLSearchParams(window.location.search).has('tour'))
 
   return (
     <div className="app-layout">
@@ -64,6 +66,10 @@ function Layout() {
         <div className="sidebar-header">
           <h1>SKYWATCH</h1>
           <p>Bahamas Aviation & Weather</p>
+          <button type="button" className="btn btn-sm btn-primary tour-start" aria-pressed={tourOpen}
+            onClick={() => { setTourOpen(true); setSidebarOpen(false) }}>
+            <span aria-hidden="true">▶ </span>{tourOpen ? 'Demo running' : 'Guided demo'}
+          </button>
         </div>
         <nav className="sidebar-nav" aria-label="Main">
           {NAV_ITEMS.map(item => (
@@ -91,6 +97,11 @@ function Layout() {
       <main className="main-content" id="main-content" tabIndex={-1}>
         <Outlet />
       </main>
+      {tourOpen && (
+        <Suspense fallback={null}>
+          <GuidedTour key="tour" open={tourOpen} onClose={() => setTourOpen(false)} />
+        </Suspense>
+      )}
     </div>
   )
 }

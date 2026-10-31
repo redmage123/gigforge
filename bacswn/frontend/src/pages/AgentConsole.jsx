@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect } from 'react'
 import { api } from '../api/client'
 import { usePolling } from '../hooks/usePolling'
 import { usePrefersReducedMotion } from '../hooks/useA11yPrefs'
+import { useTourEvent } from '../tour/bus'
 
 // ─── Agent pipeline definition ────────────────────────────────────────
 const PIPELINE_AGENTS = [
@@ -302,6 +303,8 @@ export default function AgentConsole() {
   }
 
   useEffect(() => { if (selectedAgent) detailRef.current?.focus() }, [selectedAgent])
+
+  useTourEvent('agents-demo', () => { if (!running) triggerPipeline() })
 
   const selected = selectedAgent
     ? (agentMap[selectedAgent] || PIPELINE_AGENTS.find(a => a.id === selectedAgent))

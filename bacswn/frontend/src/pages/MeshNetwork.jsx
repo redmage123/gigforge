@@ -6,6 +6,7 @@ import { usePolling } from '../hooks/usePolling'
 import { usePrefersReducedMotion } from '../hooks/useA11yPrefs'
 import PrecogChamber, { HAZARD_COLORS } from '../components/mesh/PrecogChamber'
 import StationDashboard from '../components/mesh/StationDashboard'
+import { useTourEvent } from '../tour/bus'
 import MeshLogs from '../components/mesh/MeshLogs'
 import '../components/mesh/mesh.css'
 
@@ -100,6 +101,7 @@ export default function MeshNetwork() {
   const [spawnKind, setSpawnKind] = useState('squall')
   const [spawnNear, setSpawnNear] = useState('MYBS')
   const [verdictNote, setVerdictNote] = useState('')
+  useTourEvent('mesh-select', ({ station }) => setSelected(station))
 
   const d = data || {}
   const nodes = d.nodes || []

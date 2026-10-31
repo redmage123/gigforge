@@ -136,3 +136,25 @@ history (trend line plus a text summary), and can miss reports (STALE). Status i
 injected faults are shown separately as presenter ground truth, so the demo shows detection.
 Satellite and sensor noise use their own random stream, so seeded runs of the existing scenarios behave
 exactly as before.
+
+## Mesh weather → air traffic
+
+`services/mesh_airspace.py`, `GET /api/mesh/airspace`. Turns the mesh's storm picture into what air
+traffic control needs:
+
+- **Hazard areas**: each convective/squall cell's ≥40 dBZ core (radius where the cell profile drops to
+  40 dBZ) and each fog bank (a low-level hazard, below 10,000 ft only). *Confirmed* when nearby stations
+  had the hazard confirmed by peer/satellite verification within the last sim-hour, *detected* when a
+  nearby station's ensemble calls it, otherwise *tracked*.
+- **Conflicts**: every airborne aircraft is dead-reckoned along its track at ground speed for 30 minutes
+  (2-minute steps) against each hazard moving at its real speed and heading, with a 5 nm buffer.
+- **Advice**: the smallest heading change (±20°, ±40°, ±60°) that keeps the aircraft clear of every hazard
+  for the same horizon; for an aircraft already inside, the heading straight out of the core.
+
+Command Center: hazard areas (solid = confirmed, dashed = not yet verified) and dotted entry paths on the
+map, a "Mesh weather → air traffic" panel that is their full text equivalent, and operational alerts for
+confirmed hazards and conflicts within 15 minutes. Flight Operations: a "Weather ahead (30 min)" column and
+the conflict and advice in each aircraft's details.
+
+The mesh simulation clock is compressed (1 s = 5 sim-min); conflict prediction uses physical speeds in
+real minutes, so the geometry is right for the picture at the moment it is computed.

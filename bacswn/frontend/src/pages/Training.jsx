@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react'
 import { api } from '../api/client'
 import { usePolling } from '../hooks/usePolling'
+import Dialog from '../components/a11y/Dialog'
 
 const CHANNELS = [
   { id: 'whatsapp', name: 'WhatsApp', icon: 'WA', color: '#25D366' },
@@ -109,15 +110,19 @@ export default function Training() {
 
       {/* Roster */}
       <div className="card">
-        <div className="card-header"><h3>Meteorologist Roster</h3></div>
+        <div className="card-header"><h3 id="roster-h">Meteorologist Roster</h3><span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Select a name to contact</span></div>
+        <div className="table-scroll" tabIndex={0} role="region" aria-labelledby="roster-h">
         <table className="data-table">
           <thead>
-            <tr><th>Name</th><th>Title</th><th>Station</th><th>Experience</th><th>Certifications</th><th>Status</th><th>Next Renewal</th></tr>
+            <tr><th scope="col">Name</th><th scope="col">Title</th><th scope="col">Station</th><th scope="col">Experience</th><th scope="col">Certifications</th><th scope="col">Status</th><th scope="col">Next Renewal</th></tr>
           </thead>
           <tbody>
             {roster.map(r => (
               <tr key={r.id} onClick={() => openContact(r)} style={{ cursor: 'pointer' }}>
-                <td style={{fontWeight: 600, color: 'var(--text-primary)'}}>{r.name}</td>
+                <th scope="row" style={{fontWeight: 600}}>
+                  <button type="button" className="link-btn" aria-label={`Contact ${r.name}`}
+                    onClick={e => { e.stopPropagation(); openContact(r) }}>{r.name}</button>
+                </th>
                 <td>{r.title}</td>
                 <td><span className="cat-badge cat-VFR">{r.station}</span></td>
                 <td>{r.years_exp} years</td>
@@ -136,6 +141,7 @@ export default function Training() {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
 
       {/* Training Modules */}
@@ -148,10 +154,11 @@ export default function Training() {
                 <span className="severity-badge severity-info">{m.category}</span>
                 <span className="severity-badge severity-warning">{m.level}</span>
               </div>
-              <strong style={{display: 'block', marginBottom: 4}}>{m.title}</strong>
-              <div style={{fontSize: 13, color: 'var(--text-muted)', marginBottom: 12}}>{m.duration_hrs} hours</div>
+              <h4 style={{display: 'block', marginBottom: 4, fontSize: 14}}>{m.title}</h4>
+              <div style={{fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12}}>{m.duration_hrs} hours</div>
               <div style={{display: 'flex', alignItems: 'center', gap: 8}}>
-                <div style={{flex: 1, height: 6, background: 'var(--bg-primary)', borderRadius: 3, overflow: 'hidden'}}>
+                <div role="progressbar" aria-label={`${m.title} completion`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={m.completion_rate}
+                  style={{flex: 1, height: 6, background: 'var(--bg-primary)', borderRadius: 3, overflow: 'hidden'}}>
                   <div style={{width: `${m.completion_rate}%`, height: '100%', background: m.completion_rate > 80 ? 'var(--success)' : 'var(--warning)', borderRadius: 3}} />
                 </div>
                 <span style={{fontSize: 12, fontWeight: 600}}>{m.completion_rate}%</span>
@@ -161,81 +168,53 @@ export default function Training() {
         </div>
       </div>
 
-      {/* Contact Modal */}
-      {contactPerson && (
-        <div onClick={() => setContactPerson(null)} style={{
-          position: 'fixed', inset: 0, zIndex: 9999,
-          background: 'rgba(0,0,0,0.6)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          <div onClick={e => e.stopPropagation()} style={{
-            background: 'var(--bg-card, #1e293b)', border: '1px solid var(--border, #334155)',
-            borderRadius: 12, padding: 24, width: 440,
-            boxShadow: '0 20px 60px rgba(0,0,0,0.6)',
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <div>
-                <div style={{ fontWeight: 700, fontSize: 18 }}>{contactPerson.name}</div>
-                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                  {contactPerson.title} &mdash; {contactPerson.station}
-                  <span style={{ marginLeft: 8 }} className={contactPerson.status === 'on_duty' ? 'cat-badge cat-VFR' : 'cat-badge cat-IFR'}>
-                    {contactPerson.status === 'on_duty' ? 'ON DUTY' : 'OFF DUTY'}
-                  </span>
-                </div>
-              </div>
-              <button onClick={() => setContactPerson(null)}
-                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 22 }}>&times;</button>
-            </div>
-
-            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>Select communication channel:</div>
-            <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
-              {CHANNELS.map(ch => (
-                <button key={ch.id} onClick={() => { setMsgChannel(ch.id); setMsgSent(false); setMsgText('') }}
-                  style={{
-                    padding: '8px 14px', borderRadius: 8,
-                    border: msgChannel === ch.id ? '2px solid ' + ch.color : '1px solid var(--border, #334155)',
-                    background: msgChannel === ch.id ? ch.color + '20' : 'transparent',
-                    color: msgChannel === ch.id ? ch.color : 'var(--text-secondary)',
-                    cursor: 'pointer', fontSize: 12, fontWeight: 600,
-                    display: 'flex', alignItems: 'center', gap: 6,
-                  }}>
-                  <span style={{ fontSize: 13, fontWeight: 800, width: 22, textAlign: 'center' }}>{ch.icon}</span>
-                  {ch.name}
-                </button>
-              ))}
-            </div>
-
-            {msgChannel && (
-              <div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6 }}>
-                  {CHANNELS.find(c => c.id === msgChannel)?.name} &mdash; {getContact(contactPerson, msgChannel)}
-                </div>
-                <textarea value={msgText} onChange={e => setMsgText(e.target.value)}
-                  placeholder={'Type your message to ' + contactPerson.name.split(' ')[0] + '...'}
-                  style={{
-                    width: '100%', height: 80, padding: 10, borderRadius: 8,
-                    background: 'var(--bg-primary, #0f172a)', border: '1px solid var(--border, #334155)',
-                    color: 'var(--text-primary, #f8fafc)', fontSize: 13, resize: 'vertical',
-                  }} />
-                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10, gap: 8 }}>
-                  <button onClick={() => setMsgChannel(null)}
-                    style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 12 }}>
-                    Cancel
-                  </button>
-                  <button onClick={handleSend} disabled={!msgText.trim() || msgSent || sending}
-                    style={{
-                      padding: '8px 20px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600,
-                      background: msgSent ? '#10b981' : (CHANNELS.find(c => c.id === msgChannel)?.color || '#6366f1'),
-                      color: '#fff', opacity: !msgText.trim() ? 0.5 : 1,
-                    }}>
-                    {msgSent ? '\u2713 Sent!' : sending ? 'Sending...' : 'Send via ' + (CHANNELS.find(c => c.id === msgChannel)?.name || '')}
-                  </button>
-                </div>
-              </div>
-            )}
+      {/* Contact dialog */}
+      <Dialog open={!!contactPerson} onClose={() => setContactPerson(null)}
+        title={contactPerson ? contactPerson.name : ''}>
+        {contactPerson && (<>
+          <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12 }}>
+            {contactPerson.title} &mdash; {contactPerson.station}
+            <span style={{ marginLeft: 8 }} className={contactPerson.status === 'on_duty' ? 'cat-badge cat-VFR' : 'cat-badge cat-IFR'}>
+              {contactPerson.status === 'on_duty' ? 'ON DUTY' : 'OFF DUTY'}
+            </span>
+          </p>
+          <div id="ch-label" style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 8 }}>Select communication channel:</div>
+          <div role="group" aria-labelledby="ch-label" style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+            {CHANNELS.map(ch => (
+              <button key={ch.id} type="button" aria-pressed={msgChannel === ch.id}
+                onClick={() => { setMsgChannel(ch.id); setMsgSent(false); setMsgText('') }}
+                style={{
+                  padding: '8px 14px', borderRadius: 8,
+                  border: msgChannel === ch.id ? '2px solid ' + ch.color : '1px solid var(--border)',
+                  background: msgChannel === ch.id ? ch.color + '20' : 'transparent',
+                  color: 'var(--text-primary)', fontWeight: msgChannel === ch.id ? 800 : 600,
+                  cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6,
+                }}>
+                <span aria-hidden="true" style={{ fontSize: 13, fontWeight: 800, width: 22, textAlign: 'center' }}>{ch.icon}</span>
+                {ch.name}
+              </button>
+            ))}
           </div>
-        </div>
-      )}
+          {msgChannel && (
+            <div>
+              <label htmlFor="contact-msg" style={{ display: 'block', fontSize: 13, color: 'var(--text-secondary)', marginBottom: 6 }}>
+                Message via {CHANNELS.find(c => c.id === msgChannel)?.name} &mdash; {getContact(contactPerson, msgChannel)}
+              </label>
+              <textarea id="contact-msg" value={msgText} onChange={e => setMsgText(e.target.value)}
+                placeholder={'Type your message to ' + contactPerson.name.split(' ')[0] + '…'}
+                style={{ width: '100%', height: 80, padding: 10, borderRadius: 8, fontSize: 13, resize: 'vertical' }} />
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10, gap: 8 }}>
+                <button type="button" className="btn btn-sm" onClick={() => setMsgChannel(null)}
+                  style={{ border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-primary)' }}>Cancel</button>
+                <button type="button" className="btn btn-sm btn-primary" onClick={handleSend} disabled={!msgText.trim() || msgSent || sending}>
+                  {msgSent ? 'Sent' : sending ? 'Sending…' : 'Send via ' + (CHANNELS.find(c => c.id === msgChannel)?.name || '')}
+                </button>
+              </div>
+              <p role="status" style={{ fontSize: 13, color: 'var(--success-text)', marginTop: 6 }}>{msgSent ? `Message sent to ${contactPerson.name}` : ''}</p>
+            </div>
+          )}
+        </>)}
+      </Dialog>
     </div>
   )
 }

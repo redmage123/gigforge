@@ -2,6 +2,9 @@ import { useState, useCallback, useRef, useEffect } from 'react'
 import { MapContainer, TileLayer, Polygon, useMap } from 'react-leaflet'
 import { api } from '../api/client'
 import { usePolling } from '../hooks/usePolling'
+import { usePrefersReducedMotion } from '../hooks/useA11yPrefs'
+import Dialog from '../components/a11y/Dialog'
+import ChartTable, { chartTextColor, summarise } from '../components/a11y/ChartTable'
 import { Bar, Doughnut } from 'react-chartjs-2'
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, ArcElement, Title, Tooltip as ChartTooltip, Legend } from 'chart.js'
 
@@ -29,8 +32,10 @@ const BAHAMAS_FIR = [
 ]
 
 // ─── Canvas: smooth aircraft rendering with interpolation ─────────────
-function FlightCanvas({ flights, onSelect }) {
+function FlightCanvas({ flights, onSelect, reducedMotion }) {
   const map = useMap()
+  const motionRef = useRef(reducedMotion)
+  motionRef.current = reducedMotion
   const animRef = useRef(null)
   const stateRef = useRef({})
   const mouseRef = useRef({ x: -9999, y: -9999 })
@@ -64,6 +69,8 @@ function FlightCanvas({ flights, onSelect }) {
   useEffect(() => {
     const canvas = document.createElement('canvas')
     canvas.style.cssText = 'position:absolute;top:0;left:0;z-index:450;pointer-events:all;cursor:default;'
+    // Pointer-only rendering; the Active Flights table is the keyboard / screen-reader equivalent.
+    canvas.setAttribute('aria-hidden', 'true')
     map.getContainer().appendChild(canvas)
 
     const resize = () => {
@@ -134,8 +141,10 @@ function FlightCanvas({ flights, onSelect }) {
 
       Object.values(stateRef.current).forEach(s => {
         // Smooth interpolation toward target position
-        s.curLat += (s.targetLat - s.curLat) * LERP
-        s.curLon += (s.targetLon - s.curLon) * LERP
+        // Reduced motion: jump to each new position instead of gliding.
+        const k = motionRef.current ? 1 : LERP
+        s.curLat += (s.targetLat - s.curLat) * k
+        s.curLon += (s.targetLon - s.curLon) * k
 
         const pt = map.latLngToContainerPoint([s.curLat, s.curLon])
         const hover = Math.hypot(pt.x - mx, pt.y - my) < 22
@@ -207,6 +216,11 @@ export default function FlightOps() {
     : BAHAMAS_FIR
 
   const handleSelect = useCallback((f) => setSelected(f), [])
+  // Mesh weather ahead of each aircraft (predicted hazard entries in the next 30 min).
+  const { data: airspace } = usePolling(useCallback(() => api.meshAirspace(), []), 10000)
+  const ahead = Object.fromEntries((airspace?.conflicts || []).map(c => [c.icao24, c]))
+  const reducedMotion = usePrefersReducedMotion()
+  const legendColor = chartTextColor()
 
   // Category breakdown
   const counts = { commercial: 0, private: 0, military: 0, rotorcraft: 0, unknown: 0 }
@@ -228,17 +242,17 @@ export default function FlightOps() {
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <div style={{
-            background: 'rgba(59,130,246,0.15)', border: '1px solid #3b82f6',
-            borderRadius: 20, padding: '5px 16px', fontSize: 13, fontWeight: 700, color: '#3b82f6',
+            background: 'rgba(59,130,246,0.15)', border: '1px solid var(--accent)',
+            borderRadius: 20, padding: '5px 16px', fontSize: 13, fontWeight: 700, color: 'var(--accent-text)',
           }}>
-            ✈ {flights.length} aircraft in Bahamas FIR
+            <span aria-hidden="true">✈ </span>{flights.length} aircraft in Bahamas FIR
           </div>
           <div className="live-badge"><div className="live-dot" />LIVE</div>
         </div>
       </div>
 
       {/* Category legend */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }} role="list" aria-label="Aircraft by category">
         {[
           ['#3b82f6', 'Commercial', counts.commercial],
           ['#10b981', 'Private/GA', counts.private],
@@ -246,21 +260,22 @@ export default function FlightOps() {
           ['#f59e0b', 'Rotorcraft', counts.rotorcraft],
           ['#94a3b8', 'Unknown', counts.unknown],
         ].map(([color, label, count]) => (
-          <div key={label} style={{
+          <div key={label} role="listitem" style={{
             display: 'flex', alignItems: 'center', gap: 6,
             background: color + '15', border: '1px solid ' + color + '40',
             borderRadius: 8, padding: '4px 12px', fontSize: 12,
           }}>
-            <div style={{ width: 8, height: 8, borderRadius: 2, background: color }} />
+            <div aria-hidden="true" style={{ width: 8, height: 8, borderRadius: 2, background: color }} />
             <span style={{ color: 'var(--text-secondary)' }}>{label}</span>
-            <span style={{ fontWeight: 700, color }}>{count}</span>
+            <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{count}</span>
           </div>
         ))}
       </div>
 
       {/* Map + detail panel */}
       <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
-        <div className="card" style={{ padding: 0, overflow: 'hidden', flex: 1 }}>
+        <div className="card" style={{ padding: 0, overflow: 'hidden', flex: 1, minWidth: 0 }} role="region"
+          aria-label={`Airspace map: ${flights.length} aircraft in the Bahamas FIR. The Active Flights table below lists the same aircraft.`}>
           <div style={{ height: 580 }}>
             {loading && !flightData ? (
               <div className="loading-spinner"><div className="spinner" /></div>
@@ -273,7 +288,7 @@ export default function FlightOps() {
                 <Polygon positions={firPolygon}
                   pathOptions={{ color: '#3b82f6', weight: 2, fillOpacity: 0.04, dashArray: '10 6' }} />
                 {/* Canvas aircraft renderer */}
-                <FlightCanvas flights={flights} onSelect={handleSelect} />
+                <FlightCanvas flights={flights} onSelect={handleSelect} reducedMotion={reducedMotion} />
               </MapContainer>
             )}
           </div>
@@ -285,12 +300,16 @@ export default function FlightOps() {
           <div className="card" style={{ marginBottom: 12 }}>
             <div className="card-header"><h3>By Country</h3></div>
             <div style={{ height: 180, padding: 8 }}>
-              <Doughnut data={{
+              <Doughnut aria-label={`Doughnut chart, aircraft by country of origin: ${summarise(Object.keys(statsData?.by_country || {}).slice(0, 8), Object.values(statsData?.by_country || {}).slice(0, 8))}`} data={{
                 labels: Object.keys(statsData?.by_country || {}).slice(0, 8),
                 datasets: [{ data: Object.values(statsData?.by_country || {}).slice(0, 8),
                   backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#a855f7', '#06b6d4', '#ec4899', '#94a3b8'],
                   borderWidth: 0 }]
-              }} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: '#94a3b8', font: { size: 10 } } } } }} />
+              }} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: legendColor, font: { size: 11 } } } } }} />
+            </div>
+            <div style={{ padding: '0 8px 8px' }}>
+              <ChartTable caption="Aircraft by country of origin" labels={Object.keys(statsData?.by_country || {}).slice(0, 8)}
+                series={[{ name: 'Aircraft', values: Object.values(statsData?.by_country || {}).slice(0, 8) }]} />
             </div>
           </div>
           <div className="card" style={{ marginBottom: 12 }}>
@@ -298,13 +317,20 @@ export default function FlightOps() {
             <div style={{ height: 180, padding: 8 }}>
               {(() => {
                 const ab = statsData?.altitude_bands || {}
-                return <Bar data={{
-                  labels: ['Ground', 'Low (<3km)', 'Medium (3-8km)', 'High (8-12km)', 'Cruise (>12km)'],
-                  datasets: [{ label: 'Flights', data: [ab.ground || 0, ab.low || 0, ab.medium || 0, ab.high || 0, ab.cruise || 0],
+                const labels = ['Ground', 'Low (<3km)', 'Medium (3-8km)', 'High (8-12km)', 'Cruise (>12km)']
+                const vals = [ab.ground || 0, ab.low || 0, ab.medium || 0, ab.high || 0, ab.cruise || 0]
+                return <Bar aria-label={`Bar chart, aircraft by altitude band: ${summarise(labels, vals)}`} data={{
+                  labels,
+                  datasets: [{ label: 'Flights', data: vals,
                     backgroundColor: ['#94a3b8', '#10b981', '#3b82f6', '#f59e0b', '#ef4444'],
                     borderRadius: 6 }]
-                }} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { ticks: { color: '#94a3b8', font: { size: 10 } } }, y: { ticks: { color: '#64748b' }, grid: { color: '#1e293b' } } } }} />
+                }} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { ticks: { color: legendColor, font: { size: 10 } } }, y: { ticks: { color: legendColor }, grid: { color: 'rgba(148,163,184,0.2)' } } } }} />
               })()}
+            </div>
+            <div style={{ padding: '0 8px 8px' }}>
+              <ChartTable caption="Aircraft by altitude band"
+                labels={['Ground', 'Low (<3km)', 'Medium (3-8km)', 'High (8-12km)', 'Cruise (>12km)']}
+                series={[{ name: 'Aircraft', values: ['ground', 'low', 'medium', 'high', 'cruise'].map(k => statsData?.altitude_bands?.[k] || 0) }]} />
             </div>
           </div>
 
@@ -338,15 +364,16 @@ export default function FlightOps() {
       {/* Flight table */}
       <div className="card">
         <div className="card-header">
-          <h3>Active Flights ({flights.length})</h3>
-          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Click row to select · auto-updates every 10s</span>
+          <h3 id="active-flights-h">Active Flights ({flights.length})</h3>
+          <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Select a callsign for details · updates every 10 s</span>
         </div>
-        <div style={{ overflowX: 'auto' }}>
+        <div className="table-scroll" tabIndex={0} role="region" aria-labelledby="active-flights-h">
           <table className="data-table">
             <thead>
               <tr>
-                <th>Type</th><th>Callsign</th><th>Country</th>
-                <th>Altitude</th><th>Speed</th><th>Track</th><th>Status</th>
+                <th scope="col">Type</th><th scope="col">Callsign</th><th scope="col">Country</th>
+                <th scope="col">Altitude</th><th scope="col">Speed</th><th scope="col">Track</th><th scope="col">Status</th>
+                <th scope="col">Weather ahead (30 min)</th>
               </tr>
             </thead>
             <tbody>
@@ -360,13 +387,16 @@ export default function FlightOps() {
                   }}>
                     <td>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                        <div style={{ width: 8, height: 8, borderRadius: 2, background: color }} />
-                        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{CAT_LABEL[color]}</span>
+                        <div aria-hidden="true" style={{ width: 8, height: 8, borderRadius: 2, background: color }} />
+                        <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{CAT_LABEL[color]}</span>
                       </div>
                     </td>
-                    <td style={{ fontWeight: 600, color: 'var(--text-primary)', fontFamily: 'monospace' }}>
-                      {f.callsign?.trim() || '—'}
-                    </td>
+                    <th scope="row" style={{ fontWeight: 600, fontFamily: 'monospace' }}>
+                      <button type="button" className="link-btn" style={{ fontFamily: 'inherit' }}
+                        aria-label={`${f.callsign?.trim() || f.icao24}, show details`}
+                        onClick={e => { e.stopPropagation(); setSelected(f) }}>{f.callsign?.trim() || f.icao24}</button>
+                      {isSelected && <span className="sr-only"> (selected)</span>}
+                    </th>
                     <td>{f.origin_country}</td>
                     <td>{f.baro_altitude ? `FL${Math.round(f.baro_altitude * 3.281 / 100).toString().padStart(3, '0')}` : 'GND'}</td>
                     <td>{f.velocity ? `${Math.round(f.velocity * 1.944)}kt` : '—'}</td>
@@ -376,6 +406,11 @@ export default function FlightOps() {
                         {f.on_ground ? 'GND' : 'AIRBORNE'}
                       </span>
                     </td>
+                    <td>{ahead[f.icao24] ? (
+                      <span style={{ color: ahead[f.icao24].severity === 'severe' ? 'var(--danger-text)' : 'var(--warning-text)', fontWeight: 600 }}>
+                        {ahead[f.icao24].hazard} {ahead[f.icao24].inside ? 'now' : `in ${ahead[f.icao24].minutes_to_entry} min`}
+                      </span>
+                    ) : <span style={{ color: 'var(--text-secondary)' }}>Clear</span>}</td>
                   </tr>
                 )
               })}
@@ -384,53 +419,36 @@ export default function FlightOps() {
         </div>
       </div>
 
-      {/* Flight info popup — page level overlay */}
-      {selected && (
-        <div onClick={() => setSelected(null)} style={{
-          position: 'fixed', inset: 0, zIndex: 9999,
-          background: 'rgba(0,0,0,0.5)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          <div onClick={e => e.stopPropagation()} style={{
-            background: 'var(--bg-card, #1e293b)', border: '1px solid var(--border, #334155)',
-            borderRadius: 12, padding: 24, minWidth: 380, maxWidth: 480,
-            boxShadow: '0 20px 60px rgba(0,0,0,0.6)',
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
-              <div>
-                <div style={{ fontWeight: 700, fontSize: 22 }}>{selected.callsign?.trim() || selected.icao24}</div>
-                <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 3 }}>
-                  {selected.airline || 'Unknown airline'}
-                  {selected.aircraft_type ? ' • ' + selected.aircraft_type : ''}
-                </div>
+      {/* Flight details */}
+      <Dialog open={!!selected} onClose={() => setSelected(null)}
+        title={selected ? `${selected.callsign?.trim() || selected.icao24}${selected.airline ? ` — ${selected.airline}` : ''}` : ''}>
+        {selected && (
+          <dl style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '12px 20px', fontSize: 13, margin: 0 }}>
+            {[
+              ['Airline', selected.airline || '—'],
+              ['Aircraft', selected.aircraft_type || '—'],
+              ['Registration', selected.registration || '—'],
+              ['Route', selected.route || '—'],
+              ['Origin', selected.origin_country || '—'],
+              ['ICAO24', selected.icao24],
+              ['Altitude', selected.baro_altitude ? 'FL' + Math.round(selected.baro_altitude * 3.281 / 100).toString().padStart(3, '0') : 'GND'],
+              ['Ground Speed', selected.velocity ? Math.round(selected.velocity * 1.944) + ' kt' : '—'],
+              ['Heading', (selected.track || selected.true_track) ? Math.round(selected.track || selected.true_track) + '°' : '—'],
+              ['Vertical Speed', selected.vertical_rate ? (selected.vertical_rate > 0 ? '+' : '') + Math.round(selected.vertical_rate * 196.85) + ' fpm' : '—'],
+              ['Squawk', selected.squawk || '—'],
+              ['Status', selected.on_ground ? 'On Ground' : 'Airborne'],
+              ['Weather ahead', ahead[selected.icao24]
+                ? `${ahead[selected.icao24].hazard} ${ahead[selected.icao24].inside ? 'now' : `in ${ahead[selected.icao24].minutes_to_entry} min`} — ${ahead[selected.icao24].advice.text}`
+                : 'Clear for 30 min'],
+            ].map(([label, value]) => (
+              <div key={label}>
+                <dt style={{ fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{label}</dt>
+                <dd style={{ fontWeight: 600, marginTop: 3, marginLeft: 0 }}>{value}</dd>
               </div>
-              <button onClick={() => setSelected(null)}
-                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 24, lineHeight: 1 }}>×</button>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px 20px', fontSize: 13 }}>
-              {[
-                ['Airline', selected.airline || '—'],
-                ['Aircraft', selected.aircraft_type || '—'],
-                ['Registration', selected.registration || '—'],
-                ['Route', selected.route || '—'],
-                ['Origin', selected.origin_country || '—'],
-                ['ICAO24', selected.icao24],
-                ['Altitude', selected.baro_altitude ? 'FL' + Math.round(selected.baro_altitude * 3.281 / 100).toString().padStart(3, '0') : 'GND'],
-                ['Ground Speed', selected.velocity ? Math.round(selected.velocity * 1.944) + ' kt' : '—'],
-                ['Heading', (selected.track || selected.true_track) ? Math.round(selected.track || selected.true_track) + '°' : '—'],
-                ['Vertical Speed', selected.vertical_rate ? (selected.vertical_rate > 0 ? '+' : '') + Math.round(selected.vertical_rate * 196.85) + ' fpm' : '—'],
-                ['Squawk', selected.squawk || '—'],
-                ['Status', selected.on_ground ? 'On Ground' : 'Airborne'],
-              ].map(([label, value]) => (
-                <div key={label}>
-                  <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{label}</div>
-                  <div style={{ fontWeight: 600, marginTop: 3 }}>{value}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
+            ))}
+          </dl>
+        )}
+      </Dialog>
     </div>
   )
 }

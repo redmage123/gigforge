@@ -44,6 +44,15 @@ async def node_detail(station_id: str):
     return node
 
 
+@router.get("/airspace")
+async def mesh_airspace():
+    """Mesh weather hazards and the aircraft predicted to fly into them in the next 30 min."""
+    from services.mesh_airspace import airspace
+    from services.opensky_client import fetch_flights
+    mesh.advance()
+    return airspace(mesh, await fetch_flights())
+
+
 @router.get("/node/{station_id}/live-weather")
 async def node_live_weather(station_id: str):
     """Real current conditions at the station from Tomorrow.io (reference only, not simulated)."""

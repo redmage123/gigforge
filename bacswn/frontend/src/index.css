@@ -1086,3 +1086,127 @@ main:focus { outline: none; }
 .situation-tables tbody th { text-align: left; font-weight: 700; }
 .situation-list { padding-left: 20px; line-height: 1.7; }
 .table-scroll { overflow-x: auto; position: relative; }  /* contains .sr-only cells, else they widen the page */
+
+/* ── Badge text tokens (WCAG 1.4.3): status colours are for fills/lines; text on a
+   tinted badge uses these lighter (dark theme) / darker (light theme) shades. ─── */
+:root {
+  --cat-vfr-text: #6ee7b7; --cat-mvfr-text: #93c5fd; --cat-ifr-text: #fca5a5; --cat-lifr-text: #d8b4fe;
+  --info-text: #67e8f9; --warning-text: #fcd34d; --danger-text: #fca5a5; --success-text: #6ee7b7; --accent-text: #93c5fd;
+}
+[data-theme="light"] {
+  --cat-vfr-text: #065f46; --cat-mvfr-text: #1e40af; --cat-ifr-text: #991b1b; --cat-lifr-text: #6b21a8;
+  --info-text: #155e75; --warning-text: #92400e; --danger-text: #991b1b; --success-text: #065f46; --accent-text: #1e40af;
+}
+.cat-VFR { color: var(--cat-vfr-text); }
+.cat-MVFR { color: var(--cat-mvfr-text); }
+.cat-IFR { color: var(--cat-ifr-text); }
+.cat-LIFR { color: var(--cat-lifr-text); }
+.severity-info { color: var(--info-text); }
+.severity-warning { color: var(--warning-text); }
+.severity-severe, .severity-danger { color: var(--danger-text); }
+[data-theme="light"] .btn-warning { color: #fff; }   /* 5.3:1 on #b45309 */
+@media (forced-colors: active) {
+  .cat-badge, .severity-badge { border: 1px solid CanvasText; }
+}
+.severity-extreme { color: var(--cat-lifr-text); }
+
+/* ── Shared accessible primitives ───────────────────────────────────────── */
+.a11y-dialog {
+  margin: auto; width: min(560px, calc(100vw - 32px)); max-height: 92vh; padding: 0;
+  background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border); border-radius: 12px;
+}
+.a11y-dialog.wide { width: min(1100px, calc(100vw - 32px)); }
+.a11y-dialog::backdrop { background: rgb(2 6 23 / 0.7); }
+.a11y-dialog-inner { display: flex; flex-direction: column; max-height: 92vh; }
+.a11y-dialog-head {
+  display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 12px 16px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--bg-card);
+}
+.a11y-dialog-head h3 { font-size: 15px; margin: 0; }
+.a11y-dialog-actions { display: flex; gap: 6px; }
+.a11y-dialog-body { padding: 12px 16px; overflow-y: auto; font-size: 13.5px; line-height: 1.55; }
+/* Plain buttons that look like the text/cards they replace. */
+.info-dot {
+  display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; flex-shrink: 0;
+  margin-left: 6px; border-radius: 50%; border: 1px solid var(--text-muted); background: transparent;
+  color: var(--text-secondary); font: italic 700 11px/1 inherit; cursor: pointer;
+}
+.info-dot:hover { color: var(--text-primary); border-color: var(--text-primary); }
+button.stat-card { text-align: left; font: inherit; color: inherit; cursor: pointer; width: 100%; position: relative; }
+button.stat-card:hover { border-color: var(--text-muted); }
+.th-btn {
+  background: none; border: none; padding: 2px 0; min-height: 24px; font: inherit; color: inherit;
+  text-transform: inherit; letter-spacing: inherit; cursor: pointer; border-bottom: 1px dotted var(--text-muted);
+}
+.link-btn {
+  background: none; border: none; padding: 2px 0; min-height: 24px; font: inherit; font-weight: 700;
+  color: var(--accent); text-decoration: underline; text-underline-offset: 2px; cursor: pointer;
+}
+.grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 1000px) { .grid-2 { grid-template-columns: minmax(0, 1fr); } }
+/* Grids never force a column wider than the screen. */
+.card-grid { grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr)); }
+.card, .stat-card { min-width: 0; }
+@media (forced-colors: active) {
+  .a11y-dialog { border: 2px solid CanvasText; }
+  button.stat-card, .info-dot { border: 1px solid ButtonText; }
+}
+.chart-data { margin-top: 8px; font-size: 12.5px; } .chart-data summary { cursor: pointer; color: var(--accent); min-height: 24px; }
+.sim-layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 12px; align-items: start; }
+.sim-side { max-height: 700px; overflow-y: auto; min-width: 0; }
+@media (max-width: 1000px) { .sim-layout { grid-template-columns: minmax(0, 1fr); } .sim-side { max-height: none; } }
+.wo-layout { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 12px; }
+@media (max-width: 1000px) { .wo-layout { grid-template-columns: minmax(0, 1fr); } }
+.help-pop {
+  /* Inline (not an overlay) so it never covers the controls below it. */
+  position: static; margin-top: 6px; width: auto;
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 12px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4); color: var(--text-primary);
+}
+@media (forced-colors: active) { .help-pop { border: 1px solid CanvasText; } }
+
+/* ── Guided demo ──────────────────────────────────────────────────────── */
+.tour-start { margin-top: 10px; width: 100%; justify-content: center; }
+.tour-panel {
+  position: fixed; right: 16px; bottom: 16px; z-index: 4000; width: min(420px, calc(100vw - 32px));
+  background: var(--bg-card); color: var(--text-primary); border: 2px solid var(--accent); border-radius: 12px;
+  padding: 12px 14px; box-shadow: 0 16px 48px rgba(0,0,0,0.45); max-height: 70vh; overflow-y: auto;
+}
+.tour-panel.left { right: auto; left: 16px; }
+.tour-panel.top { bottom: auto; top: 16px; }
+.tour-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.tour-count { font-size: 12px; color: var(--text-secondary); font-weight: 600; }
+.tour-icon-btn { min-width: 28px; min-height: 28px; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--text-primary); cursor: pointer; }
+.tour-progress { height: 4px; background: var(--border); border-radius: 2px; margin: 6px 0 8px; overflow: hidden; }
+.tour-progress span { display: block; height: 100%; background: var(--accent); }
+.tour-panel h2 { font-size: 16px; margin-bottom: 6px; }
+.tour-panel h2:focus-visible { outline-offset: 4px; }
+.tour-body p { font-size: 13.5px; line-height: 1.55; margin-bottom: 6px; color: var(--text-primary); }
+.tour-dim { color: var(--text-secondary) !important; font-style: italic; }
+.tour-warn { color: var(--warning-text) !important; }
+.tour-controls { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; align-items: center; }
+.tour-exit { margin-left: auto; border: 1px solid var(--border); background: transparent; color: var(--text-primary); }
+.tour-highlight {
+  outline: 3px solid var(--accent) !important; outline-offset: 4px; border-radius: 8px;
+  box-shadow: 0 0 0 8px rgba(96, 165, 250, 0.25) !important; transition: box-shadow .3s;
+}
+@media (max-width: 640px) {
+  .tour-panel, .tour-panel.left, .tour-panel.top { right: 8px; left: 8px; bottom: 8px; top: auto; width: auto; max-height: 55vh; }
+}
+@media (forced-colors: active) {
+  .tour-panel { border: 2px solid CanvasText; }
+  .tour-highlight { outline: 4px solid Highlight !important; box-shadow: none !important; }
+}
+
+/* ── Mesh weather → air traffic panel ─────────────────────────────────── */
+.mesh-traffic { margin-top: 16px; }
+.mt-sum { font-size: 13px; color: var(--text-secondary); }
+.mt-dim { color: var(--text-secondary); font-size: 13px; }
+.mt-note { margin-top: 8px; font-size: 12px; }
+.mt-table th[scope="row"] { color: var(--text-primary); font-weight: 700; text-transform: none; letter-spacing: 0; font-size: 14px; }
+.mt-table small { display: block; color: var(--text-secondary); font-size: 12px; font-weight: 400; }
+.mt-status { display: inline-block; padding: 1px 7px; border-radius: 4px; font-size: 12px; font-weight: 700; border: 1px solid currentColor; }
+.mt-status.sev-severe { color: var(--danger-text); }
+.mt-status.sev-moderate { color: var(--warning-text); }
+.mt-status.sev-low { color: var(--text-secondary); }
+.mt-hazards { font-size: 13px; padding-left: 18px; margin-top: 6px; line-height: 1.6; }

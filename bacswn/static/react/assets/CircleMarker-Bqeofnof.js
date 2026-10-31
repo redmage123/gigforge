@@ -1,0 +1,1 @@
+import{b as c,l as n,a as o,e as l}from"./TileLayer-BkwGb13_.js";import{u as i}from"./Circle-D3koQh2_.js";const f=c(function({center:r,children:C,...t},a){const e=new n.CircleMarker(r,t);return o(e,l(a,{overlayContainer:e}))},i);export{f as C};

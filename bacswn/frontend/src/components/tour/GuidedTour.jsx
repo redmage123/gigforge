@@ -67,10 +67,17 @@ export default function GuidedTour({ open, onClose }) {
       if (el) {
         el.classList.add('tour-highlight')
         highlighted.current = [el]
-        el.scrollIntoView({ block: 'center', behavior: reducedMotion ? 'auto' : 'smooth' })
-        // Keep the caption off the highlighted area: sit on the opposite side.
+        // Keep the caption off the highlighted area: sit on the side away from it, or —
+        // for full-width areas — scroll the area to the top, leaving room below for the caption.
+        const wide = el.getBoundingClientRect().width > window.innerWidth * 0.6
+        el.style.scrollMarginTop = wide ? '72px' : ''
+        el.scrollIntoView({ block: wide ? 'start' : 'center', behavior: reducedMotion ? 'auto' : 'smooth' })
+        // Decide once scrolling has settled (it may not reach the top near the page end).
+        await new Promise(r => setTimeout(r, reducedMotion ? 50 : 450))
+        if (id !== runId.current) return
         const r = el.getBoundingClientRect()
-        setSide(r.left + r.width / 2 > window.innerWidth * 0.6 ? 'left' : 'right')
+        setSide(wide ? (r.top > window.innerHeight * 0.4 ? 'top' : 'right')
+          : r.left + r.width / 2 > window.innerWidth * 0.6 ? 'left' : 'right')
       } else {
         setSide('right')
       }

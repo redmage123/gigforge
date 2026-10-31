@@ -216,6 +216,9 @@ export default function FlightOps() {
     : BAHAMAS_FIR
 
   const handleSelect = useCallback((f) => setSelected(f), [])
+  // Mesh weather ahead of each aircraft (predicted hazard entries in the next 30 min).
+  const { data: airspace } = usePolling(useCallback(() => api.meshAirspace(), []), 10000)
+  const ahead = Object.fromEntries((airspace?.conflicts || []).map(c => [c.icao24, c]))
   const reducedMotion = usePrefersReducedMotion()
   const legendColor = chartTextColor()
 
@@ -370,6 +373,7 @@ export default function FlightOps() {
               <tr>
                 <th scope="col">Type</th><th scope="col">Callsign</th><th scope="col">Country</th>
                 <th scope="col">Altitude</th><th scope="col">Speed</th><th scope="col">Track</th><th scope="col">Status</th>
+                <th scope="col">Weather ahead (30 min)</th>
               </tr>
             </thead>
             <tbody>
@@ -402,6 +406,11 @@ export default function FlightOps() {
                         {f.on_ground ? 'GND' : 'AIRBORNE'}
                       </span>
                     </td>
+                    <td>{ahead[f.icao24] ? (
+                      <span style={{ color: ahead[f.icao24].severity === 'severe' ? 'var(--danger-text)' : 'var(--warning-text)', fontWeight: 600 }}>
+                        {ahead[f.icao24].hazard} {ahead[f.icao24].inside ? 'now' : `in ${ahead[f.icao24].minutes_to_entry} min`}
+                      </span>
+                    ) : <span style={{ color: 'var(--text-secondary)' }}>Clear</span>}</td>
                   </tr>
                 )
               })}
@@ -428,6 +437,9 @@ export default function FlightOps() {
               ['Vertical Speed', selected.vertical_rate ? (selected.vertical_rate > 0 ? '+' : '') + Math.round(selected.vertical_rate * 196.85) + ' fpm' : '—'],
               ['Squawk', selected.squawk || '—'],
               ['Status', selected.on_ground ? 'On Ground' : 'Airborne'],
+              ['Weather ahead', ahead[selected.icao24]
+                ? `${ahead[selected.icao24].hazard} ${ahead[selected.icao24].inside ? 'now' : `in ${ahead[selected.icao24].minutes_to_entry} min`} — ${ahead[selected.icao24].advice.text}`
+                : 'Clear for 30 min'],
             ].map(([label, value]) => (
               <div key={label}>
                 <dt style={{ fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{label}</dt>

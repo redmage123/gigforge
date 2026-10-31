@@ -8,6 +8,7 @@ import { useA11yPrefs, usePrefersReducedMotion } from '../hooks/useA11yPrefs'
 import AlertCenter, { useChime } from '../components/command/AlertCenter'
 import BriefingPanel, { buildBriefing } from '../components/command/BriefingPanel'
 import SituationTables from '../components/command/SituationTables'
+import MeshTrafficPanel, { MeshHazardLayers } from '../components/command/MeshTraffic'
 
 // ── 1. Aircraft icon — bright yellow plane ──────────────────────────
 const PLANE_D = 'M256 48 l20 120 l160 90 l-10 30 l-150-50 l0 130 l50 35 l0 30 l-70-20 l-70 20 l0-30 l50-35 l0-130 l-150 50 l-10-30 l160-90 Z'
@@ -301,6 +302,18 @@ function MapLegend({ visible }) {
             <span>SIGMET hazard zone</span>
           </div>
           <div className="legend-item">
+            <div style={{width: 18, height: 18, borderRadius: '50%', border: '3px solid #ef4444', background: 'rgba(239,68,68,0.25)'}} />
+            <span>Mesh hazard — confirmed</span>
+          </div>
+          <div className="legend-item">
+            <div style={{width: 18, height: 18, borderRadius: '50%', border: '2px dashed #f59e0b', background: 'rgba(245,158,11,0.12)'}} />
+            <span>Mesh hazard — not yet verified</span>
+          </div>
+          <div className="legend-item">
+            <div style={{width: 18, height: 0, borderTop: '3px dotted #f87171'}} />
+            <span>Aircraft path into a hazard</span>
+          </div>
+          <div className="legend-item">
             <div style={{width: 18, height: 18, borderRadius: '50%', border: '2px dashed #f59e0b', opacity: 0.7}} />
             <span>Storm surge zone</span>
           </div>
@@ -364,6 +377,7 @@ function useTimelapse(flights) {
 export default function CommandCenter() {
   const { data, loading } = usePolling(useCallback(() => api.mapLayers(), []), 15000)
   const { data: summary } = usePolling(useCallback(() => api.dashboardSummary(), []), 30000)
+  const { data: airspace } = usePolling(useCallback(() => api.meshAirspace(), []), 5000)
   const alertWs = useWebSocket('alerts')
   const sigmetWs = useWebSocket('sigmets')
   const [simSigmets, setSimSigmets] = useState([])
@@ -417,7 +431,27 @@ export default function CommandCenter() {
     })
   }, [alertWs.lastMessage, pushAlert])
 
+  // Mesh → air traffic: confirmed hazards and imminent conflicts become operational alerts.
+  useEffect(() => {
+    if (!airspace) return
+    airspace.hazards.filter(h => h.status === 'confirmed').forEach(h => pushAlert({
+      id: 'mesh-hz-' + h.id,
+      title: `Mesh: ${h.kind} ${h.id} confirmed`,
+      detail: `${h.basis}. ${h.radius_nm} nm radius, moving ${h.speed_kt} kt.`,
+      severity: h.kind === 'IFR' ? 'moderate' : 'severe',
+      source: 'Mesh network',
+    }))
+    airspace.conflicts.filter(c => c.minutes_to_entry <= 15).forEach(c => pushAlert({
+      id: 'mesh-cf-' + c.icao24 + '-' + c.hazard_id,
+      title: c.inside ? `${c.callsign} is inside a ${c.hazard} area` : `${c.callsign} enters ${c.hazard} in ${c.minutes_to_entry} min`,
+      detail: `${c.hazard_status === 'confirmed' ? 'Mesh-confirmed' : 'Mesh-tracked'} hazard ${c.hazard_id}. Advice: ${c.advice.text}.`,
+      severity: c.severity,
+      source: 'Mesh network',
+    }))
+  }, [airspace, pushAlert])
+
   // State for layer toggles
+  const [showMesh, setShowMesh] = useState(true)
   const [showRadar, setShowRadar] = useState(false)
   const [showWind, setShowWind] = useState(false)
   const [showAltitude, setShowAltitude] = useState(true)
@@ -526,6 +560,7 @@ export default function CommandCenter() {
 
       {/* Layer toggle bar */}
       <div className="layer-toggles" role="group" aria-label="Map layers">
+        <label><input type="checkbox" checked={showMesh} onChange={() => setShowMesh(!showMesh)} /> Mesh hazards</label>
         <label><input type="checkbox" checked={showRadar} onChange={() => setShowRadar(!showRadar)} /> Radar</label>
         <label><input type="checkbox" checked={showWind} onChange={() => setShowWind(!showWind)} /> Wind</label>
         <label><input type="checkbox" checked={showTrails} onChange={() => setShowTrails(!showTrails)} /> Trails</label>
@@ -577,6 +612,9 @@ export default function CommandCenter() {
                   <Polygon positions={firLatLngs}
                     pathOptions={{color: '#3b82f6', weight: 2, fillOpacity: 0.05, dashArray: '8 4'}} />
                 )}
+
+                {/* Mesh hazards and predicted conflicts */}
+                {showMesh && <MeshHazardLayers airspace={airspace} />}
 
                 {/* 9. SIGMET overlays */}
                 {showSigmets && <SigmetOverlays sigmets={sigmets} />}
@@ -704,6 +742,8 @@ export default function CommandCenter() {
           </div>
         )}
       </div>
+
+      {!wallboard && <MeshTrafficPanel airspace={airspace} />}
 
       {!wallboard && <SituationTables stations={stations} flights={displayFlights} sigmets={sigmets} hurricanes={hurricanes} />}
     </div>

@@ -1173,6 +1173,7 @@ button.stat-card:hover { border-color: var(--text-muted); }
   padding: 12px 14px; box-shadow: 0 16px 48px rgba(0,0,0,0.45); max-height: 70vh; overflow-y: auto;
 }
 .tour-panel.left { right: auto; left: 16px; }
+.tour-panel.top { bottom: auto; top: 16px; }
 .tour-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .tour-count { font-size: 12px; color: var(--text-secondary); font-weight: 600; }
 .tour-icon-btn { min-width: 28px; min-height: 28px; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--text-primary); cursor: pointer; }
@@ -1190,9 +1191,22 @@ button.stat-card:hover { border-color: var(--text-muted); }
   box-shadow: 0 0 0 8px rgba(96, 165, 250, 0.25) !important; transition: box-shadow .3s;
 }
 @media (max-width: 640px) {
-  .tour-panel, .tour-panel.left { right: 8px; left: 8px; bottom: 8px; width: auto; max-height: 55vh; }
+  .tour-panel, .tour-panel.left, .tour-panel.top { right: 8px; left: 8px; bottom: 8px; top: auto; width: auto; max-height: 55vh; }
 }
 @media (forced-colors: active) {
   .tour-panel { border: 2px solid CanvasText; }
   .tour-highlight { outline: 4px solid Highlight !important; box-shadow: none !important; }
 }
+
+/* ── Mesh weather → air traffic panel ─────────────────────────────────── */
+.mesh-traffic { margin-top: 16px; }
+.mt-sum { font-size: 13px; color: var(--text-secondary); }
+.mt-dim { color: var(--text-secondary); font-size: 13px; }
+.mt-note { margin-top: 8px; font-size: 12px; }
+.mt-table th[scope="row"] { color: var(--text-primary); font-weight: 700; text-transform: none; letter-spacing: 0; font-size: 14px; }
+.mt-table small { display: block; color: var(--text-secondary); font-size: 12px; font-weight: 400; }
+.mt-status { display: inline-block; padding: 1px 7px; border-radius: 4px; font-size: 12px; font-weight: 700; border: 1px solid currentColor; }
+.mt-status.sev-severe { color: var(--danger-text); }
+.mt-status.sev-moderate { color: var(--warning-text); }
+.mt-status.sev-low { color: var(--text-secondary); }
+.mt-hazards { font-size: 13px; padding-left: 18px; margin-top: 6px; line-height: 1.6; }

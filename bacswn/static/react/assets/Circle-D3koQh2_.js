@@ -1,0 +1,1 @@
+import{b as i,l,a as s,e as u}from"./TileLayer-BkwGb13_.js";function d(t,e,n){e.center!==n.center&&t.setLatLng(e.center),e.radius!=null&&e.radius!==n.radius&&t.setRadius(e.radius)}const C=i(function({center:e,children:n,...c},r){const a=new l.Circle(e,c);return s(a,u(r,{overlayContainer:a}))},d);export{C,d as u};

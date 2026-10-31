@@ -49,6 +49,14 @@ export const TOUR_STEPS = [
     ],
   },
   {
+    id: 'traffic', path: '/', settleMs: 5000, title: 'From the mesh to the flight deck', seconds: 20,
+    target: '.mesh-traffic',
+    body: [
+      'The storms the mesh is tracking become hazard areas on the controllers’ map — solid once peer stations and the satellite confirm them.',
+      'Every aircraft is projected 30 minutes ahead; anything that will fly into a hazard is flagged with the smallest turn that keeps it clear, and imminent conflicts arrive as alerts.',
+    ],
+  },
+  {
     id: 'dashboard', path: '/mesh', title: 'Ground sensors and Tomorrow.io satellite input', seconds: 18,
     target: '.station-dashboard',
     action: async () => { meshStation('MYNN') },

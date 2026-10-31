@@ -102,3 +102,37 @@ but never used as evidence.
 Vintage windows for the pilot (2016–2020) and first phase (2021–2026) follow ICAO's CORSIA Eligible
 Emissions Units document; later phases have no window yet. Check `PERIODS` against the current ICAO
 document before relying on it for real compliance work.
+
+## Mesh: Tomorrow.io satellite input and ground sensor networks
+
+**Satellite feed (simulated)** — `services/mesh_satellite.py`. Models Tomorrow.io's two instrument
+families: a Ka-band precipitation radar (a pass over each station every 60 sim-minutes) and a microwave
+sounder (every 30), with passes sweeping west to east and products arriving one tick (5 min) after the
+pass. Each pass scans ~95 nm around the station. Observations come from the simulation's weather field,
+so they agree with the storms on the map. Products count for decisions while ≤ 45 minutes old.
+
+How stations use it:
+
+| Use | Behaviour |
+|---|---|
+| Ensemble tie-break | When TEMPO/VISTA/LEXIS split, a fresh satellite call that matches one model decides (`SAT TIE-BREAK`) instead of holding the old verdict |
+| Hazard verification | The satellite casts an extra vote alongside peers' radar; an isolated station can be confirmed by the satellite alone |
+| Sensor cross-check | A rain gauge or visibility sensor contradicted by a pass taken *after* the unusual reading began is flagged SUSPECT and TEMPO's confidence is cut. Zero false flags in 36,000 fault-free station-ticks; a stuck sensor is caught at the next radar pass (~1 h) |
+| Outlook | Cells due within 60 min, beyond VISTA's 30-min nowcast, shown and noted in LEXIS's reasoning |
+
+**Live Tomorrow.io (reference only)** — `services/tomorrow_client.py`, `GET /api/mesh/node/{id}/live-weather`.
+With `TOMORROW_API_KEY` set, the station dashboard shows real current conditions from Tomorrow.io's v4
+realtime endpoint (Tomorrow.io's blended satellite/radar/station/model product). Not fed into the
+simulation, which would contradict its synthetic storms. Fetched only when a dashboard asks, cached 30 min
+per station, capped at 20 calls/hour and 400/day (free tier: 25/500), one-hour back-off on HTTP 429.
+The key is never sent to the browser or logged.
+
+**Ground sensor network (mock)** — `services/mesh_sensor_network.py`. Ten sensors per station: the
+station's own anemometer, barometer, rain gauge, thermo-hygrometer, visibility/present-weather sensor and
+ceilometer (the readings TEMPO uses), a lightning detector, a tide & sea-state gauge, and two remote
+outstations 20–25 km out that sample the weather at their own positions, so storms appear across the
+network before reaching the station. Each sensor reports battery, signal and report age, keeps a 2-hour
+history (trend line plus a text summary), and can miss reports (STALE). Status is the network's own view;
+injected faults are shown separately as presenter ground truth, so the demo shows detection.
+Satellite and sensor noise use their own random stream, so seeded runs of the existing scenarios behave
+exactly as before.

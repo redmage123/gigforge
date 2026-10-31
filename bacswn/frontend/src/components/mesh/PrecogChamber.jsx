@@ -80,9 +80,12 @@ export default function PrecogChamber({ node, hub, onFault, onVerify, busy }) {
                 <small>Agreement</small>
                 <div style={{ fontWeight: 800, fontSize: 18, color: v.split ? 'var(--warning)' : 'var(--text-primary)' }}>{v.agreement}</div>
                 <small>ground truth: <b style={{ color: hz(node.truth) }}>{node.truth}</b></small>
+                <br /><small>satellite: {node.satellite?.call
+                  ? <b style={{ color: hz(node.satellite.call) }}>{node.satellite.call}</b> : 'no fresh pass'}</small>
               </div>
             </div>
-            {v.split && <div className="mbadge amber" style={{ padding: 6, fontSize: 11 }}>ENSEMBLE SPLIT — no 2-of-3 majority, holding previous verdict, no autonomous action</div>}
+            {v.split && <div className="mbadge amber" style={{ padding: 6, fontSize: 11 }}>ENSEMBLE SPLIT — no 2-of-3 majority and no fresh satellite pass to break the tie; holding previous verdict</div>}
+            {v.tiebreak && <div className="mbadge blue" style={{ padding: 6, fontSize: 11 }}>SATELLITE TIE-BREAK — {v.tiebreak}</div>}
             {node.suspect && <div className="mbadge red" style={{ padding: 6, fontSize: 11 }}>{node.suspect}</div>}
 
             <ul className="precogs" aria-label="Three-model ensemble">
@@ -101,7 +104,7 @@ export default function PrecogChamber({ node, hub, onFault, onVerify, busy }) {
             )}
 
             <div>
-              <div className="section-label">Sensors</div>
+              <div className="section-label">Station instruments <span style={{ textTransform: 'none' }}>(full sensor network in the station dashboard below)</span></div>
               <div className="sensor-grid">
                 {SENSOR_FIELDS.map(([k, label, unit, fault]) => (
                   <div key={k} className={fault && faulted.has(fault) ? 'faulted' : ''}>

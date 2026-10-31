@@ -44,6 +44,18 @@ async def node_detail(station_id: str):
     return node
 
 
+@router.get("/node/{station_id}/live-weather")
+async def node_live_weather(station_id: str):
+    """Real current conditions at the station from Tomorrow.io (reference only, not simulated)."""
+    from config import STATION_COORDS
+    from services import tomorrow_client
+    code = station_id.upper()
+    info = STATION_COORDS.get(code)
+    if not info:
+        return JSONResponse(status_code=404, content={"error": "Node not found"})
+    return {"station": code, **await tomorrow_client.realtime(code, info["lat"], info["lon"])}
+
+
 @router.post("/consensus")
 async def run_consensus(station: str = "MYNN"):
     """Ask a station's peers to verify its current verdict."""

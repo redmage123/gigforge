@@ -112,6 +112,7 @@ export const api = {
   // Mesh Network
   meshStatus: () => request('/api/mesh/status'),
   meshNode: (id) => request('/api/mesh/node/' + id),
+  meshLiveWeather: (id) => request('/api/mesh/node/' + id + '/live-weather'),
   meshConsensus: (station) => request('/api/mesh/consensus?station=' + (station || 'MYNN'), { method: 'POST' }),
   meshFault: (fault) => request('/api/mesh/fault', { method: 'POST', body: JSON.stringify(fault) }),
   meshStorm: (storm) => request('/api/mesh/storm', { method: 'POST', body: JSON.stringify(storm) }),

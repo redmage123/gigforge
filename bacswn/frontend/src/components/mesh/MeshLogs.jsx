@@ -115,7 +115,7 @@ function Consensus({ rows, onSelect }) {
   return (
     <table>
       <Caption>Peer verification votes</Caption>
-      <thead><tr><th scope="col">Time</th><th scope="col">Origin</th><th scope="col">Claim</th><th scope="col">Peer votes (from their own radar)</th><th scope="col">Result</th></tr></thead>
+      <thead><tr><th scope="col">Time</th><th scope="col">Origin</th><th scope="col">Claim</th><th scope="col">Votes (peers' own radar + satellite)</th><th scope="col">Result</th></tr></thead>
       <tbody>
         {rows.map(e => (
           <tr key={e.id}>
@@ -125,7 +125,7 @@ function Consensus({ rows, onSelect }) {
             <td>
               {Object.entries(e.votes).map(([s, v]) => (
                 <div key={s} style={{ fontSize: 12 }}>
-                  <b>{s}</b> <span className={`vote vote-${v}`}>{v}</span> <span className="dim">{e.reasons[s]}</span>
+                  <b>{s === 'SAT' ? 'Satellite' : s}</b> <span className={`vote vote-${v}`}>{v}</span> <span className="dim">{e.reasons[s]}</span>
                 </div>
               ))}
               {!Object.keys(e.votes).length && <span className="dim">No reachable peers</span>}

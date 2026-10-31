@@ -167,3 +167,56 @@
   .mesh-toolbar .sep { display: none; }
   .spawn-form select { max-width: 100%; }
 }
+
+/* ── Station dashboard: sensor network, satellite feed, live Tomorrow.io ─── */
+.station-dashboard { margin-bottom: 12px; }
+.station-dashboard > h3 { font-size: 15px; margin-bottom: 8px; display: flex; gap: 8px; align-items: baseline; }
+.station-dashboard > h3 small { color: var(--text-secondary); font-weight: 500; font-size: 13px; }
+.sd-grid { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 12px; align-items: start; }
+.sd-side { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.sd-panel { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; min-width: 0; }
+.sd-panel-head { margin-bottom: 8px; }
+.sd-panel-head h4 { font-size: 14px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.sd-panel-head p { font-size: 12px; color: var(--text-secondary); }
+.sd-dim { color: var(--text-muted); font-size: 12px; }
+.sd-warn { color: var(--warning); font-size: 12.5px; }
+.sd-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.sd-table th, .sd-table td { text-align: left; vertical-align: top; padding: 7px 8px; border-bottom: 1px solid var(--border); }
+.sd-table thead th { font-size: 10.5px; text-transform: uppercase; letter-spacing: .4px; color: var(--text-muted); font-weight: 600; }
+.sd-table tbody th { font-weight: 600; color: var(--text-primary); min-width: 140px; }
+.sd-table tbody th small { display: block; font-weight: 400; color: var(--text-muted); font-size: 11px; }
+.sd-table.compact th, .sd-table.compact td { padding: 4px 6px; }
+.sd-suspect th { box-shadow: inset 3px 0 0 var(--danger); }
+.sd-flag { display: block; color: var(--danger); font-size: 11px; margin-top: 3px; max-width: 220px; }
+.sd-truth { display: block; color: var(--text-muted); font-size: 11px; font-style: italic; margin-top: 3px; }
+.sd-readings { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 2px 10px; margin: 0; }
+.sd-readings dt { font-size: 10.5px; color: var(--text-muted); }
+.sd-readings dd { margin: 0; font-family: 'JetBrains Mono', Menlo, monospace; font-size: 12.5px; color: var(--text-primary); }
+.sd-trend { min-width: 150px; color: var(--accent); }
+.sd-trend small { display: block; color: var(--text-secondary); font-size: 11px; }
+.sd-spark { width: 120px; height: 24px; display: block; }
+.sd-sat-call { font-size: 13px; margin-bottom: 8px; }
+.sd-use { font-size: 12px; color: var(--text-secondary); margin-top: 3px; }
+.sd-products { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; margin-bottom: 8px; }
+.sd-product { background: var(--bg-primary); border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; gap: 4px; }
+.sd-product-head { display: flex; justify-content: space-between; gap: 6px; font-size: 12.5px; }
+.sd-sub { font-size: 12px; margin: 10px 0 4px; color: var(--text-primary); }
+.sd-outlook { margin: 0; padding-left: 18px; font-size: 12.5px; }
+.sd-live { margin-bottom: 6px; }
+.sd-panel .mesh-chip { margin-top: 8px; }
+[data-theme="light"] .sd-trend { color: var(--accent); }
+
+@media (max-width: 1280px) {
+  .sd-grid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (forced-colors: active) {
+  .sd-panel, .sd-product { border: 1px solid CanvasText; }
+  .sd-suspect th { box-shadow: none; outline: 2px solid Highlight; }
+  .sd-spark polyline { stroke: CanvasText; }
+}
+/* Sensor rows: readings flow inline (label value · label value) to keep rows short. */
+.sd-sensors .sd-readings { display: flex; flex-wrap: wrap; gap: 2px 14px; }
+.sd-sensors .sd-readings div { display: flex; gap: 5px; align-items: baseline; }
+.sd-sensors .sd-readings dd { white-space: nowrap; }
+.sd-sensors .sd-table td:nth-child(3) { min-width: 200px; }
+.sd-health { white-space: nowrap; }

@@ -21,6 +21,12 @@ simulation that advances while it is being observed:
   partitioned the alert waits in the node's store-and-forward queue.
 * Stations send PROPAGATION hand-offs to downstream peers when a cell is headed
   their way, and the receiving LEXIS model uses them.
+* A simulated Tomorrow.io satellite feed (services/mesh_satellite.py) gives each
+  station a wide-area view: it breaks ensemble ties, votes in hazard
+  verification (and alone verifies an isolated station), cross-checks local
+  sensors and provides a one-hour outlook.
+* Each station hubs a mock ground sensor network (services/mesh_sensor_network.py):
+  its own instruments, a lightning detector, a tide gauge and two outstations.
 
 Fault injection (node/link outages, stuck sensors, corrupted models) and canned
 scenarios let a presenter show each safeguard working.
@@ -38,6 +44,8 @@ from collections import deque
 from datetime import datetime, timedelta, timezone
 
 from config import STATION_COORDS, BAHAMAS_STATIONS
+from services.mesh_satellite import SatelliteFeed
+from services.mesh_sensor_network import SensorNetwork, METRICS as SENSOR_METRICS
 
 logger = logging.getLogger("bacswn.mesh")
 
@@ -59,7 +67,7 @@ SEVERITY = {h: i for i, h in enumerate(HAZARDS)}
 
 PRECOGS = {
     "TEMPO": "Sensor time-series model",
-    "VISTA": "Radar / satellite imagery nowcast",
+    "VISTA": "Station radar + Tomorrow.io satellite nowcast",
     "LEXIS": "METAR text + climatology + peer warnings",
 }
 
@@ -113,6 +121,11 @@ def _rain_to_dbz(rain: float) -> float:
 class MeshSimulation:
     def __init__(self, seed: int | None = None):
         self.rng = random.Random(seed)
+        # Satellite and sensor-network noise use their own stream, so adding them
+        # leaves the weather and model behaviour of a seeded run unchanged.
+        self.aux_rng = random.Random(None if seed is None else seed + 7919)
+        self.satellite = SatelliteFeed(self, self.aux_rng)
+        self.sensor_net = SensorNetwork(self, self.aux_rng)
         self._ids = itertools.count(1)
         self.reset()
 
@@ -124,6 +137,9 @@ class MeshSimulation:
         self.cells: list[dict] = []
         self.links = self._build_links()
         self.nodes = {code: self._new_node(code) for code in BAHAMAS_STATIONS}
+        for n in self.nodes.values():
+            self.satellite.build(n)
+            self.sensor_net.build(n)
         self.messages: deque = deque(maxlen=150)
         self.heartbeats: deque = deque(maxlen=40)
         self.consensus_log: deque = deque(maxlen=40)
@@ -169,7 +185,7 @@ class MeshSimulation:
                         for pid, desc in PRECOGS.items()},
             "verdict": {"call": "CLEAR", "agreement": "3/3", "confidence": 0.9, "split": False},
             "warnings": [], "queue": [], "msgs_sent": 0, "msgs_recv": 0, "alerts_issued": 0,
-            "sensors": {}, "truth": "CLEAR", "suspect": None,
+            "sensors": {}, "truth": "CLEAR", "suspect": None, "sat_issues": [],
         }
 
     def sim_time(self, tick: int | None = None) -> datetime:
@@ -262,6 +278,9 @@ class MeshSimulation:
             if not n["alive"]:
                 continue
             self._sample_sensors(n)
+            self.satellite.update(n)
+            self.sensor_net.update(n)
+            n["sat_issues"] = self.satellite.cross_check(n)
             self._run_precogs(n)
             self._decide(n)
             self._score_minority_reports(n)
@@ -319,7 +338,11 @@ class MeshSimulation:
             call = "TSRA"
         reason = (f"rain {s['rain_mm_h']} mm/h (~{dbz_est:.0f} dBZ), gust {s['gust_kt']} kt, "
                   f"vis {s['visibility_sm']} SM, cig {s['ceiling_ft']} ft, Δp {falling:+.1f} hPa")
-        self._set_precog(p["TEMPO"], call, 0.62 + min(0.33, abs(dbz_est - 35) / 60), reason)
+        conf = 0.62 + min(0.33, abs(dbz_est - 35) / 60)
+        if n["sat_issues"]:
+            conf *= 0.6
+            reason += " · satellite contradicts " + ", ".join(i.split(":")[0] for i in n["sat_issues"])
+        self._set_precog(p["TEMPO"], call, conf, reason)
 
         # VISTA — radar/satellite with nowcast look-ahead (independent of station sensors).
         best, best_t, best_f = "CLEAR", None, None
@@ -363,6 +386,9 @@ class MeshSimulation:
         else:
             lex["lexis_pending"] = None
             call, reason = wx_call, metar
+        later = [o for o in self.satellite.outlook(n) if o["eta_min"] > NOWCAST_TICKS * SIM_MINUTES_PER_TICK]
+        if later:
+            reason += f" · satellite outlook: {later[0]['id']} {later[0]['kind']} ETA {later[0]['eta_min']} min"
         hour = self.sim_time().hour
         clim = 0.05 if 13 <= hour <= 18 else 0.0       # afternoon convection prior
         self._set_precog(lex, call, 0.7 + clim + self.rng.uniform(0, 0.15), reason)
@@ -405,7 +431,8 @@ class MeshSimulation:
         if tally[majority] >= 2:
             agree = [pc for pc in active if pc["call"] == majority]
             n["verdict"] = {"call": majority, "agreement": f"{tally[majority]}/{len(active)}",
-                            "confidence": round(sum(pc["confidence"] for pc in agree) / len(agree), 2), "split": False}
+                            "confidence": round(sum(pc["confidence"] for pc in agree) / len(agree), 2), "split": False,
+                            "tiebreak": None}
             for pc in active:
                 if pc["call"] == majority:
                     pc["dissent_streak"], pc["reported_call"] = 0, None
@@ -416,8 +443,15 @@ class MeshSimulation:
                 if pc["dissent_streak"] >= REPORT_STREAK and pc["reported_call"] != pc["call"]:
                     pc["reported_call"] = pc["call"]
                     self._file_minority_report(n, pc, majority)
+        elif (sat := self.satellite.call_now(n)) in calls:
+            # No 2-of-3 majority: a fresh satellite call that matches one model decides.
+            backer = next(pc for pc in active if pc["call"] == sat)
+            n["verdict"] = {"call": sat, "agreement": "SAT TIE-BREAK", "confidence": backer["confidence"],
+                            "split": False, "tiebreak": f"Ensemble split ({', '.join(calls)}); satellite sides with {backer['id']}"}
+            if sat != prev or self.tick % 4 == 0:
+                self._event(n["station"], "SAT TIE-BREAK", f"Ensemble split ({', '.join(calls)}) — satellite sees {sat}, siding with {backer['id']}")
         else:
-            n["verdict"] = {"call": prev, "agreement": "SPLIT", "confidence": 0.0, "split": True}
+            n["verdict"] = {"call": prev, "agreement": "SPLIT", "confidence": 0.0, "split": True, "tiebreak": None}
             if self.tick % 4 == 0:
                 self._event(n["station"], "SPLIT", f"Ensemble split ({', '.join(calls)}) — holding {prev}, no autonomous action")
 
@@ -483,8 +517,25 @@ class MeshSimulation:
                        key=lambda c: _distance_deg(n["lat"], n["lon"], self.nodes[c]["lat"], self.nodes[c]["lon"]))[:4]
         event = {"id": f"CV-{next(self._ids)}", "station": n["station"], "claim": claim,
                  "time": self.sim_time().isoformat(), "tick": self.tick, "votes": {}, "reasons": {}}
+        sat = self.satellite.call_now(n)
+        sat_vote = None
+        if sat is not None:
+            sat_vote = "AGREE" if sat != "CLEAR" and SEVERITY[sat] >= SEVERITY[claim] - 1 else "DISAGREE"
+            age = min((self.tick - o["tick"]) * SIM_MINUTES_PER_TICK
+                      for o in (n["satellite"]["radar"], n["satellite"]["sounder"]) if o)
+            event["votes"]["SAT"] = sat_vote
+            event["reasons"]["SAT"] = f"Tomorrow.io satellite (pass {age} min ago) sees {sat} over {n['station']}"
+        if not peers and sat_vote == "AGREE":
+            event.update(result="CONFIRMED", detail="Isolated node — confirmed by satellite, ALERT routed to hub")
+            self.counters["confirmed"] += 1
+            n["suspect"] = None
+            n["alerts_issued"] += 1
+            self.consensus_log.appendleft(event)
+            self._send_to_hub(n, "ALERT", f"{claim} CONFIRMED at {n['station']} by satellite (isolated)")
+            return
         if not peers:
-            event.update(result="UNVERIFIED", detail="Isolated node — local alert only, no peer can verify")
+            event.update(result="UNVERIFIED", detail="Isolated node — local alert only, no peer can verify"
+                         + (" and satellite does not see it" if sat_vote == "DISAGREE" else ""))
             self.consensus_log.appendleft(event)
             self._send_to_hub(n, "ALERT", f"UNVERIFIED {claim} at {n['station']} (isolated)")
             return
@@ -514,7 +565,8 @@ class MeshSimulation:
         disagree = sum(v == "DISAGREE" for v in event["votes"].values())
         if agree >= 2 and agree >= 0.6 * (agree + disagree):
             event["result"] = "CONFIRMED"
-            event["detail"] = f"{agree}/{len(peers)} peers confirm — ALERT routed to hub"
+            event["detail"] = (f"{agree - (sat_vote == 'AGREE')}/{len(peers)} peers"
+                               + (" + satellite" if sat_vote == "AGREE" else "") + " confirm — ALERT routed to hub")
             self.counters["confirmed"] += 1
             n["suspect"] = None
             n["alerts_issued"] += 1
@@ -525,7 +577,8 @@ class MeshSimulation:
                                + ("suspected local sensor fault" if disagree > agree else "insufficient corroboration"))
             self.counters["rejected"] += 1
             if disagree > agree:
-                n["suspect"] = "Peers' radar contradicts local sensors — maintenance ticket raised"
+                n["suspect"] = ("Peers' radar" + (" and satellite" if sat_vote == "DISAGREE" else "")
+                                + " contradict local sensors — maintenance ticket raised")
                 self._send_to_hub(n, "MAINT", f"{n['station']} flagged: local {claim} not corroborated by radar")
         self.consensus_log.appendleft(event)
 
@@ -745,6 +798,9 @@ class MeshSimulation:
             "station": n["station"], "name": n["name"], "lat": n["lat"], "lon": n["lon"],
             "alive": n["alive"], "status": status, "is_hub": n["station"] == HUB,
             "sensors": n["sensors"], "sensor_faults": sorted(n["sensor_faults"]),
+            "sensor_network": self.sensor_net.summary(n), "sat_issues": n["sat_issues"],
+            "satellite": {"call": self.satellite.call_now(n),
+                          "radar_age_min": None if not n["satellite"]["radar"] else (self.tick - n["satellite"]["radar"]["tick"]) * SIM_MINUTES_PER_TICK},
             "precogs": [{k: v for k, v in pc.items() if k not in ("lexis_pending", "dismissals", "reported_call")}
                         for pc in n["precogs"].values()],
             "verdict": n["verdict"], "truth": n["truth"], "suspect": n["suspect"],
@@ -784,6 +840,11 @@ class MeshSimulation:
             "precogs": PRECOGS, "sensor_fault_types": SENSOR_FAULTS,
         }
 
+    def node_detail(self, n: dict) -> dict:
+        """Node view plus its full sensor network and satellite products (for the station dashboard)."""
+        return {**self._node_view(n), "sensor_net": self.sensor_net.view(n),
+                "satellite_detail": self.satellite.view(n), "metrics": SENSOR_METRICS}
+
 
 mesh = MeshSimulation()
 
@@ -797,7 +858,7 @@ def get_mesh_status() -> dict:
 def get_node_detail(station_id: str) -> dict | None:
     mesh.advance()
     n = mesh.nodes.get(station_id)
-    return mesh._node_view(n) if n else None
+    return mesh.node_detail(n) if n else None
 
 
 def trigger_consensus(station_id: str = HUB) -> dict:

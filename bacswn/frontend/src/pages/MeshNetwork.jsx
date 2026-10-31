@@ -5,6 +5,7 @@ import { api } from '../api/client'
 import { usePolling } from '../hooks/usePolling'
 import { usePrefersReducedMotion } from '../hooks/useA11yPrefs'
 import PrecogChamber, { HAZARD_COLORS } from '../components/mesh/PrecogChamber'
+import StationDashboard from '../components/mesh/StationDashboard'
 import MeshLogs from '../components/mesh/MeshLogs'
 import '../components/mesh/mesh.css'
 
@@ -274,6 +275,8 @@ export default function MeshNetwork() {
           onFault={(f) => run(() => api.meshFault(f), `${f.kind.replace('_', ' ')} → ${f.station}`)}
           onVerify={(s) => run(() => api.meshConsensus(s), `Verification requested from ${s}'s peers`)} />
       </div>
+
+      <StationDashboard station={selected} />
 
       <MeshLogs data={d} onSelect={setSelected} />
     </div>

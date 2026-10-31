@@ -15,7 +15,12 @@ Pieces:
 
 Going live means replacing `SimulatedVenue` with an adapter for a broker or FCM
 that has CME Globex order entry (iLink 3 / Globex order-entry web APIs); the
-`TradingVenue` protocol is the seam. State is in memory and resets on restart.
+`TradingVenue` protocol is the seam.
+
+The engine runs in memory. User state (accounts, positions, orders, fills) and
+the market (spot levels, instrument stats, 1-minute bars) are written behind to
+SQLite by `services/trading_store.py` and restored on startup: see
+`export_changes()` / `restore()`.
 """
 
 from __future__ import annotations
@@ -235,6 +240,7 @@ class Account:
     orders: dict[int, Order] = field(default_factory=dict)
     fills: deque = field(default_factory=lambda: deque(maxlen=300))
     start_equity: float = STARTING_CASH
+    unsaved_fills: list = field(default_factory=list)   # not yet written to the store
 
 
 class TradingVenue(Protocol):
@@ -258,6 +264,9 @@ class SimulatedVenue:
         self._spot = {p: s["anchor"] * (1 + self.rng.gauss(0, 0.03)) for p, s in PRODUCTS.items()}
         self._last_step = time.time()
         self._front = _listed_expiries()[0]
+        self._dirty: set[str] = set()            # accounts changed since the last export
+        self._saved_orders: dict[int, tuple] = {}  # last row written per user order
+        self._candle_mark: dict[str, int] = {}   # newest bar time already exported
         self._list_instruments()
 
     # ── setup ──
@@ -305,6 +314,7 @@ class SimulatedVenue:
     def account_for(self, owner: str) -> Account:
         if owner not in self.accounts:
             self.accounts[owner] = Account(owner=owner)
+            self._dirty.add(owner)
         return self.accounts[owner]
 
     # ── order entry ──
@@ -319,6 +329,7 @@ class SimulatedVenue:
         acct = None if order.is_sim else self.account_for(owner)
         if acct is not None:
             acct.orders[order.id] = order
+            self._dirty.add(owner)
 
         reject = self._validate(order, inst, acct)
         if reject:
@@ -379,6 +390,7 @@ class SimulatedVenue:
             return {"error": f"Order is {o.status}"}
         self._remove_resting(o)
         o.status, o.updated = "CANCELLED", time.time()
+        self._dirty.add(owner)
         return o.to_dict()
 
     def cancel_all(self, owner: str, symbol: str | None = None) -> int:
@@ -478,6 +490,7 @@ class SimulatedVenue:
 
     def _book_fill(self, o: Order, inst: Instrument, qty: int, price: float, liquidity: str) -> None:
         acct = self.account_for(o.owner)
+        self._dirty.add(o.owner)
         pos = acct.positions.setdefault(o.symbol, Position())
         signed = qty if o.side == "BUY" else -qty
         if pos.qty == 0 or (pos.qty > 0) == (signed > 0):
@@ -498,11 +511,13 @@ class SimulatedVenue:
         fee = FEE_PER_CONTRACT * qty
         acct.fees += fee
         acct.cash -= fee
-        acct.fills.appendleft({
+        fill = {
             "order_id": o.id, "symbol": o.symbol, "side": o.side, "qty": qty, "price": price,
             "fee": round(fee, 2), "liquidity": liquidity,
             "time": datetime.now(timezone.utc).isoformat(),
-        })
+        }
+        acct.fills.appendleft(fill)
+        acct.unsaved_fills.append(fill)
 
     def _trigger_stops(self, inst: Instrument) -> None:
         if inst.last is None or not inst.stops:
@@ -512,6 +527,8 @@ class SimulatedVenue:
                  if (o.side == "BUY" and last_t >= o.stop) or (o.side == "SELL" and last_t <= o.stop)]
         for o in fired:
             inst.stops.remove(o)
+            if not o.is_sim:
+                self._dirty.add(o.owner)
             o.type = "MKT" if o.type == "STP" else "LMT"
             o.status = "WORKING"
             o.reason = "Stop triggered"
@@ -594,6 +611,150 @@ class SimulatedVenue:
             if p <= threshold:
                 return n
             n += 1
+
+    # ── persistence (see services/trading_store.py) ──
+    @staticmethod
+    def _order_row(o: Order) -> tuple:
+        return (o.id, o.owner, o.symbol, o.side, o.qty, o.type, o.tif, o.price, o.stop,
+                o.filled, o.avg_fill, o.status, o.reason, o.created, o.updated)
+
+    def export_changes(self, market: bool = False) -> dict:
+        """Everything changed since the last export, as plain rows; clears the dirty marks.
+
+        Hand the result to `requeue()` if writing it fails, so nothing is lost.
+        """
+        batch: dict = {"accounts": [], "positions": {}, "orders": [], "fills": [], "owners": []}
+        for owner in sorted(self._dirty):
+            acct = self.accounts.get(owner)
+            if acct is None:
+                continue
+            batch["owners"].append(owner)
+            batch["accounts"].append((owner, acct.cash, acct.fees, acct.start_equity))
+            batch["positions"][owner] = [(owner, sym, p.qty, p.avg_price, p.realized)
+                                         for sym, p in acct.positions.items()]
+            for o in acct.orders.values():
+                row = self._order_row(o)
+                if self._saved_orders.get(o.id) != row:
+                    batch["orders"].append(row)
+                    self._saved_orders[o.id] = row
+            batch["fills"] += [(owner, f["order_id"], f["symbol"], f["side"], f["qty"], f["price"],
+                                f["fee"], f["liquidity"], f["time"]) for f in acct.unsaved_fills]
+            acct.unsaved_fills = []
+        self._dirty.clear()
+        if market:
+            batch["spot"] = list(self._spot.items())
+            batch["instruments"] = [(i.symbol, i.settle, i.open, i.high, i.low, i.last, i.last_size,
+                                     i.volume, i.open_interest) for i in self.instruments.values()]
+            batch["candles"] = []
+            batch["candle_marks"] = dict(self._candle_mark)
+            for sym, inst in self.instruments.items():
+                mark = self._candle_mark.get(sym, 0)
+                new = [c for c in inst.candles if c["t"] >= mark]
+                batch["candles"] += [(sym, c["t"], c["o"], c["h"], c["l"], c["c"], c["v"]) for c in new]
+                if inst.candles:
+                    self._candle_mark[sym] = inst.candles[-1]["t"]
+        return batch
+
+    def requeue(self, batch: dict) -> None:
+        """Undo an export whose write failed: the next export will include it again."""
+        self._dirty.update(batch["owners"])
+        for row in batch["orders"]:
+            self._saved_orders.pop(row[0], None)
+        by_owner: dict[str, list] = {}
+        for owner, order_id, sym, side, qty, price, fee, liq, t in batch["fills"]:
+            by_owner.setdefault(owner, []).append({"order_id": order_id, "symbol": sym, "side": side, "qty": qty,
+                                                   "price": price, "fee": fee, "liquidity": liq, "time": t})
+        for owner, fills in by_owner.items():
+            acct = self.accounts.get(owner)
+            if acct is not None:
+                acct.unsaved_fills = fills + acct.unsaved_fills
+        if "candle_marks" in batch:
+            self._candle_mark = batch["candle_marks"]
+
+    def restore(self, state: dict) -> dict:
+        """Rebuild from stored rows (see trading_store.load). Returns what was restored."""
+        global _order_ids
+        for product, spot in state.get("spot", []):
+            if product in self._spot:
+                self._spot[product] = spot
+        bars: dict[str, list] = {}
+        for sym, t, o, h, l, c, v in state.get("candles", []):
+            bars.setdefault(sym, []).append({"t": t, "o": o, "h": h, "l": l, "c": c, "v": v})
+        last_px: dict[str, float] = {}
+        for sym, settle, op, hi, lo, last, last_size, volume, oi in state.get("instruments", []):
+            last_px[sym] = last
+            inst = self.instruments.get(sym)
+            if inst is None:
+                continue
+            if bars.get(sym):
+                inst.candles = sorted(bars[sym], key=lambda b: b["t"])[-1500:]
+                self._candle_mark[sym] = inst.candles[-1]["t"]
+            inst.settle, inst.open, inst.high, inst.low = settle, op, hi, lo
+            inst.last, inst.last_size, inst.volume, inst.open_interest = last, last_size, volume, oi
+
+        for owner, cash, fees, start_equity in state.get("accounts", []):
+            self.accounts[owner] = Account(owner=owner, cash=cash, fees=fees, start_equity=start_equity)
+        for owner, sym, qty, avg, realized in state.get("positions", []):
+            acct = self.accounts.get(owner)
+            if acct is not None:
+                acct.positions[sym] = Position(qty=qty, avg_price=avg, realized=realized)
+        for owner, order_id, sym, side, qty, price, fee, liq, t in state.get("fills", []):  # newest first
+            acct = self.accounts.get(owner)
+            if acct is not None:
+                acct.fills.append({"order_id": order_id, "symbol": sym, "side": side, "qty": qty,
+                                   "price": price, "fee": fee, "liquidity": liq, "time": t})
+
+        max_id = 0
+        expired_orders = 0
+        for row in sorted(state.get("orders", [])):
+            (oid, owner, sym, side, qty, typ, tif, price, stop, filled, avg_fill, status, reason,
+             created, updated) = row
+            max_id = max(max_id, oid)
+            acct = self.accounts.get(owner)
+            if acct is None:
+                continue
+            o = Order(id=oid, owner=owner, symbol=sym, side=side, qty=qty, type=typ, tif=tif, price=price,
+                      stop=stop, filled=filled, avg_fill=avg_fill, status=status, reason=reason,
+                      created=created, updated=updated)
+            acct.orders[oid] = o
+            self._saved_orders[oid] = tuple(row)
+            if status not in ("WORKING", "PARTIAL", "PENDING"):
+                continue
+            inst = self.instruments.get(sym)
+            if inst is None:
+                o.status, o.reason, o.updated = "CANCELLED", "Contract expired", time.time()
+                self._dirty.add(owner)
+                expired_orders += 1
+            elif status == "PENDING":
+                inst.stops.append(o)
+            else:
+                (inst.bids if side == "BUY" else inst.asks).setdefault(price, deque()).append(o)
+        _order_ids = itertools.count(max(max_id + 1, next(_order_ids)))
+
+        # Contracts that expired while we were down: close at their last price.
+        settled = 0
+        for acct in self.accounts.values():
+            for sym in [s for s in acct.positions if s not in self.instruments]:
+                pos = acct.positions.pop(sym)
+                if pos.qty:
+                    px = last_px.get(sym) or pos.avg_price
+                    pnl = (px - pos.avg_price) * pos.qty * CONTRACT_SIZE
+                    acct.cash += pnl
+                    fill = {"order_id": None, "symbol": sym, "side": "SELL" if pos.qty > 0 else "BUY",
+                            "qty": abs(pos.qty), "price": round(px, 2), "fee": 0.0, "liquidity": "EXPIRY",
+                            "time": datetime.now(timezone.utc).isoformat()}
+                    acct.fills.appendleft(fill)
+                    acct.unsaved_fills.append(fill)
+                    settled += 1
+                self._dirty.add(acct.owner)
+
+        # Re-quote around the restored prices; resting user orders the market has
+        # moved through trade now, as they would at a reopen.
+        for inst in self.instruments.values():
+            inst.fair = self._fair(inst)
+            self._requote(inst)
+        return {"accounts": len(state.get("accounts", [])), "orders": len(state.get("orders", [])),
+                "expired_positions_settled": settled, "expired_orders_cancelled": expired_orders}
 
     # ── views ──
     def _account_metrics(self, acct: Account) -> dict:

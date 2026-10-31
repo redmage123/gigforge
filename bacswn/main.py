@@ -75,6 +75,14 @@ async def lifespan(app: FastAPI):
     await init_db()
     logger.info("Database initialized (SQLite + WAL mode)")
 
+    # Carbon Desk: restore accounts, orders, fills and prices saved before the last restart.
+    from services import trading_store
+    from services.carbon_exchange import venue as carbon_venue
+    try:
+        await trading_store.load(carbon_venue)
+    except Exception as e:
+        logger.error(f"Carbon Desk restore failed — starting with a fresh market: {e}")
+
     # Seed demo data (no-op if rows already exist)
     await seed_demo_data()
     logger.info("Demo seed data checked")
@@ -172,6 +180,16 @@ async def lifespan(app: FastAPI):
                 logger.error(f"Carbon market step error: {e}")
             await asyncio.sleep(0.5)
 
+    async def _trading_store_loop():
+        n = 0
+        while True:
+            await asyncio.sleep(trading_store.FLUSH_SECONDS)
+            n += 1
+            try:
+                await trading_store.flush(carbon_venue, market=n % trading_store.MARKET_EVERY == 0)
+            except Exception as e:
+                logger.error(f"Carbon Desk save failed (will retry): {e}")
+
     async def _fir_observation_loop():
         # BACSWN's own per-airline FIR sightings: independent evidence for the
         # CORSIA oversight register's cross-check of operators' reports.
@@ -187,6 +205,7 @@ async def lifespan(app: FastAPI):
     asyncio.create_task(_ws_flights_loop())
     asyncio.create_task(_ws_weather_loop())
     asyncio.create_task(_market_loop())
+    asyncio.create_task(_trading_store_loop())
     asyncio.create_task(_fir_observation_loop())
     logger.info("WebSocket broadcast tasks started (flights: 5s, weather: 30s)")
 
@@ -196,6 +215,12 @@ async def lifespan(app: FastAPI):
     yield
 
     logger.info("BACSWN shutting down...")
+
+    try:
+        await trading_store.flush(carbon_venue, market=True)
+        logger.info("Carbon Desk state saved")
+    except Exception as e:
+        logger.error(f"Carbon Desk final save failed: {e}")
 
     # Shutdown: close any open httpx clients
     from services import opensky_client, awc_client

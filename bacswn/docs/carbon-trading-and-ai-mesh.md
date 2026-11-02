@@ -158,3 +158,31 @@ the conflict and advice in each aircraft's details.
 
 The mesh simulation clock is compressed (1 s = 5 sim-min); conflict prediction uses physical speeds in
 real minutes, so the geometry is right for the picture at the moment it is computed.
+
+## Carbon Desk AI trading advisor
+
+Opened from **✦ AI Advisor** in the desk's top bar: a drawer over the left column, so the chart, ladder and
+order ticket stay visible. The advisor suggests; it never trades — every suggestion loads into the order
+ticket (entry, or its protective stop) for the user to review and submit.
+
+**Ideas (rule-based, always on)** — `services/trading_advisor.py`, `GET /api/trading/advisor/ideas`.
+Per contract: 10/30-bar EMA trend, 30-bar momentum, stretch from the hourly mean, recent headlines for the
+product, and order-book imbalance, combined into a score. Ideas are complete tickets: limit at the touch,
+stop at 2 ATR, target at 3 ATR, sized to risk 1% of equity and at most half of free margin; plus a CORSIA
+hedge in the GEO front month when the hedge gap is open (no stop/target — it covers an obligation), and a
+review of each open position (cut / take profit / tighten / hold). Curve carry far from normal is reported
+for context but not traded (deferred months are thin in the simulation).
+
+**Ask the advisor (Claude via `claude -p`)** — `services/advisor_llm.py`, `POST /api/trading/advisor/chat`.
+Each question runs the Claude Code CLI headless with a JSON snapshot (quotes, headlines, account,
+positions, orders, fills, the engine's ideas and review, CORSIA gap) and must answer in a fixed schema
+(`--json-schema`): a plain-language answer, up to four trade proposals, and follow-up questions. Proposals
+are validated (listed contract, 1–500 lots, prices inside the ±20% band) before they reach the desk.
+The CLI runs with `--tools ""` (no tools), `--strict-mcp-config`, `--no-session-persistence`, a per-answer
+spend cap and a 180 s timeout, from an empty temporary directory, so it can only reason over the data it is
+given. The last six exchanges are kept per user (in memory) for follow-ups; 30 questions per user per hour.
+
+Typical answer: 20–40 s, ~$0.10 on Claude Opus 5.5 at medium effort. Settings (`.env`): `ADVISOR_MODEL`
+(default `opus`), `ADVISOR_EFFORT` (default `medium`), `ADVISOR_MAX_USD` (default `0.50`). The image installs
+`@anthropic-ai/claude-code`; it authenticates with `ANTHROPIC_API_KEY`. Without the CLI or credentials the
+"Ask" tab says so and the rule-based ideas keep working.

@@ -404,3 +404,72 @@
     background: Canvas; color: CanvasText; outline: 3px solid Highlight; outline-offset: -3px; font-weight: 800;
   }
 }
+
+/* ── AI trading advisor drawer ─────────────────────────────────────────
+   Slides over the left column (quotes + time & sales) so the chart, ladder and
+   order ticket stay visible while proposals are loaded into the ticket. */
+.tt-root { position: relative; }
+.tt-advisor-btn { border-color: var(--tt-accent); color: var(--tt-text); }
+.tt-advisor-btn[aria-pressed="true"] { background: #13274a; }
+.ad-drawer {
+  position: absolute; z-index: 30; left: 0; top: 41px; bottom: 27px;
+  width: clamp(360px, 28vw, 520px); display: flex; flex-direction: column;
+  background: var(--tt-panel); border-right: 2px solid var(--tt-accent); box-shadow: 8px 0 24px rgba(0,0,0,.5);
+}
+.ad-head { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: var(--tt-panel-2); border-bottom: 1px solid var(--tt-line); }
+.ad-head h2 { font-size: 13.5px; font-weight: 700; letter-spacing: .4px; }
+.ad-tabs { padding: 0 8px; }
+.ad-body { flex: 1; overflow-y: auto; padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 8px; }
+.ad-sub { font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: var(--tt-dim); margin-top: 4px; }
+.ad-cards { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.ad-card { border: 1px solid var(--tt-line); border-radius: 6px; padding: 8px 10px; background: var(--tt-panel-2); }
+.ad-card-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ad-card-head b { flex: 1; min-width: 0; font-size: 12.5px; }
+.ad-terms { display: flex; flex-wrap: wrap; gap: 2px 14px; margin: 6px 0; }
+.ad-terms div { display: flex; gap: 5px; align-items: baseline; }
+.ad-terms dt { color: var(--tt-faint); font-size: 11px; }
+.ad-terms dd { margin: 0; font-family: var(--tt-mono); }
+.ad-why { margin: 4px 0; padding-left: 16px; color: var(--tt-text); line-height: 1.45; }
+.ad-risk { color: var(--tt-dim); line-height: 1.45; margin: 4px 0; }
+.ad-risk b { color: var(--tt-amber); }
+.ad-actions, .ad-follow { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 4px; }
+.ad-conf { display: inline-flex; align-items: center; gap: 5px; color: var(--tt-dim); font-family: var(--tt-mono); font-size: 11px; }
+.ad-conf-bar { width: 44px; height: 5px; background: var(--tt-line); border-radius: 3px; overflow: hidden; }
+.ad-conf-bar span { display: block; height: 100%; background: var(--tt-accent); }
+.ad-review td, .ad-review th { vertical-align: top; }
+.ad-thread { display: flex; flex-direction: column; gap: 10px; }
+.ad-msg { border-radius: 6px; padding: 8px 10px; background: var(--tt-panel-2); border: 1px solid var(--tt-line); }
+.ad-msg.user { background: #10203a; border-color: #23406b; }
+.ad-msg.error { border-color: var(--tt-amber); }
+.ad-who { display: block; font-size: 11px; color: var(--tt-faint); font-weight: 700; margin-bottom: 3px; text-transform: uppercase; letter-spacing: .5px; }
+.ad-text p { margin: 0 0 6px; line-height: 1.5; }
+.ad-text ul, .ad-text ol { margin: 0 0 6px; padding-left: 18px; line-height: 1.5; }
+.ad-text li { margin-bottom: 2px; }
+.ad-text strong { color: #fff; }
+.ad-small { font-size: 11px; display: block; margin-top: 4px; }
+.ad-starters ul { list-style: none; padding: 0; margin: 6px 0 0; display: flex; flex-direction: column; gap: 4px; }
+.ad-ask { position: sticky; bottom: -12px; background: var(--tt-panel); padding: 8px 0 4px; border-top: 1px solid var(--tt-line); }
+.ad-ask textarea {
+  width: 100%; resize: vertical; min-height: 44px; background: var(--tt-bg); color: var(--tt-text);
+  border: 1px solid var(--tt-line); border-radius: 4px; padding: 6px 8px; font: inherit;
+}
+.ad-ask-row { display: flex; align-items: center; gap: 10px; margin-top: 6px; flex-wrap: wrap; }
+.ad-ask-row .tt-submit { padding: 6px 18px; }
+.ad-warn { color: var(--tt-amber); line-height: 1.45; }
+.ad-error { color: var(--tt-down); }
+.ad-method summary { cursor: pointer; color: var(--tt-dim); min-height: 24px; }
+.ad-method p { color: var(--tt-dim); line-height: 1.45; margin-top: 4px; }
+.ad-disclaimer { margin-top: auto; padding-top: 8px; font-size: 11px; color: var(--tt-faint); border-top: 1px solid var(--tt-line); }
+@media (max-width: 1440px) { .tt-advisor-text { display: inline; } }
+@media (max-width: 1100px) {
+  .tt-advisor-btn { display: inline-flex; }
+  .ad-drawer { position: fixed; inset: 0; width: auto; top: 0; bottom: 0; z-index: 4500; border-right: none; }
+}
+@media (forced-colors: active) {
+  .ad-drawer, .ad-card, .ad-msg { border: 1px solid CanvasText; }
+  .ad-conf-bar span { forced-color-adjust: none; background: Highlight; }
+}
+/* The blotter's tab rule grows (flex: 1) — in the drawer's column that would stretch it tall. */
+.ad-tabs { flex: 0 0 auto; height: 32px; background: var(--tt-panel-2); border-bottom: 1px solid var(--tt-line); }
+/* Question-style buttons wrap instead of running out of the drawer. */
+.ad-follow .tt-link-btn, .ad-starters .tt-link-btn { white-space: normal; text-align: left; padding: 4px 8px; line-height: 1.35; }

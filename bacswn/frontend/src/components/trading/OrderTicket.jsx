@@ -8,7 +8,7 @@ const CONFIRM_NOTIONAL = 250_000   // …or this notional (USD)
 const STOP_TYPES = new Set(['STP', 'STL'])
 
 /**
- * Order ticket. `preset` ({side, price, type, qty, nonce}) lets the ladder / hedge panel
+ * Order ticket. `preset` ({side, price, stop, type, qty, nonce}) lets the ladder / hedge panel
  * pre-fill it; the nonce makes repeated identical presets still apply.
  *
  * The limit price follows the touch (best bid for a buy, best offer for a sell) until
@@ -39,6 +39,7 @@ export default function OrderTicket({ quote, preset, onSubmit, announce }) {
     if (preset.type) setType(preset.type)
     if (preset.qty) setQtyText(String(preset.qty))
     if (preset.price != null) { setPrice(preset.price.toFixed(2)); setPriceTouched(true) }
+    if (preset.stop != null) setStop(preset.stop.toFixed(2))
     setArmed(false)
     setPulse(n => n + 1)
   }, [preset])

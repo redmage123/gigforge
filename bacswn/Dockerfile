@@ -8,6 +8,11 @@ RUN apt-get update && apt-get install -y curl && \
     apt-get install -y nodejs && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
+# Claude Code CLI — the Carbon Desk AI advisor runs `claude -p` (services/advisor_llm.py).
+# Authenticates with ANTHROPIC_API_KEY from .env; without credentials the advisor
+# falls back to its rule-based ideas.
+RUN npm install -g @anthropic-ai/claude-code@2.1.316 && claude --version
+
 # Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

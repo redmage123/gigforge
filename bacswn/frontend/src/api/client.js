@@ -128,6 +128,9 @@ export const api = {
   tradingCancelAll: (symbol) => request('/api/trading/orders/cancel-all' + (symbol ? '?symbol=' + symbol : ''), { method: 'POST' }),
   tradingFlatten: (symbol) => request('/api/trading/positions/' + symbol + '/flatten', { method: 'POST' }),
   corsiaObligation: () => request('/api/trading/corsia-obligation'),
+  advisorIdeas: () => request('/api/trading/advisor/ideas'),
+  advisorAsk: (message) => request('/api/trading/advisor/chat', { method: 'POST', body: JSON.stringify({ message }) }),
+  advisorReset: () => request('/api/trading/advisor/reset', { method: 'POST' }),
 
   // CORSIA oversight register (state-side verification of aircraft operators)
   oversightPeriods: () => request('/api/carbon-oversight/periods'),

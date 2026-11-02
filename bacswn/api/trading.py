@@ -86,6 +86,10 @@ async def flatten(symbol: str, request: Request):
 @router.get("/corsia-obligation")
 async def corsia_obligation(request: Request):
     """Annualised CORSIA offset requirement from live Bahamas FIR traffic vs. GEO hedge."""
+    return await _obligation(_owner(request))
+
+
+async def _obligation(owner: str) -> dict:
     flights = await fetch_flights()
     em = estimate_airspace_emissions(flights)
     transit_h = em["estimated_transit_hours"] or 0.5
@@ -93,7 +97,7 @@ async def corsia_obligation(request: Request):
     # ~transit_h inside it, so snapshot CO2 / transit_h ≈ CO2 per hour.
     annual_t = em["total_co2_tonnes"] / transit_h * HOURS_PER_YEAR
     required = annual_t * CORSIA_OFFSET_RATIO
-    acct = venue.account(_owner(request))
+    acct = venue.account(owner)
     hedged = sum(p["offsets"] for p in acct["positions"] if p["product"] == "GEO" and p["qty"] > 0)
     front = next((q for q in venue.market_snapshot(1)["quotes"] if q["product"] == "GEO"), None)
     remaining = max(0.0, required - hedged)
@@ -111,3 +115,51 @@ async def corsia_obligation(request: Request):
         if front and front["ask"] else None,
         "methodology": "ICAO CORSIA fuel-burn × 3.16; illustrative sector growth factor",
     }
+
+
+# ── AI trading advisor ──────────────────────────────────────────────────────
+
+class AdvisorQuestion(BaseModel):
+    message: str
+
+
+@router.get("/advisor/ideas")
+async def advisor_ideas(request: Request):
+    """Rule-based trade ideas and position review for the caller, plus AI availability."""
+    from services import advisor_llm
+    from services.trading_advisor import ideas
+    owner = _owner(request)
+    return {**ideas(venue, venue.account(owner), await _obligation(owner)), "ai": advisor_llm.status()}
+
+
+@router.post("/advisor/chat")
+async def advisor_chat(req: AdvisorQuestion, request: Request):
+    """Ask the AI advisor (Claude via `claude -p`). Proposals come back as tickets; nothing is traded."""
+    from services import advisor_llm
+    from services.trading_advisor import ideas
+    owner = _owner(request)
+    acct = venue.account(owner)
+    engine = ideas(venue, acct, await _obligation(owner))
+    snap = venue.market_snapshot(depth_levels=1)
+    snapshot = {
+        "quotes": [{k: q[k] for k in ("symbol", "product", "month", "bid", "ask", "last", "change", "settle",
+                                      "volume", "corsia_eligible", "initial_margin")} for q in snap["quotes"]],
+        "news": snap["news"][:8],
+        "account": {k: acct[k] for k in ("cash", "equity", "unrealized_pnl", "realized_pnl", "margin_used",
+                                         "buying_power", "day_pnl")},
+        "positions": acct["positions"], "working_orders": acct["working_orders"][:10], "recent_fills": acct["fills"][:8],
+        "engine_ideas": engine["ideas"], "position_review": engine["review"], "signals": engine["signals"],
+        "curve_anomalies": engine["curve_anomalies"], "corsia_hedge": engine["obligation"],
+        "contract": {"size_offsets": CONTRACT_SIZE, "tick": 0.01, "tick_value_usd": 10},
+    }
+    try:
+        return await advisor_llm.ask(owner, req.message, snapshot, venue)
+    except advisor_llm.AdvisorUnavailable as e:
+        return JSONResponse(status_code=503, content={"error": str(e), "ai": advisor_llm.status()})
+
+
+@router.post("/advisor/reset")
+async def advisor_reset(request: Request):
+    from services import advisor_llm
+    advisor_llm.reset(_owner(request))
+    return {"ok": True}

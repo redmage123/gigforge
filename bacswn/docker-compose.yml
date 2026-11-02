@@ -20,6 +20,10 @@ services:
       - OPENSKY_PASSWORD=${OPENSKY_PASSWORD:-}
       - TOMORROW_API_KEY=${TOMORROW_API_KEY:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      # AI trading advisor (claude -p): model, effort and per-answer spend cap
+      - ADVISOR_MODEL=${ADVISOR_MODEL:-opus}
+      - ADVISOR_EFFORT=${ADVISOR_EFFORT:-medium}
+      - ADVISOR_MAX_USD=${ADVISOR_MAX_USD:-0.50}
     volumes:
       - bacswn-data:/app/data
     restart: unless-stopped

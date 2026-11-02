@@ -4,6 +4,7 @@ import { usePolling } from '../hooks/usePolling'
 import CandleChart from '../components/trading/CandleChart'
 import PriceLadder from '../components/trading/PriceLadder'
 import OrderTicket from '../components/trading/OrderTicket'
+import AdvisorPanel from '../components/trading/AdvisorPanel'
 import { QuoteBoard, TimeSales, Blotter, fmtPx, fmtUsd, fmtChg, pnlClass } from '../components/trading/Panels'
 import '../components/trading/trading.css'
 
@@ -165,6 +166,16 @@ export default function CarbonTrading() {
     announce(`Hedge loaded into the order ticket: buy ${qty} ${sym}. Review and submit.`)
   }, [quotes, announce])
 
+  // AI advisor: proposals load into the ticket for the user to review and submit.
+  const [advisorOpen, setAdvisorOpen] = useState(false)
+  const advisorBtn = useRef(null)
+  const loadTicket = useCallback(({ symbol: sym, side, qty, type, price, stop }) => {
+    setSymbol(sym)
+    setPreset({ side, type, qty, price: price ?? undefined, stop: stop ?? undefined, nonce: Date.now() })
+    const what = type === 'STP' ? `stop ${stop?.toFixed(2)}` : price != null ? `limit ${price.toFixed(2)}` : 'at market'
+    announce(`Loaded into the order ticket: ${side === 'BUY' ? 'buy' : 'sell'} ${qty} ${sym}, ${what}. Review and submit.`)
+  }, [announce])
+
   const toggleCb = () => { setCbSafe(v => { writePref('tt-cb-palette', v ? '0' : '1'); return !v }) }
   const toggleFullscreen = () => {
     if (document.fullscreenElement) document.exitFullscreen?.()
@@ -194,6 +205,10 @@ export default function CarbonTrading() {
           <div className="tt-metric"><label>Margin</label><span>{fmtUsd(account?.margin_used)}</span></div>
           <div className="tt-metric"><label>Buying power</label><span>{fmtUsd(account?.buying_power)}</span></div>
         </div>
+        <button type="button" className="tt-icon-btn tt-advisor-btn" ref={advisorBtn} aria-pressed={advisorOpen}
+          onClick={() => setAdvisorOpen(o => !o)} aria-label="AI trading advisor">
+          ✦<span className="tt-advisor-text"> AI Advisor</span>
+        </button>
         <button type="button" className="tt-icon-btn" aria-pressed={cbSafe} onClick={toggleCb} aria-label="Colour-blind-safe palette"
           title="Swap green/red for a blue/orange palette that is distinguishable with colour-vision deficiency">
           ◐<span className="tt-btn-text"> {cbSafe ? 'Colour-safe on' : 'Colour-safe'}</span>
@@ -283,6 +298,9 @@ export default function CarbonTrading() {
           <OrderTicket quote={quote} preset={preset} onSubmit={submit} announce={announce} />
         </div>
       </section>
+
+      <AdvisorPanel open={advisorOpen} onClose={() => setAdvisorOpen(false)} onLoad={loadTicket}
+        announce={announce} returnFocusRef={advisorBtn} />
 
       {/* ── News strip ── */}
       <section className="tt-news tt-area-news" aria-label="Market headlines">

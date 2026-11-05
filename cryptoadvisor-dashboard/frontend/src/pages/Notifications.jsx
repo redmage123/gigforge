@@ -407,7 +407,7 @@ export default function Notifications() {
       <h2 style={{ color: '#e0e0e0', marginBottom: '1rem' }}>Notifications</h2>
       {error && <div style={{ color: '#f87171', marginBottom: '1rem' }}>{error}</div>}
 
-      <Card title={`In-Play Coins (${entries.length}/${inPlay?.max_entries ?? 25})`}>
+      <Card title={`In-Play (${entries.length}/${inPlay?.max_entries ?? 25})`}>
         {rules && (
           <p className="muted" style={{ fontSize: '0.85rem', marginTop: 0 }}>
             {candleName(rules.timeframe).replace(/^./, (c) => c.toUpperCase())} candle with volume &gt;{rules.volume_mult}x the average of the
@@ -436,7 +436,7 @@ export default function Notifications() {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr>
-                  {['Coin', 'Move', 'Volume', 'Candle', 'Triggered', 'News catalyst'].map((h) => (
+                  {['Instrument', 'Move', 'Volume', 'Candle', 'Triggered', 'News catalyst'].map((h) => (
                     <th key={h} style={headStyle}>{h}</th>
                   ))}
                 </tr>

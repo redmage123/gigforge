@@ -27,12 +27,12 @@ async def generate_daily_briefing(prices: dict, news: list, sentiment: dict) -> 
             sentiment_summary += f"- {key}: {val}\n"
 
     prompt = (
-        f"You are a crypto market analyst producing a daily briefing.\n\n"
+        f"You are a cross-asset market analyst writing AssetAdvisor's daily briefing (stocks, rates, commodities, crypto).\n\n"
         f"{price_summary}\n{news_summary}\n{sentiment_summary}\n"
         f"Produce a concise daily briefing covering:\n"
-        f"1) Key movers — biggest gainers/losers and why\n"
+        f"1) Key movers across stocks, rates, commodities and crypto, and why\n"
         f"2) Important news — what matters most today\n"
-        f"3) Market mood — overall sentiment and fear/greed\n"
+        f"3) Market mood — risk appetite (VIX, yields, dollar) and crypto sentiment\n"
         f"4) What to watch — upcoming events or levels to monitor\n"
         f"Keep it under 300 words."
     )
@@ -52,12 +52,12 @@ async def summarize_news(articles: list) -> str:
         articles_text += f"{i}. [{source}] {title} ({published})\n"
 
     prompt = (
-        f"You are a crypto news analyst. Here are recent headlines:\n"
+        f"You are a markets news analyst. Here are recent headlines:\n"
         f"{articles_text}\n"
         f"Summarize the top 5 most impactful stories. For each:\n"
         f"1) One-sentence summary\n"
         f"2) Market impact (bullish/bearish/neutral)\n"
-        f"3) Which coins are affected\n"
+        f"3) Which assets are affected (stocks, sectors, commodities, coins)\n"
         f"Be concise."
     )
     return await ask_claude(prompt)
@@ -81,7 +81,7 @@ async def get_market_commentary(coin: str, price_data: dict, news: list) -> str:
         relevant_news = "No coin-specific news found.\n"
 
     prompt = (
-        f"You are a crypto analyst providing commentary on {coin}.\n"
+        f"You are a markets analyst providing commentary on {coin}.\n"
         f"Price: ${price:,.2f}, 24h change: {change:+.2f}%, "
         f"volume: ${volume:,.0f}, market cap: ${market_cap:,.0f}\n\n"
         f"Related news:\n{relevant_news}\n"

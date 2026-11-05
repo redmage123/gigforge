@@ -27,7 +27,7 @@ async def find_tax_loss_harvesting(holdings: list, trades: list) -> str:
         trades_summary += f"- {date}: {side} {qty} {coin} @ ${price:,.2f}\n"
 
     prompt = (
-        f"You are a crypto tax optimization specialist. Analyze for tax-loss harvesting:\n\n"
+        f"You are a tax optimization specialist for stocks, ETFs, futures and crypto (US rules unless told otherwise; note wash-sale rules apply to stocks/ETFs and Section 1256 60/40 treatment to regulated futures). Analyze for tax-loss harvesting:\n\n"
         f"{holdings_summary}\n{trades_summary}\n"
         f"Identify:\n"
         f"1) Positions currently at a loss that could be sold to offset gains\n"
@@ -60,7 +60,7 @@ async def optimize_tax_strategy(tax_report: dict, holdings: list) -> str:
         holdings_summary += f"- {coin}: {value}\n"
 
     prompt = (
-        f"You are a crypto tax strategist. Review this tax situation:\n\n"
+        f"You are a tax strategist for a multi-asset investor. Review this tax situation:\n\n"
         f"{report_summary}\n{holdings_summary}\n"
         f"Suggest strategies to minimize tax liability:\n"
         f"1) Short-term vs long-term holding period optimization\n"
@@ -94,7 +94,7 @@ async def estimate_tax_impact(proposed_trade: dict, existing_trades: list) -> st
     estimated_gain = trade_value - (quantity * avg_cost) if avg_cost else 0
 
     prompt = (
-        f"You are a crypto tax calculator. Estimate the tax impact of this trade:\n"
+        f"You are a tax calculator. Estimate the tax impact of this trade (asset class matters for the rules):\n"
         f"- Proposed: {side} {quantity} {coin} @ ${price:,.2f} (total: ${trade_value:,.2f})\n"
         f"- Average cost basis: ${avg_cost:,.2f}\n"
         f"- Estimated gain/loss: ${estimated_gain:,.2f}\n\n"

@@ -1,4 +1,6 @@
-"""AI Analysis Copilot — Claude-powered crypto analysis."""
+"""AI Analysis Copilot — Claude-powered analysis for every asset class."""
+
+from services.ai_context import PERSONA
 
 from services.claude_cli import ask_claude
 
@@ -11,7 +13,7 @@ async def analyze_technical(coin: str, price_data: dict) -> str:
     market_cap = price_data.get("usd_market_cap", 0)
 
     prompt = (
-        f"You are a crypto technical analyst. Analyze {coin}: "
+        f"You are a technical analyst. {PERSONA} Analyze {coin}: "
         f"current price ${price:,.2f}, 24h change {change:+.2f}%, "
         f"volume ${volume:,.0f}, market cap ${market_cap:,.0f}. "
         f"Provide: 1) Short-term outlook (24-48h) 2) Key support/resistance levels "
@@ -33,7 +35,7 @@ async def analyze_portfolio(holdings: list) -> str:
         summary += f"- {name}: value {value}, allocation {alloc}\n"
 
     prompt = (
-        f"You are a crypto portfolio manager. Review this portfolio and provide:\n"
+        f"You are a multi-asset portfolio manager. {PERSONA} Review this portfolio and provide:\n"
         f"{summary}\n"
         f"1) Allocation assessment — is it well balanced?\n"
         f"2) Concentration risk — any over-exposed positions?\n"
@@ -131,7 +133,7 @@ async def analyze_page_data(page_name: str, data: dict) -> str:
     data_text = "\n".join(summary_parts) if summary_parts else "No data provided."
 
     prompt = (
-        f"You are a crypto advisor analyzing {context}. "
+        f"You are AssetAdvisor's markets advisor analyzing {context}. {PERSONA} "
         f"Here is the current data:\n{data_text}\n\n"
         f"Provide 3-5 key insights or actionable observations. Be concise."
     )

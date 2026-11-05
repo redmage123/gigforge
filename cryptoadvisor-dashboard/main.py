@@ -274,6 +274,24 @@ async def chat(req: ChatRequest, request: Request):
             "What you know about this user (use it to tailor advice when relevant; "
             "don't list these facts unprompted):\n\n" + memory_context
         )
+    if username:
+        # The user's real positions, so "what's my biggest position?" gets a real answer
+        try:
+            from services.ai_context import holdings_for_ai
+
+            held = await holdings_for_ai(username)
+        except Exception:
+            held = []
+        if held:
+            lines = [
+                f"- {h['Asset']}: {h['side']} {abs(h['amount'])}, value ${h['value_usd']:,.0f}, "
+                f"avg {h['avg_price']:,.4g}, unrealized P&L "
+                + (f"${h['unrealized_pnl']:,.0f}" if h.get("unrealized_pnl") is not None else "n/a")
+                for h in sorted(held, key=lambda h: abs(h["value_usd"]), reverse=True)[:15]
+            ]
+            prompt_parts.append("The user's open positions (from their trade journal):\n" + "\n".join(lines))
+        else:
+            prompt_parts.append("The user has no open positions in their trade journal.")
     if req.history:
         prompt_parts.append(history_block(req.history))
     prompt_parts.append(req.message)

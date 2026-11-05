@@ -11,7 +11,8 @@ logger = logging.getLogger(__name__)
 async def parse_alert_condition(natural_language: str) -> dict:
     """Parse a natural language alert condition into structured JSON."""
     prompt = (
-        "Parse this crypto alert condition into structured JSON. "
+        "Parse this price alert condition into structured JSON. The asset may be a stock, ETF, commodity, Treasury "
+        "yield or crypto; put its ticker or plain name in \"coin\" (e.g. \"AAPL\", \"gold\", \"BTC\"). "
         "Return ONLY valid JSON with format: "
         '{"conditions": [{"coin": "...", "metric": "price|volume|gas|change_24h", '
         '"operator": "gt|lt|eq", "value": number}], '
@@ -105,7 +106,7 @@ async def get_alert_suggestions(portfolio: list) -> str:
         holdings_summary += f"- {name}: {value}\n"
 
     prompt = (
-        f"You are a crypto alert advisor. Based on these holdings:\n"
+        f"You are a price-alert advisor for a multi-asset investor. Based on these holdings:\n"
         f"{holdings_summary}\n"
         f"Suggest 5 smart alerts the user should set up. For each, provide:\n"
         f"1) The alert in natural language\n"

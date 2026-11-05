@@ -11,7 +11,7 @@ from services import trades as trades_service
 from services import user_data
 from services import coingecko
 from services import news as news_service
-from services.memory import get_portfolio
+from services.ai_context import holdings_for_ai, market_headlines, market_snapshot, quote_context
 from services.ai_copilot import (
     analyze_page_data, analyze_technical, analyze_portfolio,
     analyze_whale_activity, analyze_defi_positions,
@@ -70,20 +70,15 @@ async def copilot(request: Request, body: CopilotRequest):
 
 @router.post("/copilot/technical")
 async def copilot_technical(request: Request, body: TechnicalRequest):
-    coin = body.coin.lower()
-    try:
-        prices = await coingecko.get_prices((coin,))
-        price_data = prices.get(coin, {})
-    except Exception:
-        price_data = {}
-    analysis = await analyze_technical(coin, price_data)
+    # body.coin may be an instrument id ("stock:AAPL") or a legacy CoinGecko id ("bitcoin")
+    name, price_data = await quote_context(body.coin)
+    analysis = await analyze_technical(name, price_data)
     return {"analysis": analysis}
 
 
 @router.post("/copilot/portfolio")
 async def copilot_portfolio(request: Request):
-    portfolio = get_portfolio()
-    holdings = portfolio.get("holdings", [])
+    holdings = await holdings_for_ai(get_username(request))
     analysis = await analyze_portfolio(holdings)
     return {"analysis": analysis}
 
@@ -110,8 +105,7 @@ async def smart_alerts_parse(request: Request, body: AlertParseRequest):
 
 @router.post("/smart-alerts/suggest")
 async def smart_alerts_suggest(request: Request):
-    portfolio = get_portfolio()
-    holdings = portfolio.get("holdings", [])
+    holdings = await holdings_for_ai(get_username(request))
     suggestions = await get_alert_suggestions(holdings)
     return {"suggestions": suggestions}
 
@@ -129,12 +123,8 @@ async def trades_analyze(request: Request):
 @router.post("/trades/suggest")
 async def trades_suggest(request: Request):
     username = get_username(request)
-    portfolio = get_portfolio()
-    holdings = portfolio.get("holdings", [])
-    try:
-        prices = await coingecko.get_prices(("bitcoin", "ethereum", "solana"))
-    except Exception:
-        prices = {}
+    holdings = await holdings_for_ai(username)
+    prices = await market_snapshot([h["instrument_id"] for h in holdings])
     suggestions = await get_trade_suggestions(holdings, prices)
     return {"suggestions": suggestions}
 
@@ -143,16 +133,12 @@ async def trades_suggest(request: Request):
 
 @router.get("/briefing")
 async def daily_briefing(request: Request):
+    prices = await market_snapshot()
     try:
-        prices = await coingecko.get_prices(
-            ("bitcoin", "ethereum", "solana", "cardano", "polkadot")
-        )
-    except Exception:
-        prices = {}
-    try:
-        articles = await news_service.get_news(limit=10)
+        articles = await news_service.get_news(limit=6)  # crypto feeds
     except Exception:
         articles = []
+    articles = (await market_headlines(8)) + articles  # general markets first
     # Simple sentiment placeholder — could integrate sentiment service
     sentiment = {"market_mood": "neutral"}
     briefing = await generate_daily_briefing(prices, articles, sentiment)
@@ -161,12 +147,8 @@ async def daily_briefing(request: Request):
 
 @router.get("/briefing/{coin}")
 async def coin_briefing(request: Request, coin: str):
-    coin = coin.lower()
-    try:
-        prices = await coingecko.get_prices((coin,))
-        price_data = prices.get(coin, {})
-    except Exception:
-        price_data = {}
+    name, price_data = await quote_context(coin)
+    coin = name
     try:
         articles = await news_service.get_news(limit=15)
     except Exception:
@@ -180,7 +162,8 @@ async def coin_briefing(request: Request, coin: str):
 @router.post("/risk/assessment")
 async def risk_assessment(request: Request):
     username = get_username(request)
-    portfolio = get_portfolio()
+    holdings = await holdings_for_ai(username)
+    portfolio = {"holdings": holdings, "total_value": round(sum(h["value_usd"] for h in holdings), 2)}
     # Enrich with DeFi and staking data if available
     defi_data = user_data.load_user_data(username, "defi")
     staking_data = user_data.load_user_data(username, "staking")
@@ -199,7 +182,8 @@ async def risk_assessment(request: Request):
 
 @router.post("/risk/score")
 async def risk_score(request: Request):
-    portfolio = get_portfolio()
+    holdings = await holdings_for_ai(get_username(request))
+    portfolio = {"holdings": holdings, "total_value": round(sum(h["value_usd"] for h in holdings), 2)}
     score = await get_risk_score(portfolio)
     return score
 
@@ -209,8 +193,7 @@ async def risk_score(request: Request):
 @router.post("/tax/optimize")
 async def tax_optimize(request: Request):
     username = get_username(request)
-    portfolio = get_portfolio()
-    holdings = portfolio.get("holdings", [])
+    holdings = await holdings_for_ai(username)
     tax_data = user_data.load_user_data(username, "tax_report")
     tax_report = tax_data if isinstance(tax_data, dict) else {
         "short_term_gains": 0, "long_term_gains": 0,
@@ -223,8 +206,7 @@ async def tax_optimize(request: Request):
 @router.post("/tax/harvest")
 async def tax_harvest(request: Request):
     username = get_username(request)
-    portfolio = get_portfolio()
-    holdings = portfolio.get("holdings", [])
+    holdings = await holdings_for_ai(username)
     user_trades = trades_service.get_trades(username)
     opportunities = await find_tax_loss_harvesting(holdings, user_trades)
     return {"opportunities": opportunities}

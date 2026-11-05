@@ -45,11 +45,11 @@ async def full_risk_assessment(portfolio: dict) -> str:
             summary += f"- {name}: {balance}\n"
 
     prompt = (
-        f"You are a crypto risk assessment specialist. Analyze this portfolio:\n"
+        f"You are a multi-asset risk specialist (stocks, ETFs, futures, crypto). Analyze this portfolio:\n"
         f"{summary}\n"
         f"Produce a comprehensive risk report covering:\n"
         f"1) Concentration risk — over-exposure to single assets\n"
-        f"2) Smart contract risk — per DeFi protocol\n"
+        f"2) Smart contract risk — per DeFi protocol (skip if no DeFi positions are listed)\n"
         f"3) Counterparty risk — exchange exposure\n"
         f"4) Correlation risk — how correlated are the holdings\n"
         f"5) Liquidity risk — any illiquid positions\n"
@@ -69,7 +69,7 @@ async def assess_position_risk(position: dict) -> str:
     leverage = position.get("leverage", 1)
 
     prompt = (
-        f"You are a crypto risk analyst. Assess the risk of this position:\n"
+        f"You are a risk analyst. Assess the risk of this position:\n"
         f"- Asset: {coin}\n"
         f"- Value: {value}\n"
         f"- Type: {protocol}\n"
@@ -93,7 +93,7 @@ async def get_risk_score(portfolio: dict) -> dict:
         summary += f"- {name}: {alloc}\n"
 
     prompt = (
-        f"Analyze this crypto portfolio risk and return ONLY valid JSON:\n"
+        f"Analyze this portfolio's risk (it may mix stocks, ETFs, futures and crypto) and return ONLY valid JSON:\n"
         f"{summary}\n"
         f"Return: {{\"overall_score\": <1-100>, \"risk_level\": \"low|medium|high|critical\", "
         f"\"top_risks\": [\"risk 1\", \"risk 2\", \"risk 3\"]}}"

@@ -6,7 +6,7 @@ const TOUR_STEPS = [
   {
     id: 'welcome',
     title: 'Welcome to AssetAdvisor',
-    body: 'Your AI-powered markets dashboard: track your trades and P&L, catch coins that are in play, and set alerts. This quick tour shows the key features. You can ask questions at any point using the chat box below.',
+    body: 'Your AI-powered markets dashboard for stocks, ETFs, commodities, bonds and crypto: track your trades and P&L, catch what is in play, and set alerts. This quick tour shows the key features. You can ask questions at any point using the chat box below.',
     position: 'center',
     target: null,
     context: 'The user just started the interactive guide tour of AssetAdvisor.',
@@ -31,7 +31,7 @@ const TOUR_STEPS = [
   {
     id: 'dashboard-banner',
     title: 'Your Dashboard',
-    body: 'A market overview plus your watchlist. Click any coin for detailed charts; star it to keep it on your watchlist.',
+    body: 'Markets at a glance (indices, yields, commodities, crypto) plus your watchlist. Click anything for its chart and details; add it to your watchlist from its page.',
     position: 'bottom',
     target: '.dashboard-banner',
     context: 'The user is viewing the dashboard greeting banner.',
@@ -46,8 +46,8 @@ const TOUR_STEPS = [
   },
   {
     id: 'in-play',
-    title: 'In-Play Coins',
-    body: 'The scanner checks every pair every 15 minutes for unusual volume plus a large, decisive candle, and looks up the news behind the move. Choose your timeframe, averaging periods and thresholds, and get phone alerts.',
+    title: 'In-Play',
+    body: 'Every 15 minutes the scanner checks the markets you choose (crypto perpetuals, US large caps, ETFs, futures) for unusual volume plus a large, decisive candle, and looks up the news behind the move. Choose your timeframe, averaging periods and thresholds, and get phone alerts.',
     position: 'center',
     target: null,
     route: '/notifications',
@@ -56,7 +56,7 @@ const TOUR_STEPS = [
   {
     id: 'portfolio',
     title: 'Portfolio & Trades',
-    body: 'Your portfolio is built from the trades you log. Add trades by hand on the Trades page or import them from an exchange CSV; positions and profit/loss update with live prices.',
+    body: 'Your portfolio is built from the trades you log: stocks, ETFs, futures and crypto, long or short. Add trades on the Trades page or import a CSV; positions and profit/loss update with live prices, grouped by asset class.',
     position: 'center',
     target: null,
     route: '/portfolio',

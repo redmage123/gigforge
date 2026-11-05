@@ -5,7 +5,7 @@ async def get_wizard_guidance(step: str, user_input: dict) -> str:
     prompts = {
         "welcome": f"You are the AssetAdvisor setup wizard. The user just logged in for the first time. Welcome them warmly and briefly explain what this platform can do (portfolio tracking, DeFi monitoring, AI analysis, whale tracking, tax reports). Ask them about their experience level (beginner/intermediate/advanced) and what they're most interested in. Keep it conversational and under 150 words.",
 
-        "experience": f"The user described their crypto experience as: '{user_input.get('answer', '')}'. Based on this, recommend which features they should set up first. Suggest 3-5 specific features from: wallet connection, price alerts, DCA plans, DeFi tracking, whale watching, portfolio building, tax reporting. Explain each suggestion in one sentence. Be encouraging.",
+        "experience": f"The user described their investing experience as: '{user_input.get('answer', '')}'. Based on this, recommend which features they should set up first. Suggest 3-5 specific features from: wallet connection, price alerts, DCA plans, DeFi tracking, whale watching, portfolio building, tax reporting. Explain each suggestion in one sentence. Be encouraging.",
 
         "wallet": f"The user wants to set up wallet tracking. Their experience level: {user_input.get('level', 'beginner')}. Guide them through connecting a wallet. Explain: 1) They can connect MetaMask for live connection, 2) They can add any wallet address to watch (no private keys needed), 3) We support Ethereum, BSC, Polygon, Arbitrum, Base, Solana, Bitcoin. Suggest they start with their main wallet. Keep it simple and reassuring about security.",
 
@@ -21,5 +21,5 @@ async def get_wizard_guidance(step: str, user_input: dict) -> str:
 
 async def get_personalized_recommendations(experience: str, interests: list) -> str:
     """Get personalized feature recommendations based on user profile."""
-    prompt = f"Based on a crypto user with experience level '{experience}' interested in {', '.join(interests)}, recommend the top 5 AssetAdvisor features they should explore. Features available: wallet tracking, price alerts, DCA plans, DeFi position monitoring, whale tracking, NFT gallery, tax reporting, AI market briefing, AI risk assessment, portfolio backtesting, yield aggregation, token approval management, governance voting, copy trading. For each recommendation, give the feature name and a one-line explanation of why."
+    prompt = f"Based on an investor with experience level '{experience}' interested in {', '.join(interests)}, recommend the top 5 AssetAdvisor features they should explore. Features available: wallet tracking, price alerts, DCA plans, DeFi position monitoring, whale tracking, NFT gallery, tax reporting, AI market briefing, AI risk assessment, portfolio backtesting, yield aggregation, token approval management, governance voting, copy trading. For each recommendation, give the feature name and a one-line explanation of why."
     return await ask_claude(prompt)

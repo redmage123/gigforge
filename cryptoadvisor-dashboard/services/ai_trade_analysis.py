@@ -24,11 +24,11 @@ async def analyze_trades(trades: list) -> str:
         summary += f"- {date}: {side} {qty} {coin} @ ${price:,.2f} (fee: ${fee:.2f})\n"
 
     prompt = (
-        f"You are a trading coach analyzing a crypto trader's journal.\n"
+        f"You are a trading coach analyzing a trader's journal (instrument ids look like stock:AAPL, commodity:GC, crypto:BTC).\n"
         f"{summary}\n"
         f"Provide:\n"
         f"1) Win rate estimate and average trade performance\n"
-        f"2) Trading patterns — timing, position sizing, coin selection\n"
+        f"2) Trading patterns — timing, position sizing, instrument and asset-class selection\n"
         f"3) Common mistakes or areas for improvement\n"
         f"4) Specific actionable suggestions\n"
         f"Be concise and constructive."
@@ -79,7 +79,7 @@ async def get_trade_suggestions(holdings: list, market_data: dict) -> str:
         summary += f"- {coin}: ${price:,.2f} ({change:+.2f}%)\n"
 
     prompt = (
-        f"You are a crypto trading advisor. Based on current positions and market:\n"
+        f"You are a multi-asset trading advisor. Based on current positions and market:\n"
         f"{summary}\n"
         f"Suggest 3-5 potential trades with:\n"
         f"1) Trade direction (buy/sell) and asset\n"

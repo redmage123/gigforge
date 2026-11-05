@@ -68,13 +68,13 @@ CATEGORIES = [
     "goals",           # financial goals, targets
     "preferences",     # UI, notification, analysis preferences
     "knowledge",       # things the user has told the AI they know/don't know
-    "market_views",    # user's opinions on specific coins/markets
+    "market_views",    # user's opinions on specific assets/markets
     "personal",        # name, timezone, experience level
     "general",         # everything else
 ]
 
 # Extraction prompt — tells Claude which facts to pull from a conversation
-_EXTRACTION_TEMPLATE = """Analyze this conversation between a user and an AI crypto advisor.
+_EXTRACTION_TEMPLATE = """Analyze this conversation between a user and an AI markets advisor (stocks, bonds, commodities, crypto).
 Extract ONLY concrete, reusable facts about the USER (not general crypto knowledge).
 
 Rules:

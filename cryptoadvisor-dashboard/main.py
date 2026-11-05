@@ -92,6 +92,7 @@ from api.sentiment_advisor import router as sentiment_advisor_router
 from api.memory import router as memory_router
 from api.search import router as search_router
 from api.in_play import router as in_play_router
+from api.instruments import router as instruments_router
 
 # Auth router (JSON API)
 from routers.auth import router as auth_router
@@ -146,6 +147,8 @@ async def lifespan(app: FastAPI):
     # In-play scanner: volume spike + outsized daily candle across Binance USDT pairs
     from services.in_play import scan_in_play
     register_task(scan_in_play, interval_seconds=900, name="in_play_scanner")
+    from services.market.registry import refresh as refresh_instruments
+    register_task(refresh_instruments, interval_seconds=6 * 3600, name="instrument_registry")  # skips if < 1 day old
 
     # Start WebSocket price feed
     asyncio.create_task(price_manager.start_price_feed())
@@ -233,6 +236,7 @@ app.include_router(sentiment_advisor_router, prefix="/api/sentiment-advisor", ta
 app.include_router(memory_router, prefix="/api/memory", tags=["memory"])
 app.include_router(search_router, prefix="/api/search", tags=["search"])
 app.include_router(in_play_router, prefix="/api/in-play", tags=["in-play"])
+app.include_router(instruments_router, prefix="/api/instruments", tags=["instruments"])
 
 # Auth API router
 app.include_router(auth_router, prefix="/api/auth", tags=["auth"])

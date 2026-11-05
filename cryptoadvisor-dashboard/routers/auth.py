@@ -171,3 +171,30 @@ async def change_password(req: ChangePasswordRequest, request: Request):
             return {"message": "Password changed successfully"}
 
     return JSONResponse(status_code=404, content={"error": "User not found"})
+
+
+class DeleteAccountRequest(BaseModel):
+    password: str
+    confirm: str  # must be "DELETE"
+
+
+@router.post("/delete-account")
+async def delete_account_route(req: DeleteAccountRequest, request: Request):
+    """Permanently delete the signed-in user's account and all their data (GDPR erasure)."""
+    from services.account import delete_account
+
+    username = getattr(request.state, "user", {}).get("sub", "")
+    if not username:
+        return JSONResponse(status_code=401, content={"error": "Not authenticated"})
+    if req.confirm != "DELETE":
+        return JSONResponse(status_code=400, content={"error": 'Type DELETE to confirm'})
+    users = load_users()
+    me = next((u for u in users if u["username"] == username), None)
+    if not me or not verify_password(req.password, me["password_hash"]):
+        return JSONResponse(status_code=400, content={"error": "Password is incorrect"})
+    if me.get("role") == "admin" and sum(1 for u in users if u.get("role") == "admin") <= 1:
+        return JSONResponse(status_code=400, content={"error": "This is the only admin account; make another admin first."})
+    removed = await delete_account(username)
+    response = JSONResponse(content={"message": "Your account and data have been deleted.", "removed": removed})
+    response.delete_cookie("access_token")
+    return response

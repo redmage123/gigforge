@@ -8,6 +8,8 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
+from middleware.client_ip import client_ip
+
 
 class RateLimiter:
     """ASGI middleware that enforces per-IP request rate limits.
@@ -88,9 +90,8 @@ class RateLimiter:
             return
         bucket, limit = rule
 
-        # Determine client IP
-        client = scope.get("client")
-        ip = client[0] if client else "unknown"
+        # Real client behind nginx/Cloudflare (otherwise every user shares the proxy's address)
+        ip = client_ip(scope)
 
         # Separate counters per bucket: page loads must not use up the chat allowance
         allowed, retry_after = self._is_allowed(f"{ip}|{bucket}", limit)

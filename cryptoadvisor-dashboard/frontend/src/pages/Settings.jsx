@@ -3,6 +3,61 @@ import { api } from '../api/client'
 import PasswordInput from '../components/PasswordInput'
 import Card from '../components/Card'
 import LoadingSpinner from '../components/LoadingSpinner'
+import { useAuth } from '../App'
+
+// Permanent account deletion: password + typing DELETE, then sign out
+function DeleteAccount() {
+  const { logout } = useAuth()
+  const [open, setOpen] = useState(false)
+  const [password, setPassword] = useState('')
+  const [confirm, setConfirm] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  const submit = async (e) => {
+    e.preventDefault()
+    setBusy(true)
+    setError('')
+    try {
+      await api.post('/api/auth/delete-account', { password, confirm })
+      logout()
+      window.location.href = '/login'
+    } catch (err) {
+      setError(err.message)
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Card title="Delete account" className="mt-1">
+      <p className="muted" style={{ marginTop: 0 }}>
+        Permanently deletes your account and all your data: trades, alerts, watchlist, settings, AI memory and
+        phone-alert setup. This can't be undone. You can <a href="/data-export">export your data</a> first.
+      </p>
+      {!open ? (
+        <button type="button" className="btn btn-danger" onClick={() => setOpen(true)}>Delete my account…</button>
+      ) : (
+        <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', maxWidth: 400 }}>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label htmlFor="del-password">Your password</label>
+            <PasswordInput id="del-password" value={password} onChange={(e) => setPassword(e.target.value)} required autoComplete="current-password" />
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label htmlFor="del-confirm">Type DELETE to confirm</label>
+            <input id="del-confirm" className="form-input" value={confirm} onChange={(e) => setConfirm(e.target.value)} required autoComplete="off" />
+          </div>
+          {error && <p className="negative" style={{ margin: 0 }}>{error}</p>}
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <button type="submit" className="btn btn-danger" disabled={busy || confirm !== 'DELETE' || !password}>
+              {busy ? 'Deleting…' : 'Permanently delete account'}
+            </button>
+            <button type="button" className="btn btn-ghost" onClick={() => { setOpen(false); setPassword(''); setConfirm('') }}>Cancel</button>
+          </div>
+        </form>
+      )}
+    </Card>
+  )
+}
 
 export default function Settings() {
   const [settings, setSettings] = useState(null)
@@ -478,6 +533,8 @@ export default function Settings() {
           {savingNotif ? 'Saving...' : 'Save Notification Settings'}
         </button>
       </Card>
+
+      <DeleteAccount />
     </div>
   )
 }

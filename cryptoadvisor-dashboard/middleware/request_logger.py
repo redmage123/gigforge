@@ -7,6 +7,7 @@ import time
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
+from middleware.client_ip import client_ip
 
 logger = logging.getLogger("assetadvisor.access")
 
@@ -34,7 +35,7 @@ class RequestLogger(BaseHTTPMiddleware):
                     "status": response.status_code,
                     "duration_ms": duration_ms,
                     "user": user.get("sub", "anonymous") if isinstance(user, dict) else "anonymous",
-                    "ip": request.client.host if request.client else "unknown",
+                    "ip": client_ip(request.scope),
                 }
             )
         )

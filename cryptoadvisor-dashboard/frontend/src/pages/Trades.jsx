@@ -1,88 +1,97 @@
-import { useState } from 'react';
-import { useFetch } from '../hooks/useFetch';
-import { api } from '../api/client';
-import Card from '../components/Card';
-import StatCard from '../components/StatCard';
-import LoadingSpinner from '../components/LoadingSpinner';
-import AiAnalysisButton from '../components/AiAnalysisButton';
-import AiInsightPanel from '../components/AiInsightPanel';
+import { useEffect, useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
+import { useFetch } from '../hooks/useFetch'
+import { api } from '../api/client'
+import Card from '../components/Card'
+import StatCard from '../components/StatCard'
+import LoadingSpinner from '../components/LoadingSpinner'
+import AiAnalysisButton from '../components/AiAnalysisButton'
+import AiInsightPanel from '../components/AiInsightPanel'
+import InstrumentPicker from '../components/InstrumentPicker'
+import { ClassBadge, price as fmtPrice, usd, tone } from '../components/assetClass'
+
+const today = () => new Date().toISOString().split('T')[0]
 
 export default function Trades() {
-  const { data, loading, refetch } = useFetch('/api/trades/');
-  const [coin, setCoin] = useState('bitcoin');
-  const [type, setType] = useState('buy');
-  const [amount, setAmount] = useState('');
-  const [price, setPrice] = useState('');
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-  const [aiInsight, setAiInsight] = useState(null);
-  const [aiInsightLoading, setAiInsightLoading] = useState(false);
+  const { data, loading, refetch } = useFetch('/api/trades/')
+  const { data: pf, refetch: refetchPf } = useFetch('/api/trades/portfolio')
+  const [params] = useSearchParams()
+  const [inst, setInst] = useState(null)
+  const [side, setSide] = useState('buy')
+  const [quantity, setQuantity] = useState('')
+  const [tradePrice, setTradePrice] = useState('')
+  const [fee, setFee] = useState('')
+  const [date, setDate] = useState(today())
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+  const [aiInsight, setAiInsight] = useState(null)
+  const [aiInsightLoading, setAiInsightLoading] = useState(false)
 
-  // The API stores coin_id/side/quantity; this page renders coin/type/amount
-  const trades = (data ? (Array.isArray(data) ? data : data.trades || []) : []).map((t) => ({
-    ...t, coin: t.coin ?? t.coin_id, type: t.type ?? t.side, amount: t.amount ?? t.quantity,
-  }));
-  const totalPnl = trades.reduce((sum, t) => sum + (t.pnl || t.profit_loss || 0), 0);
-  const totalBuys = trades.filter((t) => t.type === 'buy').length;
-  const totalSells = trades.filter((t) => t.type === 'sell').length;
+  // "Log trade" links from an instrument page arrive as /trades?instrument=stock:AAPL
+  useEffect(() => {
+    const id = params.get('instrument')
+    if (id && !inst) api.get(`/api/instruments/${encodeURIComponent(id)}`).then(setInst).catch(() => {})
+  }, [params])
+
+  const trades = Array.isArray(data) ? data : []
+  const totals = pf?.totals
+
+  const useMarketPrice = async () => {
+    if (!inst) return
+    try {
+      const res = await api.get(`/api/instruments/quotes?ids=${encodeURIComponent(inst.id)}`)
+      const q = res.quotes?.[inst.id]
+      if (q) setTradePrice(String(q.price))
+      else setError(`No live price for ${inst.symbol} right now`)
+    } catch (err) {
+      setError(err.message)
+    }
+  }
 
   const addTrade = async (e) => {
-    e.preventDefault();
-    setSaving(true);
-    setError('');
+    e.preventDefault()
+    if (!inst) { setError('Pick an instrument first'); return }
+    setSaving(true)
+    setError('')
+    setNotice('')
     try {
-      await api.post('/api/trades/', { coin_id: coin, side: type, quantity: parseFloat(amount), price: parseFloat(price), date });
-      setAmount('');
-      setPrice('');
-      refetch();
+      await api.post('/api/trades/', {
+        instrument_id: inst.id, side, quantity: parseFloat(quantity), price: parseFloat(tradePrice),
+        fee: fee ? parseFloat(fee) : 0, date,
+      })
+      setNotice(`Logged: ${side} ${quantity} ${inst.symbol} @ ${tradePrice}`)
+      setQuantity('')
+      setTradePrice('')
+      setFee('')
+      refetch()
+      refetchPf()
     } catch (err) {
-      setError(err.message);
+      setError(err.message)
     } finally {
-      setSaving(false);
+      setSaving(false)
     }
-  };
+  }
 
-  const inputStyle = {
-    padding: '0.6rem 1rem',
-    background: '#12121f',
-    border: '1px solid #2a2a3d',
-    borderRadius: 8,
-    color: '#e0e0e0',
-    fontSize: '0.95rem',
-    width: '100%',
-    boxSizing: 'border-box',
-  };
+  const deleteTrade = async (t) => {
+    try {
+      await api.del(`/api/trades/${t.id}`)
+      refetch()
+      refetchPf()
+    } catch (err) {
+      setError(err.message)
+    }
+  }
 
-  const btnStyle = {
-    padding: '0.6rem 1.5rem',
-    background: '#646cff',
-    color: '#fff',
-    border: 'none',
-    borderRadius: 8,
-    cursor: 'pointer',
-    fontWeight: 600,
-  };
-
-  const cellStyle = { padding: '0.75rem', borderBottom: '1px solid #1a1a2e' };
-  const headStyle = { ...cellStyle, color: '#888', textAlign: 'left', fontSize: '0.85rem', borderBottom: '1px solid #2a2a3d' };
+  const futures = inst && inst.multiplier && inst.multiplier !== 1
+  const unit = inst?.asset_class === 'stock' || inst?.asset_class === 'etf' ? 'shares' : futures ? 'contracts' : 'units'
 
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
-        <h2 style={{ color: '#e0e0e0', margin: 0 }}>Trade Journal</h2>
-        <AiAnalysisButton
-          endpoint="/api/ai/trades/analyze"
-          body={{}}
-          label="Analyze My Trades"
-          onResult={(text) => setAiInsight(text)}
-        />
-        <AiAnalysisButton
-          endpoint="/api/ai/trades/suggest"
-          body={{}}
-          label="Get Trade Suggestions"
-          onResult={(text) => setAiInsight(text)}
-        />
+        <h2 style={{ margin: 0 }}>Trade Journal</h2>
+        <AiAnalysisButton endpoint="/api/ai/trades/analyze" body={{}} label="Analyze My Trades" onResult={(text) => setAiInsight(text)} />
+        <AiAnalysisButton endpoint="/api/ai/trades/suggest" body={{}} label="Get Trade Suggestions" onResult={(text) => setAiInsight(text)} />
       </div>
 
       <AiInsightPanel
@@ -90,94 +99,110 @@ export default function Trades() {
         content={aiInsight}
         loading={aiInsightLoading}
         onRefresh={() => {
-          setAiInsightLoading(true);
+          setAiInsightLoading(true)
           api.post('/api/ai/trades/analyze', {})
             .then((res) => setAiInsight(typeof res === 'string' ? res : res.analysis || res.result || res.content || JSON.stringify(res, null, 2)))
             .catch(() => {})
-            .finally(() => setAiInsightLoading(false));
+            .finally(() => setAiInsightLoading(false))
         }}
         onClose={() => setAiInsight(null)}
       />
 
-      <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', marginBottom: '1.5rem' }}>
-        <StatCard label="Total P&L" value={`${totalPnl >= 0 ? '+' : ''}$${totalPnl.toLocaleString()}`} color={totalPnl >= 0 ? '#4ade80' : '#f87171'} />
-        <StatCard label="Buy Trades" value={totalBuys} />
-        <StatCard label="Sell Trades" value={totalSells} />
-        <StatCard label="Total Trades" value={trades.length} />
+      <div className="grid grid-4" style={{ marginBottom: '1rem' }}>
+        <StatCard value={usd(totals?.total_pnl, { sign: true })} label="Total P&L" />
+        <StatCard value={usd(totals?.unrealized_pnl, { sign: true })} label="Unrealized" />
+        <StatCard value={usd(totals?.realized_pnl, { sign: true })} label="Realized (after fees)" />
+        <StatCard value={String(trades.length)} label="Trades logged" />
       </div>
 
-      <Card title="Add Trade" style={{ marginBottom: '1.5rem' }}>
-        <form onSubmit={addTrade} style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
-          <div>
-            <label style={{ color: '#888', fontSize: '0.8rem', display: 'block', marginBottom: 4 }}>Coin</label>
-            <select value={coin} onChange={(e) => setCoin(e.target.value)} style={inputStyle}>
-              {['bitcoin', 'ethereum', 'solana', 'cardano', 'polkadot', 'dogecoin'].map((c) => (
-                <option key={c} value={c}>{c.replace(/\b\w/g, (l) => l.toUpperCase())}</option>
-              ))}
-            </select>
+      <Card title="Add Trade">
+        <form onSubmit={addTrade}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', alignItems: 'end' }}>
+            <div className="form-group" style={{ gridColumn: '1 / -1', marginBottom: 0 }}>
+              <label htmlFor="trade-instrument">Instrument</label>
+              <InstrumentPicker id="trade-instrument" value={inst} onChange={setInst} />
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label htmlFor="trade-side">Side</label>
+              <select id="trade-side" className="input" value={side} onChange={(e) => setSide(e.target.value)}>
+                <option value="buy">Buy (long, or cover a short)</option>
+                <option value="sell">Sell (close a long, or go short)</option>
+              </select>
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label htmlFor="trade-qty">Quantity ({unit})</label>
+              <input id="trade-qty" className="input" type="number" inputMode="decimal" step="any" min="0" required
+                value={quantity} onChange={(e) => setQuantity(e.target.value)} />
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label htmlFor="trade-price">Price ($)</label>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <input id="trade-price" className="input" type="number" inputMode="decimal" step="any" min="0" required
+                  value={tradePrice} onChange={(e) => setTradePrice(e.target.value)} style={{ flex: 1, minWidth: 0 }} />
+                <button type="button" className="btn btn-sm btn-secondary" onClick={useMarketPrice} disabled={!inst}>Market</button>
+              </div>
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label htmlFor="trade-fee">Fee ($)</label>
+              <input id="trade-fee" className="input" type="number" inputMode="decimal" step="any" min="0"
+                value={fee} onChange={(e) => setFee(e.target.value)} />
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label htmlFor="trade-date">Date</label>
+              <input id="trade-date" className="input" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            </div>
+            <button type="submit" className="btn" disabled={saving || !inst}>{saving ? 'Saving…' : 'Add Trade'}</button>
           </div>
-          <div>
-            <label style={{ color: '#888', fontSize: '0.8rem', display: 'block', marginBottom: 4 }}>Type</label>
-            <select value={type} onChange={(e) => setType(e.target.value)} style={inputStyle}>
-              <option value="buy">Buy</option>
-              <option value="sell">Sell</option>
-            </select>
-          </div>
-          <div>
-            <label style={{ color: '#888', fontSize: '0.8rem', display: 'block', marginBottom: 4 }}>Amount</label>
-            <input type="number" step="any" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.5" style={inputStyle} required />
-          </div>
-          <div>
-            <label style={{ color: '#888', fontSize: '0.8rem', display: 'block', marginBottom: 4 }}>Price ($)</label>
-            <input type="number" step="any" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="50000" style={inputStyle} required />
-          </div>
-          <div>
-            <label style={{ color: '#888', fontSize: '0.8rem', display: 'block', marginBottom: 4 }}>Date</label>
-            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={inputStyle} required />
-          </div>
-          <button type="submit" disabled={saving} style={btnStyle}>{saving ? 'Adding...' : 'Add Trade'}</button>
+          {futures && (
+            <p className="muted" style={{ fontSize: '0.8rem', margin: '0.5rem 0 0' }}>
+              {inst.name} futures: P&amp;L is ${inst.multiplier.toLocaleString()} per contract for each 1.0 move in price.
+            </p>
+          )}
         </form>
-        {error && <p style={{ color: '#f87171', marginTop: '0.75rem' }}>{error}</p>}
+        {error && <p className="negative" style={{ marginTop: '0.75rem' }}>{error}</p>}
+        {notice && <p className="positive" style={{ marginTop: '0.75rem' }}>{notice}</p>}
+        <p className="muted" style={{ fontSize: '0.8rem', marginBottom: 0 }}>
+          Many trades? <Link to="/csv-import">Import a CSV</Link> from Binance, Coinbase, Kraken, or any broker in the generic format.
+        </p>
       </Card>
 
-      <Card title="Trade History">
-        {loading ? <LoadingSpinner /> : trades.length > 0 ? (
+      <Card title="Trade History" className="mt-1">
+        {loading ? <LoadingSpinner /> : trades.length === 0 ? (
+          <p className="muted">No trades recorded yet.</p>
+        ) : (
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <table className="data-table">
               <thead>
-                <tr>
-                  {['Date', 'Coin', 'Type', 'Amount', 'Price', 'Total', 'P&L'].map((h) => (
-                    <th key={h} style={headStyle}>{h}</th>
-                  ))}
-                </tr>
+                <tr>{['Date', 'Instrument', 'Side', 'Quantity', 'Price', 'Value', 'Fee', ''].map((h) => <th key={h}>{h}</th>)}</tr>
               </thead>
               <tbody>
-                {trades.map((t, i) => (
-                  <tr key={t.id || i}>
-                    <td style={{ ...cellStyle, color: '#aaa' }}>{t.date || '--'}</td>
-                    <td style={{ ...cellStyle, color: '#e0e0e0', fontWeight: 600 }}>{(t.coin || '').replace(/\b\w/g, (l) => l.toUpperCase())}</td>
-                    <td style={cellStyle}>
-                      <span style={{
-                        color: '#fff', fontWeight: 600, fontSize: '0.8rem',
-                        background: t.type === 'buy' ? '#166534' : '#7f1d1d',
-                        padding: '2px 8px', borderRadius: 4,
-                      }}>
-                        {(t.type || '').toUpperCase()}
-                      </span>
+                {trades.map((t) => (
+                  <tr key={t.id}>
+                    <td className="muted" style={{ whiteSpace: 'nowrap' }}>{String(t.date || '').slice(0, 10)}</td>
+                    <td>
+                      <Link to={`/i/${encodeURIComponent(t.instrument_id)}`} style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+                        <ClassBadge cls={t.asset_class} /> <strong>{t.symbol}</strong>
+                      </Link>
+                      <div className="muted" style={{ fontSize: '0.75rem' }}>{t.name}</div>
                     </td>
-                    <td style={{ ...cellStyle, color: '#e0e0e0' }}>{t.amount}</td>
-                    <td style={{ ...cellStyle, color: '#e0e0e0' }}>${Number(t.price || 0).toLocaleString()}</td>
-                    <td style={{ ...cellStyle, color: '#fff' }}>${(t.amount * t.price).toLocaleString()}</td>
-                    <td style={{ ...cellStyle, color: (t.pnl || t.profit_loss || 0) >= 0 ? '#4ade80' : '#f87171', fontWeight: 600 }}>
-                      {t.pnl != null || t.profit_loss != null ? `${(t.pnl || t.profit_loss) >= 0 ? '+' : ''}$${Number(t.pnl || t.profit_loss).toLocaleString()}` : '--'}
-                    </td>
+                    <td><span className={`badge ${t.side === 'buy' ? 'badge-green' : 'badge-red'}`}>{t.side.toUpperCase()}</span></td>
+                    <td>{t.quantity}</td>
+                    <td>{fmtPrice(t.price)}</td>
+                    <td>{usd(t.quantity * t.price * (t.multiplier || 1))}</td>
+                    <td className="muted">{t.fee ? usd(t.fee) : '--'}</td>
+                    <td><button type="button" className="btn btn-sm btn-ghost" onClick={() => deleteTrade(t)} aria-label={`Delete ${t.side} ${t.symbol} trade`}>Delete</button></td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-        ) : <p style={{ color: '#888' }}>No trades recorded yet.</p>}
+        )}
       </Card>
+      {totals && totals.unpriced > 0 && (
+        <p className={`muted ${tone(-1)}`} style={{ fontSize: '0.8rem' }}>
+          {totals.unpriced} open position(s) have no live price right now; their unrealized P&amp;L is left out of the totals.
+        </p>
+      )}
     </div>
-  );
+  )
 }

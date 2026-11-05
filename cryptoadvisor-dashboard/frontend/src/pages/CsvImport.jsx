@@ -25,7 +25,7 @@ const btnStyle = {
 const cellStyle = { padding: '0.75rem', borderBottom: '1px solid #1a1a2e' };
 const headStyle = { ...cellStyle, color: '#888', textAlign: 'left', fontSize: '0.85rem', borderBottom: '1px solid #2a2a3d' };
 
-const EXCHANGES = ['Binance', 'Coinbase', 'Kraken'];
+const EXCHANGES = ['Binance', 'Coinbase', 'Kraken', 'Generic'];
 
 export default function CsvImport() {
   const [exchange, setExchange] = useState('Binance');
@@ -93,16 +93,27 @@ export default function CsvImport() {
       {error && <div style={{ color: '#f87171', marginBottom: '1rem', padding: '0.75rem', background: '#3a1e1e', borderRadius: 8 }}>{error}</div>}
 
       <Card title="Import Trades">
+        {exchange === 'Generic' ? (
+          <p className="muted" style={{ fontSize: '0.85rem', marginTop: 0 }}>
+            Any broker or asset class. One row per trade with the columns <code>date, symbol, side, quantity, price</code>,
+            optionally <code>fee</code> and <code>asset_class</code> (stock, etf, crypto, commodity, bond). Without an
+            asset class, a symbol shared by several (BTC is a coin and an ETF) is read as a stock, then ETF, then crypto.
+            Instead of symbol you can give <code>instrument</code>, e.g. <code>commodity:GC</code>. Side accepts buy/sell or long/short.
+          </p>
+        ) : (
+          <p className="muted" style={{ fontSize: '0.85rem', marginTop: 0 }}>Upload the trade-history export from {exchange} with its original column headers.</p>
+        )}
         <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
           <div>
-            <label style={{ color: '#888', fontSize: '0.85rem', display: 'block', marginBottom: 4 }}>Exchange</label>
-            <select value={exchange} onChange={(e) => setExchange(e.target.value)} style={selectStyle}>
+            <label htmlFor="csv-format" style={{ color: '#888', fontSize: '0.85rem', display: 'block', marginBottom: 4 }}>Format</label>
+            <select id="csv-format" value={exchange} onChange={(e) => setExchange(e.target.value)} style={selectStyle}>
               {EXCHANGES.map((e) => <option key={e} value={e}>{e}</option>)}
             </select>
           </div>
           <div>
-            <label style={{ color: '#888', fontSize: '0.85rem', display: 'block', marginBottom: 4 }}>CSV File</label>
+            <label htmlFor="csv-file" style={{ color: '#888', fontSize: '0.85rem', display: 'block', marginBottom: 4 }}>CSV File</label>
             <input
+              id="csv-file"
               type="file"
               accept=".csv"
               onChange={handleFileChange}

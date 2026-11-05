@@ -2,47 +2,47 @@
 
 import numpy as np
 import pandas as pd
-from services.coingecko import get_market_chart
+from services import market
 from services.trades import calculate_pnl
+
+BENCHMARKS = {"btc": "crypto:BTC", "spx": "index:SPX"}
+
+
+async def _daily_returns(instrument_id: str, days: int) -> pd.Series | None:
+    """Daily close-to-close returns indexed by UTC date (any asset class)."""
+    try:
+        rows = await market.candles(instrument_id, "1d", days + 1)
+    except Exception:  # noqa: BLE001 — a missing series just drops out of the analysis
+        return None
+    if len(rows) < 3:
+        return None
+    s = pd.Series([c.close for c in rows], index=pd.to_datetime([c.open_time for c in rows], unit="ms").normalize())
+    return s[~s.index.duplicated(keep="last")].pct_change().dropna()
 
 
 async def calculate_risk_metrics(username: str, days: int = 90) -> dict:
     """Calculate risk metrics for the user's portfolio."""
-    pnl = await calculate_pnl(username)
+    pnl = [p for p in await calculate_pnl(username) if p.get("market_value") is not None]
     if not pnl:
-        return {"error": "No positions to analyze"}
+        return {"error": "No priced positions to analyze"}
 
-    # Get weights from current values
-    total_value = sum(p["current_value"] or 0 for p in pnl)
-    if total_value == 0:
+    # Weights by exposure; a short position contributes negatively
+    gross = sum(abs(p["market_value"]) for p in pnl)
+    total_value = sum(p["market_value"] for p in pnl)
+    if gross == 0:
         return {"error": "Portfolio value is zero"}
+    weights = {p["instrument_id"]: p["market_value"] / gross for p in pnl}
 
-    weights = {p["coin_id"]: (p["current_value"] or 0) / total_value for p in pnl}
-
-    # Fetch price histories
-    all_returns = {}
-    for coin_id in weights:
-        try:
-            data = await get_market_chart(coin_id, days)
-            prices = [p[1] for p in data.get("prices", [])]
-            if len(prices) > 1:
-                returns = pd.Series(prices).pct_change().dropna()
-                all_returns[coin_id] = returns
-        except Exception:
-            continue
-
-    if not all_returns:
+    series = {iid: await _daily_returns(iid, days) for iid in weights}
+    series = {k: v for k, v in series.items() if v is not None}
+    if not series:
         return {"error": "Could not fetch price data"}
 
-    # Align all return series to same length
-    min_len = min(len(r) for r in all_returns.values())
-    aligned = {k: v.iloc[:min_len].values for k, v in all_returns.items()}
-
-    # Calculate weighted portfolio returns
-    portfolio_returns = np.zeros(min_len)
-    for coin_id, returns in aligned.items():
-        w = weights.get(coin_id, 0)
-        portfolio_returns += w * returns
+    # Align on dates every series has (stocks skip weekends, crypto doesn't)
+    frame = pd.DataFrame(series).dropna()
+    if len(frame) < 5:
+        return {"error": "Not enough overlapping price history"}
+    portfolio_returns = sum(frame[iid].values * weights[iid] for iid in frame.columns)
 
     # Sharpe Ratio (annualized, risk-free rate ~4.5%)
     risk_free_daily = 0.045 / 365
@@ -60,13 +60,14 @@ async def calculate_risk_metrics(username: str, days: int = 90) -> dict:
     # Volatility (annualized)
     volatility = float(np.std(portfolio_returns) * np.sqrt(365)) * 100
 
-    # Beta vs BTC
-    beta = 0
-    if "bitcoin" in aligned:
-        btc_returns = aligned["bitcoin"]
-        cov = np.cov(portfolio_returns, btc_returns)
-        if cov[1, 1] > 0:
-            beta = float(cov[0, 1] / cov[1, 1])
+    # Beta vs Bitcoin and vs the S&P 500, over the same dates
+    betas = {}
+    for key, bench_id in BENCHMARKS.items():
+        bench = await _daily_returns(bench_id, days)
+        joined = pd.DataFrame({"p": pd.Series(portfolio_returns, index=frame.index), "b": bench}).dropna() if bench is not None else None
+        if joined is not None and len(joined) > 5 and joined["b"].var() > 0:
+            betas[key] = float(joined["p"].cov(joined["b"]) / joined["b"].var())
+    beta = betas.get("btc", 0.0)
 
     # Value at Risk (95%)
     var_95 = float(np.percentile(portfolio_returns, 5)) * total_value
@@ -76,6 +77,7 @@ async def calculate_risk_metrics(username: str, days: int = 90) -> dict:
         "max_drawdown_pct": round(max_drawdown, 2),
         "volatility_annual_pct": round(volatility, 2),
         "beta_vs_btc": round(beta, 3),
+        "beta_vs_sp500": round(betas.get("spx", 0.0), 3),
         "var_95_usd": round(var_95, 2),
         "period_days": days,
         "portfolio_value": round(total_value, 2),

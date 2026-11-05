@@ -44,6 +44,7 @@ const DataExport = lazy(() => import('./pages/DataExport'))
 const Converter = lazy(() => import('./pages/Converter'))
 const ApiKeys = lazy(() => import('./pages/ApiKeys'))
 const CoinDetail = lazy(() => import('./pages/CoinDetail'))
+const InstrumentDetail = lazy(() => import('./pages/InstrumentDetail'))
 const Memory = lazy(() => import('./pages/Memory'))
 const Search = lazy(() => import('./pages/Search'))
 
@@ -150,6 +151,7 @@ function App() {
               <Route path="memory" element={<Memory />} />
               <Route path="search" element={<Search />} />
               <Route path="coin/:coinId" element={<CoinDetail />} />
+              <Route path="i/:instrumentId" element={<InstrumentDetail />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>
           </Routes>

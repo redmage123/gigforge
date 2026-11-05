@@ -43,7 +43,7 @@ export function useWalletConnect() {
         rpcMap,
         showQrModal: true,
         metadata: {
-          name: 'CryptoAdvisor Dashboard',
+          name: 'AssetAdvisor',
           description: 'AI-powered crypto portfolio tracker',
           url: window.location.origin,
           icons: [`${window.location.origin}/static/react/vite.svg`],

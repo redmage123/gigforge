@@ -96,7 +96,7 @@ async def get_phone(request: Request):
         "enabled": bool(cfg.get("enabled")),
         "ntfy_topic": cfg.get("ntfy_topic", ""),
         "ntfy_server": cfg.get("ntfy_server", "https://ntfy.sh"),
-        "suggested_topic": f"cryptoadvisor-{secrets.token_urlsafe(12).replace('-', '').replace('_', '')[:16]}",
+        "suggested_topic": f"assetadvisor-{secrets.token_urlsafe(12).replace('-', '').replace('_', '')[:16]}",
     }
 
 
@@ -116,7 +116,7 @@ async def test_phone(request: Request):
     if not cfg.get("ntfy_topic"):
         return JSONResponse({"error": "Save an ntfy topic first"}, status_code=400)
     ok = await in_play_push.send_ntfy(
-        cfg, "CryptoAdvisor test", "Phone alerts are working. In-play coins will arrive here.", "white_check_mark", "default"
+        cfg, "AssetAdvisor test", "Phone alerts are working. In-play coins will arrive here.", "white_check_mark", "default"
     )
     if not ok:
         return JSONResponse({"error": "ntfy did not accept the message"}, status_code=502)

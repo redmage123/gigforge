@@ -64,7 +64,7 @@ async def _fetch_rss_feed(source: str, url: str) -> list[dict[str, Any]]:
     articles = []
     try:
         async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
-            resp = await client.get(url, headers={"User-Agent": "CryptoAdvisor/1.0"})
+            resp = await client.get(url, headers={"User-Agent": "AssetAdvisor/1.0"})
             if resp.status_code != 200:
                 logger.warning("RSS %s returned %d", source, resp.status_code)
                 return []
@@ -112,7 +112,7 @@ async def _fetch_reddit_posts(subreddits: list[str] = None) -> list[dict[str, An
     try:
         async with httpx.AsyncClient(
             timeout=15.0,
-            headers={"User-Agent": "CryptoAdvisor/1.0"},
+            headers={"User-Agent": "AssetAdvisor/1.0"},
         ) as client:
             for sub in subreddits:
                 try:

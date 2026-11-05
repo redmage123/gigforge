@@ -56,7 +56,7 @@ async def get_reddit_sentiment(coin: str) -> dict[str, Any]:
     try:
         async with httpx.AsyncClient(
             timeout=15.0,
-            headers={"User-Agent": "CryptoAdvisor/1.0"},
+            headers={"User-Agent": "AssetAdvisor/1.0"},
         ) as client:
             for sub in subreddits:
                 try:

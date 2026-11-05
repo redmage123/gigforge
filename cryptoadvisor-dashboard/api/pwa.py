@@ -9,8 +9,8 @@ router = APIRouter()
 @router.get("/manifest.json")
 async def pwa_manifest():
     manifest = {
-        "name": "CryptoAdvisor",
-        "short_name": "CryptoAdvisor",
+        "name": "AssetAdvisor",
+        "short_name": "AssetAdvisor",
         "start_url": "/",
         "display": "standalone",
         "background_color": "#0a0e1a",
@@ -34,7 +34,7 @@ async def pwa_manifest():
 @router.get("/sw.js")
 async def service_worker():
     sw_code = """\
-const CACHE_NAME = 'cryptoadvisor-v1';
+const CACHE_NAME = 'assetadvisor-v1';
 const PRECACHE_URLS = ['/', '/static/style.css'];
 
 self.addEventListener('install', event => {

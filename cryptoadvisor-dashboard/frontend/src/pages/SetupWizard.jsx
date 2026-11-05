@@ -200,9 +200,9 @@ export default function SetupWizard() {
       setGuidance(data.guidance || '')
     } catch {
       if (step === 'api_keys') {
-        setGuidance('Configure your API keys to unlock the full power of CryptoAdvisor. AI model keys enable the copilot, market briefings, and analysis features. CoinGecko and Etherscan keys remove rate limits for faster data. All keys are optional and encrypted at rest.')
+        setGuidance('Configure your API keys to unlock the full power of AssetAdvisor. AI model keys enable the copilot, market briefings, and analysis features. CoinGecko and Etherscan keys remove rate limits for faster data. All keys are optional and encrypted at rest.')
       } else {
-        setGuidance('Welcome to CryptoAdvisor! Let me help you get set up.')
+        setGuidance('Welcome to AssetAdvisor! Let me help you get set up.')
       }
     } finally {
       setLoading(false)

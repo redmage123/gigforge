@@ -16,7 +16,7 @@ def generate_secret() -> str:
 def get_provisioning_uri(secret: str, username: str) -> str:
     """Return an otpauth:// URI suitable for QR code generation."""
     totp = pyotp.TOTP(secret)
-    return totp.provisioning_uri(name=username, issuer_name="CryptoAdvisor")
+    return totp.provisioning_uri(name=username, issuer_name="AssetAdvisor")
 
 
 def verify_totp(secret: str, code: str) -> bool:

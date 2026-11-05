@@ -57,7 +57,7 @@ function Login() {
     <div className="login-container">
       <div className="login-card">
         <h1 className="login-title">
-          {isChangePassword ? 'Change Password' : 'CryptoAdvisor'}
+          {isChangePassword ? 'Change Password' : 'AssetAdvisor'}
         </h1>
         <p className="login-subtitle">
           {isChangePassword ? 'Update your password' : 'Sign in to your dashboard'}

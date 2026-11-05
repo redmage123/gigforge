@@ -1,4 +1,4 @@
-"""Central configuration for CryptoAdvisor Dashboard."""
+"""Central configuration for AssetAdvisor."""
 
 import os
 from pathlib import Path

@@ -372,9 +372,9 @@ function Dashboard() {
                 <span className="qa-icon">{'\uD83D\uDCB0'}</span>
                 <span>Wallets</span>
               </button>
-              <button className="quick-action-btn" onClick={() => navigate('/gas')}>
-                <span className="qa-icon">{'\u26FD'}</span>
-                <span>Gas</span>
+              <button className="quick-action-btn" onClick={() => navigate('/notifications')}>
+                <span className="qa-icon">{'\uD83D\uDE80'}</span>
+                <span>In-Play</span>
               </button>
             </div>
           </Card>

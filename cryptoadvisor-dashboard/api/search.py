@@ -70,7 +70,7 @@ async def ask_with_rag(request: Request, body: AskRequest):
         )
 
         # Build prompt with context
-        prompt = f"""You are CryptoAdvisor, an AI crypto analyst. Answer the user's question using the provided context and your knowledge.
+        prompt = f"""You are AssetAdvisor, an AI markets analyst. Answer the user's question using the provided context and your knowledge.
 
 {context}
 

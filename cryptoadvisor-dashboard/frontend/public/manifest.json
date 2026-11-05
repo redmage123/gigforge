@@ -1,6 +1,6 @@
 {
-  "name": "CryptoAdvisor Dashboard",
-  "short_name": "CryptoAdvisor",
+  "name": "AssetAdvisor",
+  "short_name": "AssetAdvisor",
   "description": "AI-powered cryptocurrency portfolio dashboard",
   "start_url": "/",
   "display": "standalone",

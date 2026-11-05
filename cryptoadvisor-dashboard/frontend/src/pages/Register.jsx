@@ -51,7 +51,7 @@ export default function Register() {
   return (
     <div className="login-container">
       <div className="login-card">
-        <h1 className="login-title">CryptoAdvisor</h1>
+        <h1 className="login-title">AssetAdvisor</h1>
         <p className="login-subtitle">Create your account</p>
 
         {error && <div className="login-error">{error}</div>}

@@ -38,7 +38,7 @@ async def get_news(limit: int = 10) -> list[dict]:
                 resp = await client.get(
                     "https://www.reddit.com/r/cryptocurrency/hot.json",
                     params={"limit": limit},
-                    headers={"User-Agent": "CryptoAdvisor/1.0"},
+                    headers={"User-Agent": "AssetAdvisor/1.0"},
                 )
                 if resp.status_code == 200:
                     for post in resp.json().get("data", {}).get("children", []):

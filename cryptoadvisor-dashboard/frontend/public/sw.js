@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cryptoadvisor-v2'
+const CACHE_NAME = 'assetadvisor-v1'
 
 self.addEventListener('install', () => {
   self.skipWaiting()

@@ -11,7 +11,9 @@ logger = logging.getLogger(__name__)
 
 PHONE_NAMESPACE = "phone_alerts"
 # Where tapping a phone alert takes you
-APP_URL = os.getenv("CRYPTOADVISOR_PUBLIC_URL", "https://cryptoadvisor.ai-elevate.ai").rstrip("/") + "/notifications"
+# ASSETADVISOR_PUBLIC_URL replaces CRYPTOADVISOR_PUBLIC_URL; the old name still works
+APP_URL = (os.getenv("ASSETADVISOR_PUBLIC_URL") or os.getenv("CRYPTOADVISOR_PUBLIC_URL")
+           or "https://assetadvisor.ai-elevate.ai").rstrip("/") + "/notifications"
 
 
 def get_phone_config(username: str) -> dict:

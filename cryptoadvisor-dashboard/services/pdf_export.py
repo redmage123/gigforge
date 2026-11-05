@@ -144,7 +144,7 @@ def generate_portfolio_report(username: str) -> bytes:
 
         # ── Header ─────────────────────────────────────────────────────
         now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-        elements.append(Paragraph("CryptoAdvisor Portfolio Report", styles["title"]))
+        elements.append(Paragraph("AssetAdvisor Portfolio Report", styles["title"]))
         elements.append(Paragraph(f"User: {username}  |  Generated: {now}", styles["muted"]))
         elements.append(Spacer(1, 6 * mm))
 

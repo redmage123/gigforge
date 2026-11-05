@@ -1,4 +1,4 @@
-"""RAG (Retrieval-Augmented Generation) service for CryptoAdvisor.
+"""RAG (Retrieval-Augmented Generation) service for AssetAdvisor.
 
 Uses SQLite FTS5 for hybrid search (BM25 keyword + category filtering).
 """

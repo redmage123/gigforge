@@ -1,4 +1,4 @@
-"""CryptoAdvisor Dashboard — FastAPI backend with React SPA frontend."""
+"""AssetAdvisor (formerly CryptoAdvisor) — FastAPI backend with React SPA frontend."""
 
 import asyncio
 import os
@@ -129,7 +129,7 @@ async def lifespan(app: FastAPI):
     from services.rag import init_rag_tables, cleanup_expired
     await init_rag_tables()
     ensure_default_admin()
-    print("CryptoAdvisor Dashboard starting...")
+    print("AssetAdvisor starting...")
 
     # Register background tasks
     register_task(check_all_alerts, interval_seconds=60, name="alert_checker")
@@ -153,10 +153,10 @@ async def lifespan(app: FastAPI):
     yield
 
     cancel_all()
-    print("CryptoAdvisor Dashboard shutting down.")
+    print("AssetAdvisor shutting down.")
 
 
-app = FastAPI(title="CryptoAdvisor Dashboard", lifespan=lifespan)
+app = FastAPI(title="AssetAdvisor", lifespan=lifespan)
 
 # Middleware (outermost first — RequestLogger wraps everything)
 app.add_middleware(RequestLogger)

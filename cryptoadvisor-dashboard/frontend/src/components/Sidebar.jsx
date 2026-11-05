@@ -23,22 +23,12 @@ const navSections = [
     label: 'Portfolio',
     items: [
       { path: '/portfolio', label: 'Portfolio', icon: '\uD83D\uDCBC' },
-      { path: '/wallet', label: 'Wallet', icon: '\uD83D\uDCB0' },
       { path: '/trades', label: 'Trades', icon: '\u21C4' },
-      { path: '/onchain-pnl', label: 'On-chain P&L', icon: '\uD83D\uDCB9' },
+      { path: '/csv-import', label: 'Import Trades', icon: '\uD83D\uDCE5' },
       { path: '/backtest', label: 'Backtest', icon: '\uD83E\uDDEA' },
       { path: '/share-portfolio', label: 'Share', icon: '\uD83D\uDD17' },
-    ],
-  },
-  {
-    label: 'DeFi & NFTs',
-    items: [
-      { path: '/defi', label: 'DeFi', icon: '\uD83C\uDFE6' },
-      { path: '/staking', label: 'Staking', icon: '\uD83D\uDCE6' },
-      { path: '/nfts', label: 'NFTs', icon: '\uD83D\uDDBC' },
-      { path: '/yields', label: 'Yields', icon: '\uD83C\uDF31' },
-      { path: '/impermanent-loss', label: 'Impermanent Loss', icon: '\uD83D\uDCC9' },
-      { path: '/governance', label: 'Governance', icon: '\uD83C\uDFDB' },
+      { path: '/wallet', label: 'Crypto Wallets', icon: '\uD83D\uDCB0' },
+      { path: '/onchain-pnl', label: 'On-chain P&L', icon: '\uD83D\uDCB9' },
     ],
   },
   {
@@ -47,23 +37,9 @@ const navSections = [
       { path: '/alerts', label: 'Alerts', icon: '\uD83D\uDD14' },
       { path: '/dca', label: 'DCA Calculator', icon: '\uD83D\uDCF1' },
       { path: '/dca-plans', label: 'DCA Plans', icon: '\uD83D\uDCC5' },
-      { path: '/gas', label: 'Gas Tracker', icon: '\u26FD' },
       { path: '/tax', label: 'Tax Report', icon: '\uD83D\uDCDD' },
-      { path: '/whales', label: 'Whale Tracker', icon: '\uD83D\uDC0B' },
-      { path: '/copy-trading', label: 'Copy Trading', icon: '\uD83D\uDC65' },
-      { path: '/token-approvals', label: 'Token Approvals', icon: '\u2714' },
-      { path: '/airdrops', label: 'Airdrops', icon: '\uD83C\uDF81' },
-      { path: '/mempool', label: 'Mempool', icon: '\uD83D\uDCE1' },
-      { path: '/token-unlocks', label: 'Token Unlocks', icon: '\uD83D\uDD13' },
       { path: '/converter', label: 'Converter', icon: '\uD83D\uDCB1' },
-    ],
-  },
-  {
-    label: 'Security',
-    items: [
-      { path: '/wallet-health', label: 'Wallet Health', icon: '\uD83D\uDEE1' },
-      { path: '/rugpull', label: 'Rug Detector', icon: '\u26A0' },
-      { path: '/multisig', label: 'Multi-sig', icon: '\uD83D\uDD11' },
+      { path: '/exchanges', label: 'Exchanges', icon: '\uD83C\uDFE2' },
     ],
   },
   {
@@ -74,30 +50,9 @@ const navSections = [
       { path: '/ai-tax', label: 'Tax Optimizer', icon: '\uD83D\uDCB8' },
       { path: '/ai-portfolio', label: 'Portfolio Builder', icon: '\uD83C\uDFAF' },
       { path: '/pattern-recognition', label: 'Pattern Recognition', icon: '\uD83D\uDD0D' },
-      { path: '/regulatory', label: 'Regulatory Monitor', icon: '\uD83D\uDCDC' },
       { path: '/trading-coach', label: 'Trading Coach', icon: '\uD83C\uDF93' },
       { path: '/memory', label: 'AI Memory', icon: '\uD83E\uDDE0' },
       { path: '/search', label: 'Search', icon: '\uD83D\uDD0E' },
-    ],
-  },
-  {
-    label: 'Blockchain',
-    items: [
-      { path: '/blockchain', label: 'Blockchain', icon: '\uD83D\uDD17' },
-      { path: '/analytics', label: 'Analytics', icon: '\uD83D\uDCCA' },
-      { path: '/dev-activity', label: 'Dev Activity', icon: '\uD83D\uDC68\u200D\uD83D\uDCBB' },
-    ],
-  },
-  {
-    label: 'Exchange',
-    items: [
-      { path: '/exchanges', label: 'Exchanges', icon: '\uD83C\uDFE2' },
-    ],
-  },
-  {
-    label: 'Account',
-    items: [
-      { path: '/billing', label: 'Billing', icon: '\uD83D\uDCB3' },
     ],
   },
 ]
@@ -190,7 +145,7 @@ function Sidebar() {
 
       <nav className={`sidebar ${isOpen ? 'open' : ''}`}>
         <div className="logo">
-          <h2>CryptoAdvisor</h2>
+          <h2>AssetAdvisor</h2>
         </div>
 
         <button
@@ -295,7 +250,7 @@ function Sidebar() {
           })}
         </ul>
         <div className="sidebar-footer">
-          <span className="sidebar-brand">CryptoAdvisor v1.0</span>
+          <span className="sidebar-brand">AssetAdvisor</span>
         </div>
       </nav>
     </>

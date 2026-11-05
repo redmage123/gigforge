@@ -136,7 +136,7 @@ async def find_catalyst(client: httpx.AsyncClient, base: str, candle_date: str) 
         try:
             resp = await client.get(
                 f"https://news.google.com/rss/search?q={quote_plus(query)}&hl=en-US&gl=US&ceid=US:en",
-                headers={"User-Agent": "Mozilla/5.0 CryptoAdvisor"},
+                headers={"User-Agent": "Mozilla/5.0 AssetAdvisor"},
             )
             if resp.status_code == 200:
                 for e in feedparser.parse(resp.text).entries[:25]:

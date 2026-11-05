@@ -36,7 +36,7 @@ function TopBar({ onStartGuide }) {
   return (
     <header className="topbar">
       <div className="topbar-left">
-        <h1 className="topbar-title">CryptoAdvisor</h1>
+        <h1 className="topbar-title">AssetAdvisor</h1>
       </div>
       <div className="topbar-right" ref={menuRef}>
         <NotificationBell />

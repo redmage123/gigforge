@@ -5,6 +5,7 @@ import Card from '../components/Card'
 import LoadingSpinner from '../components/LoadingSpinner'
 import { useToast } from '../components/Toast'
 import { markInPlaySeen } from '../components/NotificationBell'
+import { ClassBadge } from '../components/assetClass'
 
 const cellStyle = { padding: '0.65rem', borderBottom: '1px solid #1a1a2e', verticalAlign: 'top' }
 const headStyle = { ...cellStyle, color: '#888', textAlign: 'left', fontSize: '0.85rem', borderBottom: '1px solid #2a2a3d' }
@@ -115,10 +116,12 @@ function InPlayList({ entries }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column' }}>
       {entries.map((e) => (
-        <div key={e.symbol} style={{ padding: '0.75rem 0', borderBottom: '1px solid #1a1a2e' }}>
+        <div key={e.instrument_id || e.symbol} style={{ padding: '0.75rem 0', borderBottom: '1px solid #1a1a2e' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
-            <span style={{ color: '#e0e0e0', fontWeight: 700 }}>
-              {e.base} <span className="muted" style={{ fontWeight: 400, fontSize: '0.8rem' }}>{e.catalyst?.coin_name}</span>
+            <span style={{ color: '#e0e0e0', fontWeight: 700, display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+              <ClassBadge cls={e.asset_class || 'crypto'} />
+              <Link to={`/i/${encodeURIComponent(e.instrument_id || `crypto:${e.base}`)}`}>{e.symbol || e.base}</Link>
+              <span className="muted" style={{ fontWeight: 400, fontSize: '0.8rem' }}>{e.name || e.catalyst?.coin_name}</span>
             </span>
             <span className="muted" style={{ fontSize: '0.8rem' }}>{timeAgo(e.triggered_at)}</span>
           </div>
@@ -142,6 +145,7 @@ const RULE_FIELDS = [
 ]
 
 const SETTING_KEYS = ['timeframe', 'volume_lookback', 'price_lookback', 'retention_days']
+const sameSet = (a = [], b = []) => a.length === b.length && a.every((x) => b.includes(x))
 
 function RulesEditor({ data, onSaved }) {
   const toast = useToast()
@@ -154,6 +158,11 @@ function RulesEditor({ data, onSaved }) {
   const [minDays, maxDays] = data.retention_range
   const dirty = RULE_FIELDS.some((f) => Number(draft[f.key]) !== data.rules[f.key])
     || SETTING_KEYS.some((k) => String(draft[k]) !== String(data.rules[k]))
+    || !sameSet(draft.universes, data.rules.universes)
+  const toggleUniverse = (u) => {
+    const cur = draft.universes || []
+    setDraft({ ...draft, universes: cur.includes(u) ? cur.filter((x) => x !== u) : [...cur, u] })
+  }
 
   // Keep the averaging periods inside what the chosen timeframe supports
   const setTimeframe = (tf) => {
@@ -173,6 +182,7 @@ function RulesEditor({ data, onSaved }) {
       body.volume_lookback = Math.round(Number(rules.volume_lookback))
       body.price_lookback = Math.round(Number(rules.price_lookback))
       body.retention_days = Math.round(Number(rules.retention_days))
+      body.universes = rules.universes && rules.universes.length ? rules.universes : ['crypto']
       const res = await api.put('/api/in-play/rules', body)
       onSaved(res)
       toast.success(res.profile_ready
@@ -193,6 +203,27 @@ function RulesEditor({ data, onSaved }) {
         Threshold changes apply to your list straight away (without re-sending old alerts) and to every new move.
         A new timeframe or averaging period first rebuilds {data.rules.retention_days} days of history, which takes a few minutes.
       </p>
+      <h4 style={{ color: '#e2e8f0', margin: '0 0 0.5rem', fontSize: '0.9rem' }}>Markets to scan</h4>
+      <fieldset style={{ border: 0, padding: 0, margin: '0 0 1rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '0.5rem' }}>
+        <legend className="sr-only">Markets to scan</legend>
+        {(data.universes || []).map((u) => (
+          <label key={u.value} htmlFor={`ip-u-${u.value}`} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: '0.85rem', color: '#cbd5e1', cursor: 'pointer' }}>
+            <input id={`ip-u-${u.value}`} type="checkbox" checked={(draft.universes || []).includes(u.value)} onChange={() => toggleUniverse(u.value)} style={{ marginTop: 3 }} />
+            <span>
+              {u.label}
+              <span className="muted" style={{ display: 'block', fontSize: '0.75rem' }}>
+                {u.count} instruments · {u.open ? 'market open' : 'market closed now'}
+              </span>
+            </span>
+          </label>
+        ))}
+      </fieldset>
+      {(draft.universes || []).some((u) => u !== 'crypto') && ['1h', '2h', '3h'].includes(draft.timeframe) && (
+        <p className="muted" style={{ fontSize: '0.8rem', marginTop: '-0.5rem' }}>
+          Stocks and ETFs trade about 6.5 hours a day, so an hourly average over 60 candles spans roughly two weeks of sessions.
+          Intraday volume is compared with the same hour of earlier sessions.
+        </p>
+      )}
       <h4 style={{ color: '#e2e8f0', margin: '0 0 0.5rem', fontSize: '0.9rem' }}>Timeframe and averages</h4>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '0.75rem', marginBottom: '1rem' }}>
         <label style={labelStyle} htmlFor="ip-timeframe">
@@ -382,7 +413,9 @@ export default function Notifications() {
             {candleName(rules.timeframe).replace(/^./, (c) => c.toUpperCase())} candle with volume &gt;{rules.volume_mult}x the average of the
             previous {rules.volume_lookback} candles and size &gt;{rules.range_mult}x the average of the previous {rules.price_lookback},
             body ≥ {rules.min_body_pct}% and opposing wick ≤ {rules.max_wick_pct}% of the candle. Kept {rules.retention_days} days, newest first.
-            {inPlay.last_scan && <> Last scan {timeAgo(inPlay.last_scan)} across {inPlay.symbols_scanned} Binance USDT pairs.</>}
+            {inPlay.last_scan && <> Last scan {timeAgo(inPlay.last_scan)}; watching {
+              (inPlay.universes || []).filter((u) => (rules.universes || ['crypto']).includes(u.value)).map((u) => `${u.count} ${u.value === 'crypto' ? 'crypto perpetuals' : u.value === 'stocks' ? 'US stocks' : u.value === 'etfs' ? 'ETFs' : 'futures'}`).join(', ')
+            }.</>}
             {!inPlay.ai_summaries && <> AI catalyst summaries are off (no API key configured).</>}
           </p>
         )}
@@ -412,10 +445,13 @@ export default function Notifications() {
                 {entries.map((e) => {
                   const bull = e.direction === 'bullish'
                   return (
-                    <tr key={e.symbol}>
+                    <tr key={e.instrument_id || e.symbol}>
                       <td style={{ ...cellStyle, color: '#e0e0e0', fontWeight: 600 }}>
-                        {e.base}
-                        {e.catalyst?.coin_name && <div className="muted" style={{ fontSize: '0.75rem', fontWeight: 400 }}>{e.catalyst.coin_name}</div>}
+                        <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+                          <ClassBadge cls={e.asset_class || 'crypto'} />
+                          <Link to={`/i/${encodeURIComponent(e.instrument_id || `crypto:${e.base}`)}`}>{e.symbol || e.base}</Link>
+                        </span>
+                        {(e.name || e.catalyst?.coin_name) && <div className="muted" style={{ fontSize: '0.75rem', fontWeight: 400 }}>{e.name || e.catalyst.coin_name}</div>}
                       </td>
                       <td style={cellStyle}>
                         <span className={`badge ${bull ? 'badge-green' : 'badge-red'}`} style={{ whiteSpace: 'nowrap' }}>{bull ? '▲ Bullish' : '▼ Bearish'}</span>

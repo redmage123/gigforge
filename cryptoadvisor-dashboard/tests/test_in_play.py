@@ -369,12 +369,14 @@ class TestProfilesAndRetention:
         with patch.object(in_play, "load_shared_data", return_value=legacy):
             got = in_play.load_candidates()
         (key, c), = got.items()
-        assert key == "1d:60:60|ABCUSDT|123000" and c["timeframe"] == "1d" and c["avg_quote_volume"] == 1_000_000
+        assert key == "1d:60:60|crypto:ABC|123000" and c["timeframe"] == "1d" and c["avg_quote_volume"] == 1_000_000
+        assert c["universe"] == "crypto" and c["asset_class"] == "crypto"
         assert c["candle_label"] == "2026-10-01"
 
     def test_old_scan_state_counts_as_daily_history_built(self):
-        assert in_play._backfilled_profiles({"backfilled": True}) == {"1d:60:60"}
-        assert in_play._backfilled_profiles({"backfilled_profiles": ["1h:24:24"]}) == {"1h:24:24"}
+        assert in_play._backfilled_profiles({"backfilled": True}) == {"1d:60:60@crypto"}
+        assert in_play._backfilled_profiles({"backfilled_profiles": ["1h:24:24"]}) == {"1h:24:24@crypto"}
+        assert in_play._backfilled_profiles({"backfilled_profiles": ["1d:60:60@stocks"]}) == {"1d:60:60@stocks"}
 
 
 class TestPushV2:
@@ -386,3 +388,80 @@ class TestPushV2:
     def test_daily_still_says_daily(self):
         e = {**_entry({"found": False, "headlines": []}), "quote_volume": 812_000}
         assert "Volume $812.0K" in format_push(e, [])[1] and "daily candle" in format_push(e, [])[1]
+
+
+# ── Asset-class universes (AssetAdvisor) ────────────────────────────────────
+
+from services.market import universes  # noqa: E402
+from services.in_play_news import instrument_names  # noqa: E402
+
+
+class TestUniverses:
+    NOW = 2_000_000_000
+
+    def test_rules_universes(self):
+        assert DEFAULT_RULES.universes == ("crypto",)
+        r = Rules.from_dict({"universes": ["crypto", "stocks", "crypto"]})
+        assert r.universes == ("crypto", "stocks") and r.builds() == {"1d:60:60@crypto", "1d:60:60@stocks"}
+        assert Rules(universes=()).validate() and Rules(universes=("forex",)).validate()
+        assert Rules(universes=("stocks", "etfs", "futures")).validate() is None
+
+    def test_lists_and_matching_respect_universes(self):
+        c = {
+            "c": {**_cand("BTC", self.NOW), "universe": "crypto", "instrument_id": "crypto:BTC"},
+            "s": {**_cand("AAPL", self.NOW), "universe": "stocks", "instrument_id": "stock:AAPL"},
+        }
+        assert rematch_user(c, "u", Rules(universes=("stocks",))) == ["s"]
+        assert [r["instrument_id"] for r in user_list(c, "u", self.NOW, universe_set=("stocks",))] == ["stock:AAPL"]
+        assert rematch_user(c, "u", Rules(universes=("crypto", "stocks"))) == ["c"]
+
+    def test_same_session_hour_volume(self):
+        # 10 sessions of 7 hourly bars; the opening hour always trades 5x the rest
+        H = 3600 * 1000
+        hist = []
+        for d in range(10):
+            for h in range(7):
+                v = 5_000_000 if h == 0 else 1_000_000
+                hist.append(Candle(d * DAY * 1000 + 13 * H + h * H, 100, 101, 99, 100.5, v))
+        slots = in_play.session_slots(hist, 3600)
+        assert slots[hist[0].open_time] == 0 and slots[hist[6].open_time] == 6 and slots[hist[7].open_time] == 0
+        slot_of = lambda c: slots.get(c.open_time, 0)  # noqa: E731
+        opening = Candle(10 * DAY * 1000 + 13 * H, 100, 108, 99.5, 107.5, 12_000_000)
+        slots[opening.open_time] = 0
+        # vs all hours the open looks like 7.5x; vs earlier opens it is only 2.4x (below the 2x floor? no: above)
+        plain = measure(opening, hist, 60, 60)
+        same = measure(opening, hist, 60, 60, slot_of)
+        assert plain.volume_ratio > 6 and 2 < same.volume_ratio < 3
+
+    def test_market_hours(self):
+        from datetime import datetime, timezone
+        ts = lambda *a: datetime(*a, tzinfo=timezone.utc).timestamp()  # noqa: E731
+        assert universes.market_open("crypto", ts(2026, 11, 7, 3))  # Saturday night
+        assert universes.market_open("stocks", ts(2026, 11, 5, 15))  # Thursday 15:00 UTC
+        assert not universes.market_open("stocks", ts(2026, 11, 5, 23))
+        assert not universes.market_open("stocks", ts(2026, 11, 7, 15))  # Saturday
+        assert not universes.market_open("futures", ts(2026, 11, 7, 12))  # Saturday
+        assert universes.market_open("futures", ts(2026, 11, 8, 23))  # Sunday evening reopen
+
+    def test_parse_sp500(self):
+        html = ('<table id="constituents"><tr><th>Symbol</th></tr><tr><td><a>MMM</a></td><td>3M</td></tr>'
+                '<tr><td>BRK.B</td></tr><tr><td>bad sym</td></tr></table>')
+        assert universes.parse_sp500(html) == ["MMM", "BRK.B"]
+
+
+class TestNewsByClass:
+    def test_company_names(self):
+        assert instrument_names("stock", "Apple Inc.", "AAPL") == {"Apple", "Apple Inc."}
+        assert "Alphabet" in instrument_names("stock", "Alphabet Inc. Class A", "GOOGL")
+        assert instrument_names("commodity", "Gold", "GC") == {"Gold"}
+        assert "Treasury" in instrument_names("bond", "10-Year T-Note", "ZN")
+
+    def test_stock_ticker_needs_market_context(self):
+        from services.in_play_news import _STOCK_CONTEXT
+        assert headline_matches("AAPL slides after weak iPhone guidance", "AAPL", set(), set(), _STOCK_CONTEXT)
+        assert not headline_matches("AAPL conference recap", "AAPL", set(), set(), _STOCK_CONTEXT)
+        assert headline_matches("Apple cuts outlook", "AAPL", {"Apple"}, set(), _STOCK_CONTEXT)
+
+    def test_stock_events_are_catalysts(self):
+        assert not is_price_action("Nvidia jumps 8% after earnings beat and raised guidance")
+        assert not is_price_action("Oil surges 5% as OPEC+ agrees deeper output cuts")

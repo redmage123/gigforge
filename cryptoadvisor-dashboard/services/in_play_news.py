@@ -1,4 +1,4 @@
-"""News catalyst lookup for in-play coins: headline search plus an optional Claude summary."""
+"""News catalyst lookup for in-play instruments (crypto, stocks, ETFs, commodities, bonds) plus an optional Claude summary."""
 
 import calendar
 import logging
@@ -37,6 +37,46 @@ _CRYPTO_CONTEXT = re.compile(
     r"airdrop\w*|listing|delist\w*|mainnet|testnet|staking|protocol|dao|nft\w*|layer[- ]?[12]|on-chain)\b",
     re.IGNORECASE,
 )
+
+# Ticker-only stock/ETF matches need market context ("AAPL" alone could be anything)
+_STOCK_CONTEXT = re.compile(
+    r"\b(stock\w*|shares?|equit\w*|earnings|revenue|guidance|outlook|quarter\w*|analyst\w*|downgrad\w*|"
+    r"upgrad\w*|price target|nyse|nasdaq|s&p|dow|ipo|dividend|buyback|ceo|cfo|sec filing|etf|fund)\b",
+    re.IGNORECASE,
+)
+_COMMODITY_CONTEXT = re.compile(
+    r"\b(price\w*|futures|ounce|barrel|bushel|opec\w*|inventor\w*|supply|demand|output|production|harvest|"
+    r"weather|drought|tariff\w*|sanction\w*|mine\w*|refiner\w*|stockpile\w*|exports?|imports?)\b",
+    re.IGNORECASE,
+)
+_RATES_CONTEXT = re.compile(
+    r"\b(treasur\w*|yields?|bonds?|fed|federal reserve|fomc|powell|rate (cut|hike)s?|inflation|cpi|pce|"
+    r"jobs report|payrolls|auction|debt ceiling|deficit)\b",
+    re.IGNORECASE,
+)
+_CONTEXT = {"crypto": _CRYPTO_CONTEXT, "stock": _STOCK_CONTEXT, "etf": _STOCK_CONTEXT,
+            "commodity": _COMMODITY_CONTEXT, "bond": _RATES_CONTEXT}
+# Google News query qualifier per class (narrows "Gold" to the metal, "Apple" to the company)
+_QUERY_HINT = {"crypto": "crypto", "stock": "stock", "etf": "ETF", "commodity": "price", "bond": "Treasury yields"}
+_COMPANY_SUFFIX = re.compile(
+    r"[,\s]+(inc\.?|incorporated|corp\.?|corporation|co\.?|company|holdings?|group|plc|ltd\.?|limited|"
+    r"n\.?v\.?|s\.?a\.?|ag|se|class [a-c]|common stock|ordinary shares|the)\b\.?",
+    re.IGNORECASE,
+)
+
+
+def instrument_names(asset_class: str, name: str | None, symbol: str) -> set[str]:
+    """Names to search for a non-crypto instrument: "Apple Inc." -> {"Apple"}; futures -> plain words."""
+    if not name:
+        return set()
+    if asset_class in ("stock", "etf"):
+        short = name
+        for _ in range(3):  # "Alphabet Inc. Class A" -> "Alphabet"
+            short = _COMPANY_SUFFIX.sub("", short).strip(" ,.")
+        return {n for n in {short, name.strip()} if len(n) >= 3}
+    if asset_class == "bond":
+        return {"Treasury", "Treasuries", "bond yields"}
+    return {name}  # commodities: "Gold", "Crude Oil WTI" ...
 
 
 async def _refresh_coin_names(client: httpx.AsyncClient) -> None:
@@ -78,15 +118,15 @@ def _name_variants(names: set[str]) -> tuple[set[str], set[str]]:
     return names, variants
 
 
-def headline_matches(text: str, base: str, names: set[str], variants: set[str]) -> bool:
-    """A full project name matches outright; tickers and weaker name variants need crypto context."""
+def headline_matches(text: str, base: str, names: set[str], variants: set[str], context: re.Pattern = _CRYPTO_CONTEXT) -> bool:
+    """A full name matches outright; tickers and weaker name variants need market context."""
     if any(re.search(rf"\b{re.escape(n)}\b", text, re.IGNORECASE) for n in names):
         return True
     if re.search(rf"\${re.escape(base)}\b", text):
         return True
     weak = any(re.search(rf"\b{re.escape(v)}\b", text, re.IGNORECASE) for v in variants)
     ticker = len(base) >= 3 and re.search(rf"(?<![A-Za-z0-9]){re.escape(base)}(?![A-Za-z0-9])", text)
-    return bool((weak or ticker) and _CRYPTO_CONTEXT.search(text))
+    return bool((weak or ticker) and context.search(text))
 
 
 # Event words that make a headline a catalyst even when it also reports the price move
@@ -94,7 +134,10 @@ _CATALYST_HINT = re.compile(
     r"\b(list(s|ed|ing)|delist\w*|partner\w*|joins?|integrat\w*|acquir\w*|acquisition|merger|launch\w*|"
     r"announc\w*|hack\w*|exploit\w*|breach|unlock\w*|airdrop\w*|burn\w*|buyback|upgrade|hard ?fork|mainnet|"
     r"proposal|vote|governance|etf|sec|lawsuit|sued|court|settle\w*|regulat\w*|ban(s|ned)?|approv\w*|"
-    r"treasury|funding|raises|invest\w*|whitepaper|roadmap|rebrand\w*|migration|halt\w*|suspend\w*|outage)\b",
+    r"treasury|funding|raises|invest\w*|whitepaper|roadmap|rebrand\w*|migration|halt\w*|suspend\w*|outage|"
+    r"earnings|results|revenue|profit|loss|guidance|outlook|forecast cut|downgrad\w*|upgrad\w*|price target|"
+    r"beat|miss(es|ed)?|fda|trial|recall|layoffs?|strike|tariff\w*|sanction\w*|opec\w*|inventor\w*|cpi|"
+    r"inflation|payrolls|jobs report|fed|fomc|rate (cut|hike)|stimulus|default|bankrupt\w*|spin-?off|split)\b",
     re.IGNORECASE,
 )
 # Price pages / converters / presale spam that Google News sometimes returns
@@ -109,8 +152,9 @@ def is_price_action(title: str) -> bool:
     return bool(_PRICE_ACTION.search(title)) and not _CATALYST_HINT.search(title)
 
 
-async def find_catalyst(client: httpx.AsyncClient, base: str, candle_date: str) -> dict:
-    """Look for news explaining a move on the daily candle opening `candle_date` (YYYY-MM-DD, UTC).
+async def find_catalyst(client: httpx.AsyncClient, base: str, candle_date: str, asset_class: str = "crypto",
+                        name: str | None = None) -> dict:
+    """Look for news explaining a move on the candle opening `candle_date` (YYYY-MM-DD, UTC).
 
     Searches the app's news feeds and Google News around that day. Headlines that merely
     report the price move are kept but labelled `price_action`; `found` is only true when
@@ -118,21 +162,27 @@ async def find_catalyst(client: httpx.AsyncClient, base: str, candle_date: str) 
     configured, Claude then reads the headlines and writes a short explanation
     (`ai_summary`), and its verdict on whether there is a real catalyst replaces `found`.
     """
-    await _refresh_coin_names(client)
-    names, variants = _name_variants(_coin_names.get(base, set()))
+    crypto = asset_class == "crypto"
+    context = _CONTEXT.get(asset_class, _STOCK_CONTEXT)
+    if crypto:
+        await _refresh_coin_names(client)
+        names, variants = _name_variants(_coin_names.get(base, set()))
+    else:
+        names, variants = instrument_names(asset_class, name, base), set()
     day_start = calendar.timegm(time.strptime(candle_date, "%Y-%m-%d"))
     lo, hi = day_start - WINDOW_BEFORE_S, day_start + WINDOW_AFTER_S
     headlines: list[dict] = []
 
-    for a in news_scanner.get_articles(limit=500):
-        if lo <= a.get("published_ts", 0) <= hi and headline_matches(f"{a.get('title', '')} {a.get('summary', '')}", base, names, variants):
+    # The app's own feeds are crypto news; other classes rely on Google News
+    for a in news_scanner.get_articles(limit=500) if crypto else []:
+        if lo <= a.get("published_ts", 0) <= hi and headline_matches(f"{a.get('title', '')} {a.get('summary', '')}", base, names, variants, context):
             headlines.append({"title": a["title"], "source": a.get("source", ""), "url": a.get("url", ""), "published_ts": a.get("published_ts")})
 
-    terms = [f'"{n}"' for n in sorted(names)] + ([f'"{base}"'] if len(base) >= 3 else [])
+    terms = [f'"{n}"' for n in sorted(names)] + ([f'"{base}"'] if len(base) >= 3 and asset_class != "bond" else [])
     if terms:
         after = time.strftime("%Y-%m-%d", time.gmtime(lo))
         before = time.strftime("%Y-%m-%d", time.gmtime(hi + 86400))  # Google's before: is exclusive
-        query = f"({' OR '.join(terms)}) crypto after:{after} before:{before}"
+        query = f"({' OR '.join(terms)}) {_QUERY_HINT.get(asset_class, '')} after:{after} before:{before}"
         try:
             resp = await client.get(
                 f"https://news.google.com/rss/search?q={quote_plus(query)}&hl=en-US&gl=US&ceid=US:en",
@@ -145,7 +195,7 @@ async def find_catalyst(client: httpx.AsyncClient, base: str, candle_date: str) 
                     # Google News titles end with " - Publisher"; drop it before matching/classifying
                     title = re.sub(rf"\s+-\s+{re.escape(source)}$", "", e.get("title", ""))
                     published = calendar.timegm(e.published_parsed) if e.get("published_parsed") else None
-                    if headline_matches(title, base, names, variants):
+                    if headline_matches(title, base, names, variants, context):
                         headlines.append({"title": title, "source": source, "url": e.get("link", ""), "published_ts": published})
         except httpx.HTTPError as exc:
             logger.warning("in_play: Google News lookup failed for %s: %s", base, exc)
@@ -161,10 +211,10 @@ async def find_catalyst(client: httpx.AsyncClient, base: str, candle_date: str) 
 
     return {
         "found": any(h["kind"] == "catalyst" for h in unique),
-        "coin_name": sorted(names, key=len)[0] if names else None,
+        "coin_name": (sorted(names, key=len)[0] if names else None) if crypto else name,
         "headlines": unique[:8],
-        "checked": f"Google News + {len(news_scanner.RSS_FEEDS)} crypto feeds, Reddit, CryptoPanic ({after} to {time.strftime('%Y-%m-%d', time.gmtime(hi))})"
-        if terms else f"{len(news_scanner.RSS_FEEDS)} crypto feeds, Reddit, CryptoPanic",
+        "checked": (f"Google News + {len(news_scanner.RSS_FEEDS)} crypto feeds, Reddit, CryptoPanic" if crypto else "Google News")
+        + (f" ({after} to {time.strftime('%Y-%m-%d', time.gmtime(hi))})" if terms else ""),
         "checked_at": time.time(),
     }
 
@@ -174,9 +224,12 @@ async def find_catalyst(client: httpx.AsyncClient, base: str, candle_date: str) 
 NO_CATALYST = "NO_CATALYST"
 
 _SYSTEM = (
-    "You explain sudden crypto price moves to a trader. You get one coin's daily-candle move and the news "
-    "headlines published around that day. Decide whether any headline describes an actual cause (listing, "
-    "delisting, partnership, hack, token unlock, governance vote, regulation, product launch, funding, etc.). "
+    "You explain sudden price moves to a trader. You get one instrument's candle move (a coin, stock, ETF, "
+    "commodity or Treasury future) and the news headlines published around that day. Decide whether any headline "
+    "describes an actual cause: for crypto a listing, delisting, partnership, hack, token unlock, governance vote "
+    "or funding; for stocks earnings, guidance, analyst rating changes, M&A, FDA or legal news; for commodities "
+    "supply, OPEC, inventories, weather or tariffs; for bonds Fed decisions and inflation or jobs data; for any "
+    "of them regulation or a product launch. "
     "Headlines that only describe the price move itself, technical analysis or predictions are not causes. "
     "If no headline describes a cause, reply with exactly NO_CATALYST and nothing else. Otherwise reply with "
     "one or two plain sentences (no markdown, under 60 words) naming the catalyst and how it relates to the move. "
@@ -236,9 +289,9 @@ async def summarize_catalyst(entry: dict, catalyst: dict) -> dict:
         f"- {h['title']} ({h['source']}, {time.strftime('%Y-%m-%d', time.gmtime(h['published_ts'])) if h.get('published_ts') else 'date unknown'})"
         for h in catalyst["headlines"]
     )
-    name = catalyst.get("coin_name") or entry["base"]
+    name = catalyst.get("coin_name") or entry.get("name") or entry["base"]
     prompt = (
-        f"Coin: {name} ({entry['base']})\n"
+        f"{entry.get('asset_class', 'crypto').capitalize()}: {name} ({entry['base']})\n"
         f"{entry.get('timeframe', '1d')} candle {entry.get('candle_label', entry['candle_date'])}: "
         f"{entry['direction']} {entry['change_pct']:+.1f}%, volume {entry['volume_ratio']:.1f}x the average of the "
         f"previous {entry.get('volume_lookback', 60)} candles and range {entry['range_ratio']:.1f}x the average of "

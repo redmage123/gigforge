@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from services import in_play, in_play_news, in_play_push
+from services.market import registry, universes
 from services.user_data import get_username, save_user_data
 
 router = APIRouter()
@@ -32,13 +33,20 @@ class RulesBody(BaseModel):
     volume_lookback: int = in_play.DEFAULT_RULES.volume_lookback
     price_lookback: int = in_play.DEFAULT_RULES.price_lookback
     retention_days: int = in_play.DEFAULT_RULES.retention_days
+    universes: list[str] = list(in_play.DEFAULT_RULES.universes)
 
 
 def _rules_payload(username: str) -> dict:
     rules = in_play.get_rules(username)
+    state = in_play.get_scan_state()
     return {
-        "rules": asdict(rules),
-        "defaults": asdict(in_play.DEFAULT_RULES),
+        "rules": {**asdict(rules), "universes": list(rules.universes)},
+        "defaults": {**asdict(in_play.DEFAULT_RULES), "universes": list(in_play.DEFAULT_RULES.universes)},
+        "universes": [
+            {"value": k, "label": label, "count": len(universes.members(k)), "open": universes.market_open(k)}
+            for k, label in universes.UNIVERSES.items()
+        ],
+        "scanned": state.get("scanned", {}),
         "floors": {"volume_mult": in_play.BASE_VOLUME_MULT, "range_mult": in_play.BASE_RANGE_MULT},
         "timeframes": [
             {"value": tf, "bar_seconds": bar_s, "max_lookback": in_play.max_lookback(tf)}
@@ -47,13 +55,14 @@ def _rules_payload(username: str) -> dict:
         "lookback_min": in_play.LOOKBACK_MIN,
         "retention_range": [in_play.RETENTION_MIN_DAYS, in_play.RETENTION_MAX_DAYS],
         # False while the scanner is still building history for a newly chosen timeframe/averages
-        "profile_ready": in_play.profile_ready(rules.profile),
+        "profile_ready": in_play.profile_ready(rules),
         "max_entries": in_play.MAX_ENTRIES,
     }
 
 
 @router.get("/")
 async def list_in_play(request: Request):
+    await registry.ensure_loaded()
     username = get_username(request)
     state = in_play.get_scan_state()
     return {
@@ -67,6 +76,7 @@ async def list_in_play(request: Request):
 
 @router.put("/rules")
 async def save_rules(request: Request, body: RulesBody):
+    await registry.ensure_loaded()
     username = get_username(request)
     rules = in_play.Rules.from_dict(body.model_dump())
     error = rules.validate()
@@ -77,7 +87,7 @@ async def save_rules(request: Request, body: RulesBody):
         asyncio.create_task(in_play.refresh_catalysts_for(username))
     else:
         # New timeframe/averaging combination: build its history now rather than at the next scan
-        asyncio.create_task(in_play.scan_in_play(only_profiles={rules.profile}, wait=True))
+        asyncio.create_task(in_play.scan_in_play(only_profiles=rules.builds(), wait=True))
     return {"status": "saved", "entries": in_play.get_user_view(username), **_rules_payload(username)}
 
 

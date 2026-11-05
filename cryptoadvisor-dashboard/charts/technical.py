@@ -6,7 +6,33 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import plotly.graph_objects as go
-from services.coingecko import get_ohlcv, get_market_chart
+from services import market
+from services.market import registry
+
+
+async def _candles(coin: str, days: int):
+    """Daily (or hourly for short spans) candles for a CoinGecko id or an instrument id, via the market layer.
+
+    CoinGecko's free tier rate-limits this server, which left these charts failing with 502s.
+    """
+    await registry.ensure_loaded()
+    iid = coin if ":" in coin else registry.from_coingecko_id(coin)
+    if not iid:
+        raise LookupError(f"unknown coin {coin}")
+    if days <= 7:
+        return await market.candles(iid, "1h", days * 24)
+    return await market.candles(iid, "1d", days)
+
+
+async def get_ohlcv(coin: str, days: int) -> list[list]:
+    """[[ts_ms, open, high, low, close], ...] — the shape the chart code was written for."""
+    return [[c.open_time, c.open, c.high, c.low, c.close] for c in await _candles(coin, days)]
+
+
+async def get_market_chart(coin: str, days: int) -> dict:
+    """{"prices": [[ts_ms, close], ...], "total_volumes": [[ts_ms, usd], ...]}."""
+    rows = await _candles(coin, days)
+    return {"prices": [[c.open_time, c.close] for c in rows], "total_volumes": [[c.open_time, c.quote_volume] for c in rows]}
 from config import COLORS
 
 

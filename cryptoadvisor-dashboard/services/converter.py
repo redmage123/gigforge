@@ -59,10 +59,24 @@ _FIAT_CODES = ",".join(FIAT_CURRENCIES.keys())
 _CRYPTO_IDS = ",".join(c["id"] for c in CRYPTO_COINS)
 
 
+_STABLE_USD = {"tether": 1.0, "usd-coin": 1.0, "dai": 1.0}
+
+
 @cached(ttl=60)
 async def get_rates() -> dict:
-    """Fetch all crypto prices in all fiat currencies + BTC/ETH for cross-crypto conversion."""
+    """Crypto prices in every supported fiat + BTC/ETH, for conversion.
+
+    USD prices come from the market layer (Binance) and fiats from the exchange-rate service;
+    CoinGecko (rate-limited on this server) is only the fallback.
+    """
     global _stale_rates
+    try:
+        rates = await _rates_from_market()
+        if rates:
+            _stale_rates = rates
+            return rates
+    except Exception as exc:  # noqa: BLE001 — fall through to CoinGecko
+        logger.warning("market-layer converter rates failed: %s", exc)
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
             resp = await client.get(
@@ -82,6 +96,36 @@ async def get_rates() -> dict:
             logger.info("Returning stale converter rates")
             return _stale_rates
         raise
+
+
+async def _rates_from_market() -> dict:
+    import asyncio
+
+    from services import market
+    from services.currency import get_exchange_rates
+    from services.market import registry
+
+    await registry.ensure_loaded()
+    ids = {c["id"]: registry.from_coingecko_id(c["id"]) for c in CRYPTO_COINS}
+    quotes = await market.quotes([i for i in ids.values() if i])
+    usd = {cg: quotes[i].price for cg, i in ids.items() if i and i in quotes}
+    if not usd:
+        return {}
+    usd.update({k: v for k, v in _STABLE_USD.items() if any(c["id"] == k for c in CRYPTO_COINS)})
+    fx = await asyncio.to_thread(get_exchange_rates)  # USD -> currency, cached for an hour
+    btc, eth = usd.get("bitcoin"), usd.get("ethereum")
+    rates = {}
+    for coin, price in usd.items():
+        r = {"usd": price}
+        for code in FIAT_CURRENCIES:
+            if code != "usd" and fx.get(code.upper()):
+                r[code] = price * fx[code.upper()]
+        if btc:
+            r["btc"] = price / btc
+        if eth:
+            r["eth"] = price / eth
+        rates[coin] = r
+    return rates
 
 
 def convert_crypto(rates: dict, from_coin: str, to_coin: str, amount: float) -> dict | None:

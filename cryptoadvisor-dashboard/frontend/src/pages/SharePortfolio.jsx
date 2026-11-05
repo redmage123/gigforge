@@ -61,7 +61,7 @@ export default function SharePortfolio() {
     setGenerating(true);
     setError('');
     try {
-      const res = await api.post('/api/share', {});
+      const res = await api.post('/api/share/', {});
       await fetchShares();
       if (res.url || res.link) {
         // highlight the new share

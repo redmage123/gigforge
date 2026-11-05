@@ -1,4 +1,5 @@
 import { createContext, useState, useContext, useEffect, lazy, Suspense } from 'react'
+import { csrfHeader } from './api/client'
 import { Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import './App.css'
 
@@ -122,7 +123,7 @@ function App() {
     setToken(null)
     setUser(null)
     localStorage.removeItem('user')
-    fetch('/api/auth/logout', { method: 'POST', credentials: 'include' }).catch(() => {})
+    fetch('/api/auth/logout', { method: 'POST', credentials: 'include', headers: csrfHeader() }).catch(() => {})
   }
 
   return (

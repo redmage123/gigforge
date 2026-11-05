@@ -6,13 +6,23 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-from config import DATA_DIR
+import re
+import time
+import uuid
 
-TRADES_DIR = DATA_DIR / "imported_trades"
+from services.coin_ids import to_coin_id
+from services.trades import get_trades
+from services.user_data import save_user_data
+
+_NUM = re.compile(r"-?\d+(?:\.\d+)?(?:[eE]-?\d+)?")
 
 
-def _ensure_trades_dir() -> None:
-    TRADES_DIR.mkdir(parents=True, exist_ok=True)
+def _num(value) -> float:
+    """Leading number of an exchange CSV cell: "0.5ETH", "1,200.50 USDT", "0.001 BNB"."""
+    m = _NUM.search(str(value or "").replace(",", ""))
+    if not m:
+        raise ValueError(f"no number in {value!r}")
+    return float(m.group(0))
 
 
 def _normalize_trade(
@@ -25,11 +35,12 @@ def _normalize_trade(
     date: str,
     source: str,
 ) -> dict:
-    """Return a normalized trade dict."""
+    """Return a trade in the trade journal's schema (services.trades.add_trade)."""
     return {
-        "coin": coin.upper(),
-        "type": trade_type.lower(),
-        "amount": amount,
+        "coin_id": to_coin_id(coin),
+        "symbol": coin.upper(),
+        "side": trade_type.lower(),
+        "quantity": amount,
         "price": price,
         "total": total,
         "fee": fee,
@@ -62,10 +73,10 @@ async def parse_binance_csv(content: bytes) -> list[dict]:
                     break
 
             side = row.get("Side", "").lower()
-            price = float(row.get("Price", "0"))
-            executed = float(row.get("Executed", "0").replace(",", ""))
-            amount = float(row.get("Amount", "0").replace(",", ""))
-            fee = float(row.get("Fee", "0").replace(",", "").split(" ")[0])  # "0.001 BNB" -> 0.001
+            price = _num(row.get("Price", "0"))
+            executed = _num(row.get("Executed", "0").replace(",", ""))
+            amount = _num(row.get("Amount", "0").replace(",", ""))
+            fee = _num(row.get("Fee", "0").replace(",", "").split(" ")[0])  # "0.001 BNB" -> 0.001
             date_str = row.get("Date(UTC)", "")
 
             trades.append(_normalize_trade(
@@ -110,10 +121,10 @@ async def parse_coinbase_csv(content: bytes) -> list[dict]:
                 continue
 
             coin = row.get("Asset", "").strip()
-            quantity = float(row.get("Quantity Transacted", "0").replace(",", ""))
-            spot_price = float(row.get("Spot Price at Transaction", "0").replace(",", ""))
-            total = float(row.get("Total (inclusive of fees and/or spread)", row.get("Total", "0")).replace(",", ""))
-            fees = float(row.get("Fees and/or Spread", row.get("Fees", "0")).replace(",", ""))
+            quantity = _num(row.get("Quantity Transacted", "0").replace(",", ""))
+            spot_price = _num(row.get("Spot Price at Transaction", "0").replace(",", ""))
+            total = _num(row.get("Total (inclusive of fees and/or spread)", row.get("Total", "0")).replace(",", ""))
+            fees = _num(row.get("Fees and/or Spread", row.get("Fees", "0")).replace(",", ""))
             date_str = row.get("Timestamp", "")
 
             trades.append(_normalize_trade(
@@ -153,10 +164,10 @@ async def parse_kraken_csv(content: bytes) -> list[dict]:
             coin = coin.lstrip("X").lstrip("Z") or coin
 
             trade_type = row.get("type", "").lower()
-            price = float(row.get("price", "0"))
-            cost = float(row.get("cost", "0"))
-            fee = float(row.get("fee", "0"))
-            vol = float(row.get("vol", "0"))
+            price = _num(row.get("price", "0"))
+            cost = _num(row.get("cost", "0"))
+            fee = _num(row.get("fee", "0"))
+            vol = _num(row.get("vol", "0"))
             date_str = row.get("time", "")
 
             trades.append(_normalize_trade(
@@ -180,39 +191,30 @@ async def parse_kraken_csv(content: bytes) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 async def import_trades(username: str, trades: list[dict], source: str) -> dict:
-    """Save imported trades for a user. Skips duplicates based on (coin, date, amount, price).
+    """Add parsed trades to the user's trade journal, skipping duplicates and non buy/sell rows.
 
-    Returns {imported: N, duplicates_skipped: N}.
+    Returns {imported: N, duplicates_skipped: N, errors: [...]}.
     """
-    _ensure_trades_dir()
-    user_file = TRADES_DIR / f"{username}.json"
+    existing = get_trades(username)
+    if not isinstance(existing, list):
+        existing = []
 
-    existing: list[dict] = []
-    if user_file.exists():
-        try:
-            existing = json.loads(user_file.read_text())
-        except (json.JSONDecodeError, OSError):
-            existing = []
+    def key(t: dict) -> str:
+        return f"{t.get('coin_id')}|{t.get('date')}|{t.get('quantity')}|{t.get('price')}"
 
-    # Build a set of dedup keys from existing trades
-    dedup_keys: set[str] = set()
-    for t in existing:
-        key = f"{t.get('coin')}|{t.get('date')}|{t.get('amount')}|{t.get('price')}"
-        dedup_keys.add(key)
-
-    imported = 0
-    duplicates = 0
+    seen = {key(t) for t in existing}
+    imported, duplicates, errors = 0, 0, []
     for t in trades:
-        key = f"{t.get('coin')}|{t.get('date')}|{t.get('amount')}|{t.get('price')}"
-        if key in dedup_keys:
+        if t.get("side") not in ("buy", "sell") or not t.get("quantity"):
+            errors.append(f"Skipped {t.get('symbol', '?')} row on {t.get('date', '?')}: not a buy/sell trade")
+            continue
+        k = key(t)
+        if k in seen:
             duplicates += 1
             continue
-        t["source"] = source
-        t["imported_at"] = datetime.utcnow().isoformat() + "Z"
-        existing.append(t)
-        dedup_keys.add(key)
+        existing.append({**t, "id": str(uuid.uuid4())[:8], "source": source, "created_at": time.time()})
+        seen.add(k)
         imported += 1
 
-    user_file.write_text(json.dumps(existing, indent=2, default=str))
-
-    return {"imported": imported, "duplicates_skipped": duplicates}
+    save_user_data(username, "trades", existing)
+    return {"imported": imported, "duplicates_skipped": duplicates, "errors": errors[:50]}

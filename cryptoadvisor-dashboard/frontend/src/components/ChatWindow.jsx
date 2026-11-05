@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { useAuth } from '../App'
+import { api } from '../api/client'
 
 function ChatWindow() {
   const [isOpen, setIsOpen] = useState(false)
@@ -7,7 +7,6 @@ function ChatWindow() {
   const [input, setInput] = useState('')
   const [isTyping, setIsTyping] = useState(false)
   const messagesEndRef = useRef(null)
-  const { token } = useAuth()
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -22,26 +21,16 @@ function ChatWindow() {
     setIsTyping(true)
 
     try {
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({
-          message: text,
-          history: messages.slice(-8).map(m => ({ role: m.role, content: m.content })),
-        }),
+      // Shared client: sends the cookie + CSRF header the API requires for POSTs
+      const data = await api.post('/api/chat', {
+        message: text,
+        history: messages.slice(-8).map(m => ({ role: m.role, content: m.content })),
       })
-      const data = await res.json().catch(() => ({}))
-      const content = res.ok
-        ? data.response || 'No response received.'
-        : `Sorry, the assistant is unavailable right now (${data.error || data.detail || `HTTP ${res.status}`}).`
-      setMessages((prev) => [...prev, { role: 'assistant', content }])
-    } catch {
+      setMessages((prev) => [...prev, { role: 'assistant', content: data.response || 'No response received.' }])
+    } catch (err) {
       setMessages((prev) => [
         ...prev,
-        { role: 'assistant', content: 'Error connecting to the server.' },
+        { role: 'assistant', content: `Sorry, the assistant is unavailable right now (${err.message}).` },
       ])
     } finally {
       setIsTyping(false)

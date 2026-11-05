@@ -140,6 +140,14 @@ const styles = {
   },
 }
 
+// The AI may answer with tickers; alerts are checked against CoinGecko ids
+const COIN_IDS = {
+  BTC: 'bitcoin', ETH: 'ethereum', SOL: 'solana', ADA: 'cardano', DOT: 'polkadot', DOGE: 'dogecoin',
+  AVAX: 'avalanche-2', LINK: 'chainlink', XRP: 'ripple', BNB: 'binancecoin', MATIC: 'matic-network',
+  LTC: 'litecoin', UNI: 'uniswap', ATOM: 'cosmos', NEAR: 'near', TRX: 'tron', SUI: 'sui',
+}
+const toCoinId = (coin) => COIN_IDS[String(coin || '').toUpperCase()] || String(coin || '').toLowerCase().trim().replace(/\s+/g, '-')
+
 export default function SmartAlertCreator() {
   const [text, setText] = useState('')
   const [parsed, setParsed] = useState(null)
@@ -169,8 +177,24 @@ export default function SmartAlertCreator() {
     setSaving(true)
     setError('')
     try {
-      await api.post('/api/alerts', { conditions: parsed, source: 'smart-alert', original_text: text })
-      setSuccess('Smart alert saved successfully!')
+      // The alert store only supports price above/below; save those, report the rest honestly
+      const conds = Array.isArray(parsed) ? parsed : parsed?.conditions || []
+      const priceConds = conds.filter((c) => c.metric === 'price' && ['gt', 'lt'].includes(c.operator) && Number(c.value) > 0)
+      const skipped = conds.length - priceConds.length
+      if (!priceConds.length) {
+        setError('Only price above/below conditions can be saved as alerts for now. Try e.g. "Alert me when BTC goes above $90,000".')
+        return
+      }
+      for (const c of priceConds) {
+        await api.post('/api/alerts/', {
+          coin_id: toCoinId(c.coin),
+          direction: c.operator === 'gt' ? 'above' : 'below',
+          target_price: Number(c.value),
+          notes: text,
+        })
+      }
+      setSuccess(`Saved ${priceConds.length} price alert${priceConds.length > 1 ? 's' : ''}.` +
+        (skipped ? ` ${skipped} condition${skipped > 1 ? 's' : ''} (volume, gas or % change) can't be saved as alerts yet.` : ''))
       setParsed(null)
       setText('')
     } catch (err) {

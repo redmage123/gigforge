@@ -21,6 +21,18 @@ const riskColors = {
   critical: { bg: '#2d0a0a', color: '#dc2626' },
 };
 
+// The API returns briefing as text or as a list of updates (empty when nothing is tracked yet)
+function briefingText(res) {
+  if (typeof res === 'string') return res;
+  const b = res?.briefing;
+  if (typeof b === 'string') return b;
+  if (Array.isArray(b)) {
+    if (!b.length) return 'No regulatory updates have been collected yet.';
+    return b.map((x) => (typeof x === 'string' ? x : x.title || x.summary || JSON.stringify(x))).join('\n\n');
+  }
+  return res?.analysis || res?.content || res?.result || JSON.stringify(res, null, 2);
+}
+
 export default function RegulatoryMonitor() {
   const [briefing, setBriefing] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -32,7 +44,7 @@ export default function RegulatoryMonitor() {
   useEffect(() => {
     api.get('/api/ai-advanced/regulatory')
       .then((res) => {
-        const text = typeof res === 'string' ? res : res.briefing || res.analysis || res.content || res.result || JSON.stringify(res, null, 2);
+        const text = briefingText(res);
         setBriefing(text);
       })
       .catch((err) => setError(err.message))
@@ -77,7 +89,7 @@ export default function RegulatoryMonitor() {
             setLoading(true);
             api.get('/api/ai-advanced/regulatory')
               .then((res) => {
-                const text = typeof res === 'string' ? res : res.briefing || res.analysis || res.content || res.result || JSON.stringify(res, null, 2);
+                const text = briefingText(res);
                 setBriefing(text);
               })
               .catch((err) => setError(err.message))

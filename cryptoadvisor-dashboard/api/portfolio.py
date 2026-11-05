@@ -24,7 +24,7 @@ async def holdings(request: Request):
             if pnl:
                 portfolio["positions"] = pnl
                 portfolio["total_value"] = round(
-                    sum(p["current_value"] for p in pnl), 2
+                    sum(p["current_value"] or 0 for p in pnl), 2
                 )
         except Exception:
             pass  # fall back to memory-only data

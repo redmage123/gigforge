@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
-import { api } from '../api/client'
+import { api, csrfHeader } from '../api/client'
 import PasswordInput from '../components/PasswordInput'
 
 const STEPS = [
@@ -183,7 +183,7 @@ export default function SetupWizard() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${token}`, ...csrfHeader(),
         },
         credentials: 'include',
         body: JSON.stringify({
@@ -266,7 +266,7 @@ export default function SetupWizard() {
     try {
       await fetch('/api/wizard/complete', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, ...csrfHeader() },
         credentials: 'include',
       })
     } catch {
@@ -279,7 +279,7 @@ export default function SetupWizard() {
     try {
       await fetch('/api/wizard/skip', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, ...csrfHeader() },
         credentials: 'include',
       })
     } catch {
@@ -337,7 +337,7 @@ export default function SetupWizard() {
       {/* AI Guidance Panel */}
       <div className="wizard-ai-guidance">
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
-          <span style={{ fontSize: '1.1rem' }}>\u2728</span>
+          <span style={{ fontSize: '1.1rem' }}>{'\u2728'}</span>
           <strong style={{ color: 'var(--secondary)', fontSize: '0.85rem' }}>AI Setup Assistant</strong>
         </div>
         {loading ? (

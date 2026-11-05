@@ -16,7 +16,7 @@ async def net_worth(request: Request):
     trade_value = 0
     try:
         pnl = await calculate_pnl(username)
-        trade_value = sum(p["current_value"] for p in pnl)
+        trade_value = sum(p["current_value"] or 0 for p in pnl)
     except Exception:
         pnl = []
 

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { api } from '../api/client';
 import Card from '../components/Card';
 import LoadingSpinner from '../components/LoadingSpinner';
 
@@ -72,14 +73,7 @@ export default function CsvImport() {
       formData.append('file', file);
       formData.append('exchange', exchange);
 
-      const res = await fetch('/api/csv-import', {
-        method: 'POST',
-        credentials: 'include',
-        body: formData,
-      });
-      if (res.status === 401) { window.location.href = '/login'; throw new Error('Unauthorized'); }
-      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-      const data = await res.json();
+      const data = await api.upload('/api/csv-import/', formData);
       setResult(data);
     } catch (err) {
       setError(err.message);

@@ -1296,7 +1296,8 @@ th {
     justify-content: center;
     box-shadow: 0 4px 12px rgba(0,212,170,0.3);
     transition: transform 0.2s, box-shadow 0.2s;
-    z-index: 1000;
+    /* Above the guided-tour overlay (10000/10001): the tour tells users they can chat anytime */
+    z-index: 10002;
 }
 
 .chat-toggle-btn:hover {
@@ -1315,7 +1316,7 @@ th {
     border-radius: var(--radius);
     display: flex;
     flex-direction: column;
-    z-index: 1000;
+    z-index: 10002;
     box-shadow: 0 8px 32px rgba(0,0,0,0.4);
 }
 

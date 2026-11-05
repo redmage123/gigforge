@@ -8,7 +8,7 @@ import AiAnalysisButton from '../components/AiAnalysisButton';
 import AiInsightPanel from '../components/AiInsightPanel';
 
 export default function Trades() {
-  const { data, loading, refetch } = useFetch('/api/trades');
+  const { data, loading, refetch } = useFetch('/api/trades/');
   const [coin, setCoin] = useState('bitcoin');
   const [type, setType] = useState('buy');
   const [amount, setAmount] = useState('');
@@ -19,7 +19,10 @@ export default function Trades() {
   const [aiInsight, setAiInsight] = useState(null);
   const [aiInsightLoading, setAiInsightLoading] = useState(false);
 
-  const trades = data ? (Array.isArray(data) ? data : data.trades || []) : [];
+  // The API stores coin_id/side/quantity; this page renders coin/type/amount
+  const trades = (data ? (Array.isArray(data) ? data : data.trades || []) : []).map((t) => ({
+    ...t, coin: t.coin ?? t.coin_id, type: t.type ?? t.side, amount: t.amount ?? t.quantity,
+  }));
   const totalPnl = trades.reduce((sum, t) => sum + (t.pnl || t.profit_loss || 0), 0);
   const totalBuys = trades.filter((t) => t.type === 'buy').length;
   const totalSells = trades.filter((t) => t.type === 'sell').length;
@@ -29,7 +32,7 @@ export default function Trades() {
     setSaving(true);
     setError('');
     try {
-      await api.post('/api/trades', { coin, type, amount: parseFloat(amount), price: parseFloat(price), date });
+      await api.post('/api/trades/', { coin_id: coin, side: type, quantity: parseFloat(amount), price: parseFloat(price), date });
       setAmount('');
       setPrice('');
       refetch();

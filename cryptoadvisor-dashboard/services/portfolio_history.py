@@ -15,8 +15,8 @@ async def take_snapshot(username: str) -> dict | None:
     if not pnl:
         return None
 
-    total = sum(p["current_value"] for p in pnl)
-    breakdown = {p["coin_id"]: p["current_value"] for p in pnl}
+    total = sum(p["current_value"] or 0 for p in pnl)
+    breakdown = {p["coin_id"]: p["current_value"] or 0 for p in pnl}
     date = time.strftime("%Y-%m-%d")
 
     history = load_user_data(username, "portfolio_history")

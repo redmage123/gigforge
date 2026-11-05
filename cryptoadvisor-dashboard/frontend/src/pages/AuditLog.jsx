@@ -45,7 +45,7 @@ export default function AuditLog() {
     if (actionFilter) params.set('action', actionFilter)
     if (dateFrom) params.set('from', dateFrom)
     if (dateTo) params.set('to', dateTo)
-    return `/api/audit-log?${params.toString()}`
+    return `/api/audit/?${params.toString()}`
   }, [actionFilter, dateFrom, dateTo])
 
   const fetchLogs = useCallback(async (pg = 1, append = false) => {

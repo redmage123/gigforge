@@ -133,7 +133,7 @@ const TOUR_STEPS = [
     title: 'AI Chat Assistant',
     body: 'Click the chat button in the bottom-right corner anytime to ask the AI questions about crypto, your portfolio, market conditions, or how to use any feature. It has full context of your data.',
     position: 'top-left',
-    target: '.chat-toggle',
+    target: '.chat-toggle-btn',
     context: 'The user is being shown the AI chat window toggle button.',
   },
   {

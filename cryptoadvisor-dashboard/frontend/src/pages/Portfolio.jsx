@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useFetch } from '../hooks/useFetch'
 import { api } from '../api/client'
 import Card from '../components/Card'
@@ -13,7 +14,11 @@ function Portfolio() {
   const [aiInsight, setAiInsight] = useState(null)
   const [aiInsightLoading, setAiInsightLoading] = useState(false)
 
-  const holdingsArr = holdings ? (Array.isArray(holdings) ? holdings : holdings.holdings || []) : []
+  // Positions come from the trade journal (/api/portfolio/holdings -> positions); legacy holdings as fallback
+  const positionsArr = (holdings?.positions || []).filter((p) => p.quantity > 0)
+  const holdingsArr = positionsArr.length ? positionsArr : holdings ? (Array.isArray(holdings) ? holdings : holdings.holdings || []) : []
+  const usd = (n, digits = 2) => `$${Number(n).toLocaleString(undefined, { maximumFractionDigits: digits })}`
+  const prettyCoin = (id) => String(id || '').replace(/-/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
   const signalsArr = signals ? (Array.isArray(signals) ? signals : signals.signals || []) : []
   const watchlistArr = watchlist ? (Array.isArray(watchlist) ? watchlist : watchlist.items || []) : []
 
@@ -55,22 +60,39 @@ function Portfolio() {
                 </tr>
               </thead>
               <tbody>
-                {holdingsArr.map((h, i) => (
-                  <tr key={i}>
-                    <td><strong>{h.coin || h.symbol}</strong></td>
-                    <td>{h.amount}</td>
-                    <td className="muted">${Number(h.avg_price || h.avgPrice || 0).toLocaleString()}</td>
-                    <td>${Number(h.current_price || h.currentPrice || 0).toLocaleString()}</td>
-                    <td><strong>${Number(h.value || h.total_value || 0).toLocaleString()}</strong></td>
-                    <td className={(h.pnl || h.profit_loss || 0) >= 0 ? 'positive' : 'negative'}>
-                      <strong>{(h.pnl || h.profit_loss || 0) >= 0 ? '+' : ''}${Number(h.pnl || h.profit_loss || 0).toLocaleString()}</strong>
-                    </td>
-                  </tr>
-                ))}
+                {holdingsArr.map((h, i) => {
+                  const pnl = h.unrealized_pnl ?? h.pnl ?? h.profit_loss
+                  const priced = h.price_available !== false
+                  return (
+                    <tr key={h.coin_id || i}>
+                      <td><strong>{prettyCoin(h.coin_id || h.coin || h.symbol)}</strong></td>
+                      <td>{h.quantity ?? h.amount}</td>
+                      <td className="muted">{usd(h.avg_buy_price ?? h.avg_price ?? 0, 6)}</td>
+                      <td>{priced ? usd(h.current_price ?? 0, 6) : <span className="muted">price unavailable</span>}</td>
+                      <td><strong>{priced ? usd(h.current_value ?? h.value ?? 0) : '--'}</strong></td>
+                      <td className={!priced ? 'muted' : (pnl || 0) >= 0 ? 'positive' : 'negative'}>
+                        {priced ? (
+                          <strong>
+                            {(pnl || 0) >= 0 ? '+' : '-'}{usd(Math.abs(pnl || 0))}
+                            {h.roi_percent != null && ` (${h.roi_percent >= 0 ? '+' : ''}${h.roi_percent}%)`}
+                          </strong>
+                        ) : '--'}
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>
-        ) : <p className="muted">No holdings found.</p>}
+        ) : (
+          <div>
+            <p className="muted">No holdings yet. Your portfolio is built from the trades you log.</p>
+            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <Link className="btn" to="/trades">Add holding (log a Buy trade)</Link>
+              <Link className="btn btn-secondary" to="/csv-import">Import trades from CSV</Link>
+            </div>
+          </div>
+        )}
       </Card>
 
       <div className="grid-row" style={{ marginTop: '1rem' }}>

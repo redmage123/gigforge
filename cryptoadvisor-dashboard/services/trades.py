@@ -3,6 +3,7 @@
 import time
 import uuid
 from services.user_data import load_user_data, save_user_data
+from services.binance_prices import get_usd_prices
 from services.coingecko import get_prices
 
 
@@ -46,41 +47,55 @@ async def calculate_pnl(username: str) -> list[dict]:
     for t in trades:
         coin = t["coin_id"]
         if coin not in positions:
-            positions[coin] = {"coin_id": coin, "total_qty": 0, "total_cost": 0, "total_fees": 0, "sells": 0}
+            positions[coin] = {"coin_id": coin, "total_qty": 0, "bought_qty": 0, "total_cost": 0,
+                               "total_fees": 0, "sells": 0}
         if t["side"] == "buy":
             positions[coin]["total_qty"] += t["quantity"]
+            positions[coin]["bought_qty"] += t["quantity"]
             positions[coin]["total_cost"] += t["price"] * t["quantity"]
             positions[coin]["total_fees"] += t.get("fee", 0)
         elif t["side"] == "sell":
             positions[coin]["total_qty"] -= t["quantity"]
             positions[coin]["sells"] += t["price"] * t["quantity"]
 
-    # Get current prices
+    # Current prices: Binance first (one cached call), CoinGecko for anything Binance lacks
     coin_ids = tuple(positions.keys())
     try:
-        prices = await get_prices(coin_ids)
+        prices = await get_usd_prices(coin_ids)
     except Exception:
         prices = {}
+    missing = tuple(c for c in coin_ids if c not in prices)
+    if missing:
+        try:
+            cg = await get_prices(missing)
+            prices.update({c: v["usd"] for c, v in cg.items() if v.get("usd")})
+        except Exception:
+            pass
 
     results = []
     for coin, pos in positions.items():
-        current_price = prices.get(coin, {}).get("usd", 0)
-        current_value = pos["total_qty"] * current_price
+        avg_buy = pos["total_cost"] / pos["bought_qty"] if pos["bought_qty"] else 0
         cost_basis = pos["total_cost"] - pos["sells"]
-        avg_buy = pos["total_cost"] / max(pos["total_qty"] + (pos["sells"] / max(current_price, 1)), 0.0001)
-        unrealized_pnl = current_value - cost_basis
-        roi = (unrealized_pnl / max(cost_basis, 0.01)) * 100 if cost_basis > 0 else 0
+        current_price = prices.get(coin)
+        if current_price:
+            current_value = pos["total_qty"] * current_price
+            unrealized_pnl = current_value - cost_basis
+            roi = (unrealized_pnl / cost_basis) * 100 if cost_basis > 0 else 0
+        else:
+            # Unknown price: say so instead of valuing the position at 0 (which read as -100%)
+            current_value = unrealized_pnl = roi = None
 
         results.append({
             "coin_id": coin,
             "quantity": round(pos["total_qty"], 8),
-            "avg_buy_price": round(avg_buy, 2),
+            "avg_buy_price": round(avg_buy, 6),
             "cost_basis": round(cost_basis, 2),
-            "current_price": round(current_price, 2),
-            "current_value": round(current_value, 2),
-            "unrealized_pnl": round(unrealized_pnl, 2),
-            "roi_percent": round(roi, 2),
+            "current_price": current_price,
+            "current_value": None if current_value is None else round(current_value, 2),
+            "unrealized_pnl": None if unrealized_pnl is None else round(unrealized_pnl, 2),
+            "roi_percent": None if roi is None else round(roi, 2),
             "total_fees": round(pos["total_fees"], 2),
+            "price_available": current_price is not None,
         })
 
-    return sorted(results, key=lambda x: abs(x["current_value"]), reverse=True)
+    return sorted(results, key=lambda x: abs(x["current_value"] or x["cost_basis"]), reverse=True)

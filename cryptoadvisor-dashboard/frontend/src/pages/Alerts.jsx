@@ -6,14 +6,17 @@ import LoadingSpinner from '../components/LoadingSpinner'
 import SmartAlertCreator from '../components/SmartAlertCreator'
 
 function Alerts() {
-  const { data, loading, refetch } = useFetch('/api/alerts')
+  const { data, loading, refetch } = useFetch('/api/alerts/')
   const [coin, setCoin] = useState('bitcoin')
   const [condition, setCondition] = useState('above')
   const [price, setPrice] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
-  const alerts = data ? (Array.isArray(data) ? data : data.alerts || []) : []
+  // The API stores coin_id/direction/target_price; this page renders coin/condition/price
+  const alerts = (data ? (Array.isArray(data) ? data : data.alerts || []) : []).map((a) => ({
+    ...a, coin: a.coin ?? a.coin_id, condition: a.condition ?? a.direction, price: a.price ?? a.target_price,
+  }))
 
   const createAlert = async (e) => {
     e.preventDefault()
@@ -21,7 +24,7 @@ function Alerts() {
     setSaving(true)
     setError('')
     try {
-      await api.post('/api/alerts', { coin, condition, price: parseFloat(price) })
+      await api.post('/api/alerts/', { coin_id: coin, direction: condition, target_price: parseFloat(price) })
       setPrice('')
       refetch()
     } catch (err) {

@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -262,20 +262,22 @@ async def chat(req: ChatRequest, request: Request):
             print(f"[chat] memory context error: {e}")
 
     # Construct the augmented prompt
+    from services.chat_prompt import SYSTEM_PROMPT, history_block
+
     prompt_parts = []
     if memory_context:
         prompt_parts.append(
-            "You are a personalized crypto advisor. Use the following knowledge "
-            "about this user to give tailored advice. Reference what you know "
-            "about them when relevant, but don't list all facts unprompted.\n\n"
-            + memory_context
+            "What you know about this user (use it to tailor advice when relevant; "
+            "don't list these facts unprompted):\n\n" + memory_context
         )
+    if req.history:
+        prompt_parts.append(history_block(req.history))
     prompt_parts.append(req.message)
     augmented_prompt = "\n\n---\n\n".join(prompt_parts)
 
     from services.claude_cli import run_claude
     try:
-        result = await run_claude(augmented_prompt)
+        result = await run_claude(augmented_prompt, system=SYSTEM_PROMPT)
         if not result.ok:
             return JSONResponse(status_code=502, content={"error": f"Claude CLI error: {result.text}"})
 
@@ -306,10 +308,28 @@ async def _extract_and_store_facts(username: str, conversation: list[dict]):
         print(f"[memory] extraction error: {e}")
 
 
+# --- Unmatched API writes ---
+# Routers mount at "/api/x/"; a POST to "/api/x" matches nothing and would 405 at the GET-only SPA
+# catch-all below. Retry the slashed path (307 keeps method, body and headers).
+@app.api_route("/api/{rest:path}", methods=["POST", "PUT", "PATCH", "DELETE"], include_in_schema=False)
+async def api_write_fallback(rest: str, request: Request):
+    if not rest.endswith("/"):
+        query = f"?{request.url.query}" if request.url.query else ""
+        return RedirectResponse(f"/api/{rest}/{query}", status_code=307)
+    return JSONResponse(status_code=404, content={"error": f"No API route /api/{rest}"})
+
+
 # --- React SPA catch-all ---
 @app.get("/{full_path:path}")
-async def serve_react(full_path: str):
+async def serve_react(full_path: str, request: Request):
     """Serve React SPA — static assets or index.html for client-side routing."""
+    # An API path got here because no route matched. Routers mount at "/api/x/", so retry the
+    # slashed form (307 keeps the method); anything else is a real 404, as JSON, never the SPA.
+    if full_path.startswith("api/"):
+        if not full_path.endswith("/"):
+            query = f"?{request.url.query}" if request.url.query else ""
+            return RedirectResponse(f"/{full_path}/{query}", status_code=307)
+        return JSONResponse(status_code=404, content={"error": f"No API route /{full_path}"})
     # Try to serve the exact file first (JS, CSS, images, etc.)
     # Resolve and confine to the build dir: "/../../etc/passwd" must never escape it
     root = REACT_DIR.resolve()

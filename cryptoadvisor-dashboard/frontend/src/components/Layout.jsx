@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { Outlet } from 'react-router-dom'
+import { Outlet, useLocation } from 'react-router-dom'
+import ErrorBoundary from './ErrorBoundary'
 import Sidebar from './Sidebar'
 import TopBar from './TopBar'
 import ChatWindow from './ChatWindow'
@@ -8,6 +9,7 @@ import { api } from '../api/client'
 
 function Layout() {
   const [guideVisible, setGuideVisible] = useState(false)
+  const location = useLocation()
 
   // Check if user has completed the guide on mount
   useEffect(() => {
@@ -25,7 +27,9 @@ function Layout() {
       <div className="main-area">
         <TopBar onStartGuide={() => setGuideVisible(true)} />
         <main className="content">
-          <Outlet />
+          <ErrorBoundary key={location.pathname}>
+            <Outlet />
+          </ErrorBoundary>
         </main>
       </div>
       <ChatWindow />

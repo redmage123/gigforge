@@ -67,7 +67,7 @@ export default function DcaPlans() {
     setCreating(true);
     setError('');
     try {
-      await api.post('/api/dca-plans', {
+      await api.post('/api/dca-plans/', {
         coin,
         exchange,
         amount: Number(amount),

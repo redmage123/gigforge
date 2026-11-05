@@ -7,7 +7,9 @@ function getCookie(name) {
 
 async function request(path, options = {}) {
   const method = options.method || 'GET';
-  const headers = { 'Content-Type': 'application/json', ...options.headers };
+  // FormData sets its own multipart Content-Type (with boundary)
+  const isForm = typeof FormData !== 'undefined' && options.body instanceof FormData;
+  const headers = { ...(isForm ? {} : { 'Content-Type': 'application/json' }), ...options.headers };
 
   // Attach CSRF token for state-changing requests
   if (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
@@ -33,15 +35,23 @@ async function request(path, options = {}) {
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.error || body.message || `${res.status} ${res.statusText}`);
+    // FastAPI validation errors arrive as {detail: [{loc, msg}, ...]}
+    const detail = Array.isArray(body.detail)
+      ? body.detail.map((d) => `${(d.loc || []).slice(-1)[0] || 'field'}: ${d.msg}`).join('; ')
+      : body.detail;
+    throw new Error(body.error || body.message || detail || `${res.status} ${res.statusText}`);
   }
 
   return res.json();
 }
+
+// For the few raw fetch() calls: the API rejects POST/PUT/DELETE without this header
+export const csrfHeader = () => ({ 'X-CSRF-Token': getCookie('csrf_token') });
 
 export const api = {
   get: (path) => request(path),
   post: (path, body) => request(path, { method: 'POST', body: JSON.stringify(body) }),
   put: (path, body) => request(path, { method: 'PUT', body: JSON.stringify(body) }),
   del: (path) => request(path, { method: 'DELETE' }),
+  upload: (path, formData) => request(path, { method: 'POST', body: formData }),
 };

@@ -17,7 +17,7 @@ class RateLimiter:
     app : ASGIApp
         The wrapped ASGI application.
     default_rpm : int
-        Default requests-per-minute for API paths (default 60).
+        Default requests-per-minute for API paths (default 240; one page view makes 6-10 calls).
     path_limits : dict[str, int] | None
         Optional per-path-prefix overrides, e.g. {"/api/chat": 10}.
     """
@@ -25,7 +25,7 @@ class RateLimiter:
     def __init__(
         self,
         app: ASGIApp,
-        default_rpm: int = 60,
+        default_rpm: int = 240,
         path_limits: dict[str, int] | None = None,
     ) -> None:
         self.app = app
@@ -36,8 +36,8 @@ class RateLimiter:
         # {ip: [timestamps]} — auto-cleaned on access
         self._hits: dict[str, list[float]] = defaultdict(list)
 
-    def _get_limit(self, path: str) -> int | None:
-        """Return the RPM limit for a path, or None if not rate-limited."""
+    def _get_limit(self, path: str) -> tuple[str, int] | None:
+        """Return (bucket, RPM limit) for a path, or None if not rate-limited."""
         # Skip static files entirely
         if path.startswith("/static/") or path.startswith("/favicon"):
             return None
@@ -51,9 +51,9 @@ class RateLimiter:
             self.path_limits.items(), key=lambda kv: -len(kv[0])
         ):
             if path.startswith(prefix):
-                return limit
+                return prefix, limit
 
-        return self.default_rpm
+        return "default", self.default_rpm
 
     def _is_allowed(self, ip: str, limit: int) -> tuple[bool, int]:
         """Check whether *ip* is under *limit* RPM.
@@ -81,17 +81,19 @@ class RateLimiter:
             return
 
         path = scope.get("path", "/")
-        limit = self._get_limit(path)
+        rule = self._get_limit(path)
 
-        if limit is None:
+        if rule is None:
             await self.app(scope, receive, send)
             return
+        bucket, limit = rule
 
         # Determine client IP
         client = scope.get("client")
         ip = client[0] if client else "unknown"
 
-        allowed, retry_after = self._is_allowed(ip, limit)
+        # Separate counters per bucket: page loads must not use up the chat allowance
+        allowed, retry_after = self._is_allowed(f"{ip}|{bucket}", limit)
         if not allowed:
             response = JSONResponse(
                 status_code=429,

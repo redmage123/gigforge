@@ -13,11 +13,11 @@ async def calculate_risk_metrics(username: str, days: int = 90) -> dict:
         return {"error": "No positions to analyze"}
 
     # Get weights from current values
-    total_value = sum(p["current_value"] for p in pnl)
+    total_value = sum(p["current_value"] or 0 for p in pnl)
     if total_value == 0:
         return {"error": "Portfolio value is zero"}
 
-    weights = {p["coin_id"]: p["current_value"] / total_value for p in pnl}
+    weights = {p["coin_id"]: (p["current_value"] or 0) / total_value for p in pnl}
 
     # Fetch price histories
     all_returns = {}

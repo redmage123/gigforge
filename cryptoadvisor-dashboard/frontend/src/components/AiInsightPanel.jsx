@@ -69,8 +69,9 @@ const styles = {
   },
 }
 
-function formatContent(text) {
-  if (!text) return null
+function formatContent(content) {
+  if (!content) return null
+  const text = typeof content === 'string' ? content : JSON.stringify(content, null, 2)
   return text.split('\n').map((line, i) => {
     const trimmed = line.trim()
     // Bullet points

@@ -38,7 +38,7 @@ export default function Exchanges() {
     setSaving(true);
     setError('');
     try {
-      await api.post('/api/exchanges', { name, label: label || name, api_key: apiKey, secret });
+      await api.post('/api/exchanges/', { name, label: label || name, api_key: apiKey, secret });
       setLabel('');
       setApiKey('');
       setSecret('');

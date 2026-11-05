@@ -465,3 +465,28 @@ class TestNewsByClass:
     def test_stock_events_are_catalysts(self):
         assert not is_price_action("Nvidia jumps 8% after earnings beat and raised guidance")
         assert not is_price_action("Oil surges 5% as OPEC+ agrees deeper output cuts")
+
+
+class TestForexInPlay:
+    def test_no_volume_candles_match_on_shape(self):
+        hist = [Candle(i * DAY * 1000, 100, 101, 99, 100.5, 0) for i in range(60)]
+        big = _candle(100, 108, 99.5, 107.5, 0)
+        assert measure(big, hist) is None  # volume rule would need volume
+        m = measure(big, hist, use_volume=False)
+        assert m and m.volume_ratio is None and matches(m, DEFAULT_RULES)
+        assert not matches(measure(_candle(100, 104, 99.5, 103.5, 0), hist, use_volume=False), DEFAULT_RULES)  # 2.25x range
+
+    def test_forex_universe_and_hours(self):
+        from datetime import datetime, timezone
+        from services.market import registry as reg
+        reg.load_for_tests([])
+        fx = universes.members("fx")
+        assert len(fx) >= 20 and all(not i.has_volume and i.sessions == "fx" for i in fx)
+        usdjpy = reg.get("fx:USDJPY")
+        assert usdjpy.currency == "JPY" and usdjpy.providers["yahoo"] == "USDJPY=X" and usdjpy.tradable
+        ts = lambda *a: datetime(*a, tzinfo=timezone.utc).timestamp()  # noqa: E731
+        assert universes.market_open("fx", ts(2026, 11, 5, 3)) and not universes.market_open("fx", ts(2026, 11, 7, 12))
+
+    def test_push_without_volume(self):
+        e = {**_entry({"found": False, "headlines": []}), "volume_ratio": None, "quote_volume": 0, "timeframe": "1h"}
+        assert "No volume data" in format_push(e, [])[1]

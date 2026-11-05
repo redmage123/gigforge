@@ -54,10 +54,16 @@ _RATES_CONTEXT = re.compile(
     r"jobs report|payrolls|auction|debt ceiling|deficit)\b",
     re.IGNORECASE,
 )
+_FX_CONTEXT = re.compile(
+    r"\b(currenc\w*|forex|fx|exchange rate|central bank|fed|ecb|boj|boe|snb|rba|pboc|rate (cut|hike)s?|"
+    r"intervention|inflation|cpi|yields?|dollar|euro|yen|sterling|pound|franc|yuan|peso|rupee|lira|rand)\b",
+    re.IGNORECASE,
+)
 _CONTEXT = {"crypto": _CRYPTO_CONTEXT, "stock": _STOCK_CONTEXT, "etf": _STOCK_CONTEXT,
-            "commodity": _COMMODITY_CONTEXT, "bond": _RATES_CONTEXT}
+            "commodity": _COMMODITY_CONTEXT, "bond": _RATES_CONTEXT, "fx": _FX_CONTEXT}
 # Google News query qualifier per class (narrows "Gold" to the metal, "Apple" to the company)
-_QUERY_HINT = {"crypto": "crypto", "stock": "stock", "etf": "ETF", "commodity": "price", "bond": "Treasury yields"}
+_QUERY_HINT = {"crypto": "crypto", "stock": "stock", "etf": "ETF", "commodity": "price", "bond": "Treasury yields",
+               "fx": "currency"}
 _COMPANY_SUFFIX = re.compile(
     r"[,\s]+(inc\.?|incorporated|corp\.?|corporation|co\.?|company|holdings?|group|plc|ltd\.?|limited|"
     r"n\.?v\.?|s\.?a\.?|ag|se|class [a-c]|common stock|ordinary shares|the)\b\.?",
@@ -76,6 +82,9 @@ def instrument_names(asset_class: str, name: str | None, symbol: str) -> set[str
         return {n for n in {short, name.strip()} if len(n) >= 3}
     if asset_class == "bond":
         return {"Treasury", "Treasuries", "bond yields"}
+    if asset_class == "fx":  # "EUR/USD (Euro / US Dollar)" -> {"EUR/USD", "EURUSD"}
+        pair = name.split(" ")[0]
+        return {pair, pair.replace("/", "")}
     return {name}  # commodities: "Gold", "Crude Oil WTI" ...
 
 
@@ -178,7 +187,7 @@ async def find_catalyst(client: httpx.AsyncClient, base: str, candle_date: str, 
         if lo <= a.get("published_ts", 0) <= hi and headline_matches(f"{a.get('title', '')} {a.get('summary', '')}", base, names, variants, context):
             headlines.append({"title": a["title"], "source": a.get("source", ""), "url": a.get("url", ""), "published_ts": a.get("published_ts")})
 
-    terms = [f'"{n}"' for n in sorted(names)] + ([f'"{base}"'] if len(base) >= 3 and asset_class != "bond" else [])
+    terms = [f'"{n}"' for n in sorted(names)] + ([f'"{base}"'] if len(base) >= 3 and asset_class not in ("bond", "fx") else [])
     if terms:
         after = time.strftime("%Y-%m-%d", time.gmtime(lo))
         before = time.strftime("%Y-%m-%d", time.gmtime(hi + 86400))  # Google's before: is exclusive
@@ -228,7 +237,8 @@ _SYSTEM = (
     "commodity or Treasury future) and the news headlines published around that day. Decide whether any headline "
     "describes an actual cause: for crypto a listing, delisting, partnership, hack, token unlock, governance vote "
     "or funding; for stocks earnings, guidance, analyst rating changes, M&A, FDA or legal news; for commodities "
-    "supply, OPEC, inventories, weather or tariffs; for bonds Fed decisions and inflation or jobs data; for any "
+    "supply, OPEC, inventories, weather or tariffs; for bonds Fed decisions and inflation or jobs data; for "
+    "currencies central-bank decisions, rate differentials, intervention and economic data; for any "
     "of them regulation or a product launch. "
     "Headlines that only describe the price move itself, technical analysis or predictions are not causes. "
     "If no headline describes a cause, reply with exactly NO_CATALYST and nothing else. Otherwise reply with "
@@ -293,9 +303,10 @@ async def summarize_catalyst(entry: dict, catalyst: dict) -> dict:
     prompt = (
         f"{entry.get('asset_class', 'crypto').capitalize()}: {name} ({entry['base']})\n"
         f"{entry.get('timeframe', '1d')} candle {entry.get('candle_label', entry['candle_date'])}: "
-        f"{entry['direction']} {entry['change_pct']:+.1f}%, volume {entry['volume_ratio']:.1f}x the average of the "
-        f"previous {entry.get('volume_lookback', 60)} candles and range {entry['range_ratio']:.1f}x the average of "
-        f"the previous {entry.get('price_lookback', 60)}.\n\n"
+        f"{entry['direction']} {entry['change_pct']:+.1f}%, "
+        + (f"volume {entry['volume_ratio']:.1f}x the average of the previous {entry.get('volume_lookback', 60)} candles and "
+           if entry.get("volume_ratio") is not None else "")
+        + f"range {entry['range_ratio']:.1f}x the average of the previous {entry.get('price_lookback', 60)} candles.\n\n"
         f"Headlines:\n{listing}"
     )
     # Prefer the Claude CLI (subscription token); use the API directly only with an API key alone

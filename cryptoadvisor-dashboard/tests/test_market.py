@@ -70,7 +70,8 @@ class TestIds:
     def test_make_and_split(self):
         assert make_id("stock", "aapl") == "stock:AAPL"
         assert split_id("crypto:btc") == ("crypto", "BTC")
-        for bad in ("AAPL", "fx:EURUSD", "stock:", ""):
+        assert split_id("fx:eurusd") == ("fx", "EURUSD")
+        for bad in ("AAPL", "options:SPY", "stock:", ""):
             with pytest.raises(ValueError):
                 split_id(bad)
 

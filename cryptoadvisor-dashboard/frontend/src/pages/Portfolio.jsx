@@ -9,7 +9,7 @@ import AiAnalysisButton from '../components/AiAnalysisButton'
 import AiInsightPanel from '../components/AiInsightPanel'
 import { ASSET_CLASSES, ClassBadge, classLabel, pct, price, tone, usd } from '../components/assetClass'
 
-const CLASS_COLORS = { crypto: '#7b61ff', stock: '#4ecdc4', etf: '#00d4aa', commodity: '#ffd93d', bond: '#ff6b6b' }
+const CLASS_COLORS = { crypto: '#7b61ff', stock: '#4ecdc4', etf: '#00d4aa', commodity: '#ffd93d', bond: '#ff6b6b', fx: '#f78fb3' }
 
 function Allocation({ byClass }) {
   const rows = Object.entries(byClass || {}).filter(([, c]) => c.market_value)

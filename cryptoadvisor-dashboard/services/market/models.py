@@ -3,13 +3,13 @@
 from dataclasses import dataclass, field
 from typing import Literal
 
-AssetClass = Literal["crypto", "stock", "etf", "commodity", "bond", "rate", "index"]
-ASSET_CLASSES: tuple[str, ...] = ("crypto", "stock", "etf", "commodity", "bond", "rate", "index")
+AssetClass = Literal["crypto", "stock", "etf", "commodity", "bond", "fx", "rate", "index"]
+ASSET_CLASSES: tuple[str, ...] = ("crypto", "stock", "etf", "commodity", "bond", "fx", "rate", "index")
 # Classes a user can hold a position in (rates and indices are reference series)
-TRADABLE_CLASSES: tuple[str, ...] = ("crypto", "stock", "etf", "commodity", "bond")
+TRADABLE_CLASSES: tuple[str, ...] = ("crypto", "stock", "etf", "commodity", "bond", "fx")
 
 # Trading-hours regimes: decide what a "candle" covers and when alerts may fire
-Sessions = Literal["24/7", "us_equity", "futures", "index"]
+Sessions = Literal["24/7", "us_equity", "futures", "fx", "index"]
 
 
 @dataclass(frozen=True)
@@ -21,7 +21,7 @@ class Instrument:
     symbol: str
     name: str
     providers: dict = field(default_factory=dict)  # provider -> its symbol, e.g. {"yahoo": "GC=F"}
-    currency: str = "USD"
+    currency: str = "USD"  # currency prices are quoted in (forex: the pair's quote currency, e.g. JPY)
     exchange: str = ""
     sessions: str = "24/7"
     has_volume: bool = True  # yields and indices have none: volume rules don't apply

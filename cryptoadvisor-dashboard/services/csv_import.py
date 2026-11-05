@@ -202,14 +202,14 @@ GENERIC_COLUMNS = {
     "fee": ("fee", "fees", "commission"),
 }
 # A bare symbol that several classes share ("BTC" is a coin and an ETF) resolves in this order
-SYMBOL_PRIORITY = ("stock", "etf", "crypto", "commodity", "bond")
+SYMBOL_PRIORITY = ("stock", "etf", "crypto", "commodity", "bond", "fx")
 _SIDES = {"buy": "buy", "b": "buy", "long": "buy", "bought": "buy", "sell": "sell", "s": "sell", "short": "sell", "sold": "sell"}
 
 
 def resolve_symbol(symbol: str, asset_class: str = "") -> tuple[str | None, str | None]:
     """(instrument id, warning) for a CSV symbol; registry must be loaded."""
-    sym = symbol.strip().upper()
-    cls = asset_class.strip().lower()
+    sym = symbol.strip().upper().replace("/", "")  # "EUR/USD" -> "EURUSD"
+    cls = {"forex": "fx", "currency": "fx"}.get(asset_class.strip().lower(), asset_class.strip().lower())
     if cls:
         if cls not in ASSET_CLASSES:
             return None, f"unknown asset class '{asset_class}'"

@@ -15,9 +15,10 @@ from services import market
 logger = logging.getLogger(__name__)
 
 PERSONA = (
-    "AssetAdvisor covers US stocks, ETFs, commodity and Treasury futures, Treasury yields and crypto. "
+    "AssetAdvisor covers US stocks, ETFs, commodity and Treasury futures, forex pairs, Treasury yields and crypto. "
     "Treat each asset class on its own terms: earnings, guidance and valuation for stocks; supply, demand "
-    "and inventories for commodities; the Fed, inflation and growth for rates and bonds; adoption, flows and "
+    "and inventories for commodities; the Fed, inflation and growth for rates and bonds; central banks, rate "
+    "differentials and economic data for currencies; adoption, flows and "
     "token supply for crypto. Futures positions are leveraged: note contract size when sizing matters."
 )
 
@@ -26,6 +27,7 @@ MARKET_SET = [
     ("S&P 500", "index:SPX"), ("Nasdaq-100", "index:NDX"), ("VIX", "index:VIX"),
     ("US 10-year yield (%)", "rate:US10Y"), ("US 3-month T-bill yield (%)", "rate:US3M"), ("US dollar index", "index:DXY"),
     ("Gold", "commodity:GC"), ("WTI crude oil", "commodity:CL"), ("Copper", "commodity:HG"),
+    ("EUR/USD", "fx:EURUSD"), ("USD/JPY", "fx:USDJPY"),
     ("Bitcoin", "crypto:BTC"), ("Ethereum", "crypto:ETH"), ("Solana", "crypto:SOL"),
 ]
 BUSINESS_NEWS = "https://news.google.com/rss/headlines/section/topic/BUSINESS?hl=en-US&gl=US&ceid=US:en"

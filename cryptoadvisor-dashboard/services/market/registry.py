@@ -297,14 +297,14 @@ def search(query: str, asset_classes: list[str] | None = None, limit: int = 20, 
             score = 0
         elif sym.startswith(q):
             score = 2
-        elif name.startswith(q):
+        elif name.startswith(q) or re.search(r"[\s(/]" + re.escape(q), name):  # a word in the name ("euro")
             score = 3
         elif q in name or (len(q) >= 3 and q in sym):
             score = 5
         else:
             continue
-        if "popular" in inst.tags or inst.asset_class in ("commodity", "bond", "rate", "index"):
-            score -= 1  # well-known and curated instruments first
+        # Well-known and curated instruments first (forex majors are both)
+        score -= ("popular" in inst.tags) + (inst.asset_class in ("commodity", "bond", "fx", "rate", "index"))
         scored.append((score, len(sym), sym, inst))
     scored.sort(key=lambda t: t[:3])
     return [t[3] for t in scored[:limit]]

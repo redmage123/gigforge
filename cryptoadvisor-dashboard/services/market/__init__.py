@@ -57,3 +57,24 @@ async def candles(instrument_id: str, timeframe: str = "1d", bars: int = 100, pr
     if not prov:
         raise LookupError(f"no market data for {instrument_id}")
     return await prov.candles(inst, timeframe, bars)
+
+
+async def usd_per_unit(currencies) -> dict[str, float]:
+    """USD value of one unit of each currency, from forex quotes (JPY via USD/JPY, GBP via GBP/USD)."""
+    await registry.ensure_loaded()
+    wanted = {c.upper() for c in currencies if c and c.upper() != "USD"}
+    direct, inverse = {}, {}
+    for ccy in wanted:
+        if registry.get(f"fx:{ccy}USD"):
+            direct[ccy] = f"fx:{ccy}USD"
+        elif registry.get(f"fx:USD{ccy}"):
+            inverse[ccy] = f"fx:USD{ccy}"
+    got = await quotes(list(direct.values()) + list(inverse.values()))
+    out = {"USD": 1.0}
+    for ccy, iid in direct.items():
+        if iid in got and got[iid].price:
+            out[ccy] = got[iid].price
+    for ccy, iid in inverse.items():
+        if iid in got and got[iid].price:
+            out[ccy] = 1 / got[iid].price
+    return out

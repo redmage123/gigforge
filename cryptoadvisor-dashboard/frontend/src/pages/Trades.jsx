@@ -84,7 +84,10 @@ export default function Trades() {
   }
 
   const futures = inst && inst.multiplier && inst.multiplier !== 1
-  const unit = inst?.asset_class === 'stock' || inst?.asset_class === 'etf' ? 'shares' : futures ? 'contracts' : 'units'
+  const unit = inst?.asset_class === 'stock' || inst?.asset_class === 'etf' ? 'shares' : futures ? 'contracts'
+    : inst?.asset_class === 'fx' ? `${inst.symbol.slice(0, 3)}, 100,000 = 1 lot` : 'units'
+  const priceUnit = inst?.asset_class === 'fx' ? `${inst.currency} per ${inst.symbol.slice(0, 3)}`
+    : inst?.currency && inst.currency !== 'USD' ? inst.currency : '$'
 
   return (
     <div>
@@ -135,7 +138,7 @@ export default function Trades() {
                 value={quantity} onChange={(e) => setQuantity(e.target.value)} />
             </div>
             <div className="form-group" style={{ marginBottom: 0 }}>
-              <label htmlFor="trade-price">Price ($)</label>
+              <label htmlFor="trade-price">Price ({priceUnit})</label>
               <div style={{ display: 'flex', gap: 6 }}>
                 <input id="trade-price" className="input" type="number" inputMode="decimal" step="any" min="0" required
                   value={tradePrice} onChange={(e) => setTradePrice(e.target.value)} style={{ flex: 1, minWidth: 0 }} />
@@ -153,6 +156,12 @@ export default function Trades() {
             </div>
             <button type="submit" className="btn" disabled={saving || !inst}>{saving ? 'Saving…' : 'Add Trade'}</button>
           </div>
+          {inst?.asset_class === 'fx' && (
+            <p className="muted" style={{ fontSize: '0.8rem', margin: '0.5rem 0 0' }}>
+              Buying {inst.symbol.slice(0, 3)}/{inst.currency} means long {inst.symbol.slice(0, 3)} against {inst.currency}.
+              P&amp;L is in {inst.currency} and shown in USD at the current rate.
+            </p>
+          )}
           {futures && (
             <p className="muted" style={{ fontSize: '0.8rem', margin: '0.5rem 0 0' }}>
               {inst.name} futures: P&amp;L is ${inst.multiplier.toLocaleString()} per contract for each 1.0 move in price.
@@ -188,7 +197,9 @@ export default function Trades() {
                     <td><span className={`badge ${t.side === 'buy' ? 'badge-green' : 'badge-red'}`}>{t.side.toUpperCase()}</span></td>
                     <td>{t.quantity}</td>
                     <td>{fmtPrice(t.price)}</td>
-                    <td>{usd(t.quantity * t.price * (t.multiplier || 1))}</td>
+                    <td>{t.asset_class === 'fx'
+                      ? <span className="muted">{(t.quantity * t.price).toLocaleString(undefined, { maximumFractionDigits: 0 })} {t.instrument_id.slice(-3)}</span>
+                      : usd(t.quantity * t.price * (t.multiplier || 1))}</td>
                     <td className="muted">{t.fee ? usd(t.fee) : '--'}</td>
                     <td><button type="button" className="btn btn-sm btn-ghost" onClick={() => deleteTrade(t)} aria-label={`Delete ${t.side} ${t.symbol} trade`}>Delete</button></td>
                   </tr>

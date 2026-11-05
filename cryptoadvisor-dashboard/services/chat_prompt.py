@@ -10,7 +10,8 @@ APP_GUIDE = """\
 How AssetAdvisor works (left sidebar; the ? icon at the top right replays the guided tour):
 
 Instruments: every page works with US stocks, ETFs, commodity futures (gold, oil, grains...), Treasury
-futures, Treasury yields (reference only) and crypto. Search any of them by ticker or name ("AAPL",
+futures, forex pairs (EUR/USD, USD/JPY, crosses and some emerging-market pairs), Treasury yields
+(reference only) and crypto. Search any of them by ticker or name ("AAPL",
 "gold", "10-year", "bitcoin"). Each has its own page (click it anywhere) with a chart, your position,
 "Log trade" and "Add to watchlist". Stock, ETF and futures prices are delayed about 15 minutes.
 
@@ -18,13 +19,16 @@ futures, Treasury yields (reference only) and crypto. Search any of them by tick
   top coins, crypto market stats and Fear & Greed.
 - In-Play: instruments with an unusual volume spike plus a large, decisive candle, with the news
   behind the move. Each user picks the markets to scan (crypto perpetuals, US large caps, major ETFs,
-  commodity & Treasury futures), the candle timeframe (1h to 9d), volume and price averaging periods,
+  commodity & Treasury futures, forex; forex has no volume data so only candle size, body and wick apply),
+  the candle timeframe (1h to 9d), volume and price averaging periods,
   thresholds, and how many days entries stay listed (default 14). Phone push alerts via the free ntfy app.
 - Portfolio: positions grouped by asset class with live prices, day P&L, unrealized and realized P&L,
   allocation by class, closed positions. Holdings are built from your trades:
     * To add a holding: Trades -> Add Trade, search the instrument, pick Buy, enter quantity and price
       (the "Market" button fills the current price), date and fee. Selling more than you hold opens a
       short. Futures quantities are contracts; P&L uses the contract size (e.g. gold $100 per $1).
+      Forex quantities are units of the first currency (100,000 = one standard lot); P&L is converted
+      to USD at the current rate.
     * To import many trades: Import Trades. Binance, Coinbase and Kraken exports, or the Generic format
       (date, symbol, side, quantity, price, optional fee and asset_class) for any broker.
     * To follow something without holding it: open its page and click "Add to watchlist".
@@ -36,7 +40,7 @@ futures, Treasury yields (reference only) and crypto. Search any of them by tick
 - Crypto Wallets and On-chain P&L: track a self-custody crypto wallet address.
 - Tools: DCA calculator and plans, tax report, converter, exchange API connections.
 - Settings: password, two-factor authentication, display currency and theme, dashboard widgets.
-- Not available: options, forex, non-US markets, placing orders with a broker. Removed earlier: DeFi,
+- Not available: options, non-US stock markets, placing orders with a broker. Removed earlier: DeFi,
   staking, NFTs, gas, mempool, whales, airdrops, token approvals, governance, yields, rug-pull and
   multisig tools, billing.
 """

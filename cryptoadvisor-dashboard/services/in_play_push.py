@@ -69,8 +69,12 @@ def candle_name(timeframe: str) -> str:
 def format_push(entry: dict, in_play: list[dict]) -> tuple[str, str, str]:
     arrow = "▲" if entry["direction"] == "bullish" else "▼"
     title = f"{arrow} {entry['base']} in play — {entry['direction']} {entry['change_pct']:+.1f}%"
-    volume = f"Volume {usd_compact(entry['quote_volume'])} ({entry['volume_ratio']:.1f}x avg)" if entry.get("quote_volume") \
-        else f"Volume {entry['volume_ratio']:.1f}x avg"
+    if entry.get("volume_ratio") is None:
+        volume = "No volume data"
+    elif entry.get("quote_volume"):
+        volume = f"Volume {usd_compact(entry['quote_volume'])} ({entry['volume_ratio']:.1f}x avg)"
+    else:
+        volume = f"Volume {entry['volume_ratio']:.1f}x avg"
     lines = [
         f"{volume} · Candle {entry['range_ratio']:.1f}x avg range · Body {entry['body_pct']:.0f}%",
         f"Price ${entry['close']:,.6g} ({'forming' if entry['candle_forming'] else 'closed'} {candle_name(entry.get('timeframe', '1d'))} candle)",

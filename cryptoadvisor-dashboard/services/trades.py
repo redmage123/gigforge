@@ -91,7 +91,7 @@ def replay(trades: list[dict], multipliers: dict[str, float] | None = None) -> d
     for t in sorted(trades, key=lambda t: (t.get("date", ""), t.get("created_at", 0))):
         iid, qty, px = t["instrument_id"], float(t["quantity"]), float(t["price"])
         m = mult.get(iid, 1.0)
-        p = pos.setdefault(iid, {"instrument_id": iid, "qty": 0.0, "avg": 0.0, "realized": 0.0, "fees": 0.0,
+        p = pos.setdefault(iid, {"instrument_id": iid, "qty": 0.0, "avg": 0.0, "gross": 0.0, "fees": 0.0,
                                  "trades": 0, "bought": 0.0, "sold": 0.0, "first_date": t.get("date"), "last_date": None})
         p["trades"] += 1
         p["fees"] += float(t.get("fee") or 0)
@@ -107,7 +107,7 @@ def replay(trades: list[dict], multipliers: dict[str, float] | None = None) -> d
             p["qty"] = new_q
             continue
         closing = min(qty, abs(q))  # reducing the opposite side
-        p["realized"] += (px - p["avg"]) * closing * m * (1 if q > 0 else -1)
+        p["gross"] += (px - p["avg"]) * closing * m * (1 if q > 0 else -1)  # in the quote currency
         p["qty"] = q + direction * closing
         rest = qty - closing
         if abs(p["qty"]) < EPS:
@@ -116,16 +116,19 @@ def replay(trades: list[dict], multipliers: dict[str, float] | None = None) -> d
             p["qty"], p["avg"] = direction * rest, px
             p["opened"] = t.get("date")
     for p in pos.values():
-        p["realized"] -= p["fees"]
+        p["realized"] = p["gross"] - p["fees"]  # fees are entered in USD; equal to gross for USD instruments
     return pos
 
 
 def value_positions(positions: dict[str, dict], prices: dict[str, dict], instruments: dict[str, dict],
-                    today: str | None = None) -> dict:
+                    today: str | None = None, fx_usd: dict[str, float] | None = None) -> dict:
     """Attach prices/P&L to replayed positions and total them per asset class and overall.
 
     Day P&L is measured from the previous close, except for a position opened today, whose day
     P&L is its move since entry (otherwise a buy at today's price would show the whole day's move).
+
+    Instruments quoted in another currency (forex pairs like USD/JPY) are converted to USD with
+    `fx_usd` ({currency: USD per unit}); realized P&L converts at today's rate, a simplification.
     """
     today = today or time.strftime("%Y-%m-%d", time.gmtime())
     open_rows, closed_rows = [], []
@@ -136,22 +139,27 @@ def value_positions(positions: dict[str, dict], prices: dict[str, dict], instrum
         info = instruments.get(iid) or {}
         cls = info.get("asset_class") or iid.split(":", 1)[0]
         m = float(info.get("multiplier") or 1.0)
+        ccy = info.get("currency") or "USD"
+        conv = 1.0 if ccy == "USD" else (fx_usd or {}).get(ccy)
+        realized = (p["gross"] * conv - p["fees"]) if conv else None
         row = {
             "instrument_id": iid, "coin_id": iid, "symbol": info.get("symbol") or iid.split(":", 1)[-1],
             "name": info.get("name") or iid, "asset_class": cls, "multiplier": m,
             "quantity": round(p["qty"], 10), "side": "long" if p["qty"] > 0 else "short" if p["qty"] < 0 else "flat",
-            "avg_price": p["avg"], "realized_pnl": round(p["realized"], 2), "fees": round(p["fees"], 2),
+            "currency": ccy, "avg_price": p["avg"], "fees": round(p["fees"], 2),
+            "realized_pnl": round(realized, 2) if realized is not None else None,
             "trades": p["trades"], "first_date": p["first_date"], "last_date": p["last_date"],
         }
         c = by_class.setdefault(cls, {"market_value": 0.0, "unrealized_pnl": 0.0, "realized_pnl": 0.0, "positions": 0})
-        c["realized_pnl"] += p["realized"]
-        totals["realized_pnl"] += p["realized"]
+        c["realized_pnl"] += realized or 0.0
+        totals["realized_pnl"] += realized or 0.0
         totals["fees"] += p["fees"]
         if p["qty"] == 0:
             closed_rows.append(row)
             continue
         q = prices.get(iid)
-        price = q.get("price") if q else None
+        price = q.get("price") if q and conv else None  # no USD rate for its currency: can't value it
+        m = m * (conv or 1.0)  # from here on, values are in USD
         cost = abs(p["qty"]) * p["avg"] * m
         row.update(cost_basis=round(cost, 2), price=price, change_pct=q.get("change_pct") if q else None,
                    price_available=price is not None, delayed=bool(q and q.get("delayed")), stale=bool(q and q.get("stale")))
@@ -199,7 +207,9 @@ async def portfolio(username: str) -> dict:
     positions = replay(trades, {i: float(d.get("multiplier") or 1.0) for i, d in instruments.items()})
     open_ids = [i for i, p in positions.items() if p["qty"] != 0]
     quotes = {k: q.to_dict() for k, q in (await market.quotes(open_ids)).items()} if open_ids else {}
-    out = value_positions(positions, quotes, instruments)
+    currencies = {d.get("currency") for d in instruments.values() if d.get("currency") not in (None, "USD")}
+    fx_usd = await market.usd_per_unit(currencies) if currencies else {}
+    out = value_positions(positions, quotes, instruments, fx_usd=fx_usd)
     out["as_of"] = time.time()
     out["trade_count"] = len(trades)
     return out

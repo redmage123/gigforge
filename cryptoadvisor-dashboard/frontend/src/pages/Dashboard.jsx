@@ -63,12 +63,14 @@ const MARKET_GROUPS = [
   { title: 'Stocks', ids: ['index:SPX', 'index:NDX', 'index:DJI', 'index:VIX'] },
   { title: 'Rates & dollar', ids: ['rate:US3M', 'rate:US10Y', 'rate:US30Y', 'index:DXY'] },
   { title: 'Commodities', ids: ['commodity:GC', 'commodity:SI', 'commodity:CL', 'commodity:NG'] },
+  { title: 'Forex', ids: ['fx:EURUSD', 'fx:USDJPY', 'fx:GBPUSD', 'fx:USDCNH'] },
   { title: 'Crypto', ids: ['crypto:BTC', 'crypto:ETH', 'crypto:SOL', 'crypto:XRP'] },
 ]
 const MARKET_LABELS = {
   'index:SPX': 'S&P 500', 'index:NDX': 'Nasdaq-100', 'index:DJI': 'Dow', 'index:VIX': 'VIX', 'rate:US3M': '3M T-bill',
   'rate:US10Y': '10Y yield', 'rate:US30Y': '30Y yield', 'index:DXY': 'US dollar', 'commodity:GC': 'Gold', 'commodity:SI': 'Silver',
-  'commodity:CL': 'WTI oil', 'commodity:NG': 'Nat gas', 'crypto:BTC': 'Bitcoin', 'crypto:ETH': 'Ethereum', 'crypto:SOL': 'Solana', 'crypto:XRP': 'XRP',
+  'commodity:CL': 'WTI oil', 'commodity:NG': 'Nat gas', 'fx:EURUSD': 'EUR/USD', 'fx:USDJPY': 'USD/JPY',
+  'fx:GBPUSD': 'GBP/USD', 'fx:USDCNH': 'USD/CNH', 'crypto:BTC': 'Bitcoin', 'crypto:ETH': 'Ethereum', 'crypto:SOL': 'Solana', 'crypto:XRP': 'XRP',
 }
 
 function MarketsOverview() {
@@ -93,7 +95,7 @@ function MarketsOverview() {
                 return [
                   <Link key={`${id}-n`} to={`/i/${encodeURIComponent(id)}`}>{MARKET_LABELS[id]}</Link>,
                   <span key={`${id}-p`} style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
-                    {q ? `${fmtPrice(q.price, isRate ? 3 : undefined)}${isRate ? '%' : ''}` : '--'}
+                    {q ? `${fmtPrice(q.price, isRate ? 3 : id.startsWith('fx:') ? (/JPY|CNH/.test(id) ? 3 : 4) : undefined)}${isRate ? '%' : ''}` : '--'}
                   </span>,
                   <span key={`${id}-c`} className={tone(q?.change_pct)} style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{q ? pct(q.change_pct) : ''}</span>,
                 ]

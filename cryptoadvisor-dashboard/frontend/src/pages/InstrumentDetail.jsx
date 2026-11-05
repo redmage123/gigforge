@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import { api } from '../api/client'
 import Card from '../components/Card'
 import LoadingSpinner from '../components/LoadingSpinner'
-import { ClassBadge, pct, price, tone, usd } from '../components/assetClass'
+import { ClassBadge, pct, price, quotePrice, tone, usd } from '../components/assetClass'
 
 const Plot = lazy(() => import('react-plotly.js'))
 
@@ -13,7 +13,7 @@ const VIEWS = [
   { label: '6 months', timeframe: '1d', bars: 130 },
   { label: '2 years', timeframe: '3d', bars: 170 },
 ]
-const SESSIONS = { '24/7': 'Trades 24/7', us_equity: 'US market hours', futures: 'Futures hours (nearly 24h on weekdays)', index: 'Reference series' }
+const SESSIONS = { '24/7': 'Trades 24/7', us_equity: 'US market hours', futures: 'Futures hours (nearly 24h on weekdays)', fx: 'Forex: 24h Monday to Friday', index: 'Reference series' }
 
 const layout = {
   paper_bgcolor: '#0a0e1a', plot_bgcolor: '#0a0e1a', font: { color: '#e2e8f0' }, margin: { l: 60, r: 20, t: 10, b: 40 },
@@ -74,7 +74,7 @@ export default function InstrumentDetail() {
       </div>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: '1rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
         <span style={{ fontSize: '2rem', fontWeight: 700 }}>
-          {quote ? `${inst.asset_class === 'rate' ? '' : '$'}${price(quote.price, inst.price_decimals)}${inst.asset_class === 'rate' ? '%' : ''}` : '--'}
+          {quote ? quotePrice(quote.price, inst) : '--'}
         </span>
         {quote && <span className={tone(quote.change_pct)} style={{ fontSize: '1.1rem' }}>{pct(quote.change_pct)}</span>}
         {quote?.delayed && <span className="muted" style={{ fontSize: '0.8rem' }}>delayed ~15 min</span>}

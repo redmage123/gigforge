@@ -47,6 +47,20 @@ _RATES = [
     ("US30Y", "^TYX", "US 30-Year Treasury Yield"),
 ]
 
+# Forex pairs (Yahoo "EURUSD=X"). Quantity is in the base currency (100,000 = one standard lot);
+# prices and P&L are in the quote currency and converted to USD for the portfolio.
+_FX = [
+    ("EURUSD", "Euro / US Dollar"), ("GBPUSD", "British Pound / US Dollar"), ("USDJPY", "US Dollar / Japanese Yen"),
+    ("USDCHF", "US Dollar / Swiss Franc"), ("AUDUSD", "Australian Dollar / US Dollar"), ("USDCAD", "US Dollar / Canadian Dollar"),
+    ("NZDUSD", "New Zealand Dollar / US Dollar"), ("EURGBP", "Euro / British Pound"), ("EURJPY", "Euro / Japanese Yen"),
+    ("GBPJPY", "British Pound / Japanese Yen"), ("EURCHF", "Euro / Swiss Franc"), ("AUDJPY", "Australian Dollar / Japanese Yen"),
+    ("EURAUD", "Euro / Australian Dollar"), ("EURCAD", "Euro / Canadian Dollar"), ("GBPCHF", "British Pound / Swiss Franc"),
+    ("USDMXN", "US Dollar / Mexican Peso"), ("USDZAR", "US Dollar / South African Rand"), ("USDTRY", "US Dollar / Turkish Lira"),
+    ("USDCNH", "US Dollar / Offshore Chinese Yuan"), ("USDINR", "US Dollar / Indian Rupee"), ("USDSEK", "US Dollar / Swedish Krona"),
+    ("USDNOK", "US Dollar / Norwegian Krone"), ("USDSGD", "US Dollar / Singapore Dollar"),
+]  # USD/HKD left out: it is pegged, so any "outsized candle" on it is noise
+FX_MAJORS = {"EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD", "NZDUSD"}
+
 _INDICES = [
     ("SPX", "^GSPC", "S&P 500"),
     ("NDX", "^NDX", "Nasdaq-100"),
@@ -83,6 +97,12 @@ def curated() -> list[Instrument]:
     for sym, yahoo, name in _RATES:
         out.append(Instrument(make_id("rate", sym), "rate", sym, name, {"yahoo": yahoo},
                               sessions="index", has_volume=False, price_decimals=3, tags=("treasury",)))
+    for sym, name in _FX:
+        quote_ccy = sym[3:]
+        out.append(Instrument(make_id("fx", sym), "fx", sym, f"{sym[:3]}/{quote_ccy} ({name})", {"yahoo": f"{sym}=X"},
+                              currency=quote_ccy, sessions="fx", has_volume=False,
+                              price_decimals=3 if quote_ccy in ("JPY", "INR", "MXN", "ZAR", "TRY") else 5,
+                              tags=("major", "popular") if sym in FX_MAJORS else ("cross",)))
     for sym, yahoo, name in _INDICES:
         out.append(Instrument(make_id("index", sym), "index", sym, name, {"yahoo": yahoo},
                               sessions="index", has_volume=False, price_decimals=2))

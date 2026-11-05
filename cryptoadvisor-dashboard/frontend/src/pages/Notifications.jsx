@@ -127,7 +127,7 @@ function InPlayList({ entries }) {
           </div>
           <div style={{ margin: '0.35rem 0' }}><MoveBadge e={e} /></div>
           <div className="muted" style={{ fontSize: '0.8rem', fontFamily: 'monospace', marginBottom: '0.35rem' }}>
-            Vol {usdCompact(e.quote_volume)} ({e.volume_ratio.toFixed(1)}x) · Candle {e.range_ratio.toFixed(1)}x · Body {Math.round(e.body_pct)}% · {e.candle_label || e.candle_date}{e.candle_forming ? ' (live)' : ''}
+            {e.volume_ratio == null ? 'No volume data' : `Vol ${usdCompact(e.quote_volume)} (${e.volume_ratio.toFixed(1)}x)`} · Candle {e.range_ratio.toFixed(1)}x · Body {Math.round(e.body_pct)}% · {e.candle_label || e.candle_date}{e.candle_forming ? ' (live)' : ''}
             {e.hits > 1 ? ` · ${e.hits} triggers` : ''}
           </div>
           <Catalyst catalyst={e.catalyst} />
@@ -413,8 +413,9 @@ export default function Notifications() {
             {candleName(rules.timeframe).replace(/^./, (c) => c.toUpperCase())} candle with volume &gt;{rules.volume_mult}x the average of the
             previous {rules.volume_lookback} candles and size &gt;{rules.range_mult}x the average of the previous {rules.price_lookback},
             body ≥ {rules.min_body_pct}% and opposing wick ≤ {rules.max_wick_pct}% of the candle. Kept {rules.retention_days} days, newest first.
+            {(rules.universes || []).includes('fx') && <> Forex has no volume data, so the volume rule is skipped for pairs.</>}
             {inPlay.last_scan && <> Last scan {timeAgo(inPlay.last_scan)}; watching {
-              (inPlay.universes || []).filter((u) => (rules.universes || ['crypto']).includes(u.value)).map((u) => `${u.count} ${u.value === 'crypto' ? 'crypto perpetuals' : u.value === 'stocks' ? 'US stocks' : u.value === 'etfs' ? 'ETFs' : 'futures'}`).join(', ')
+              (inPlay.universes || []).filter((u) => (rules.universes || ['crypto']).includes(u.value)).map((u) => `${u.count} ${({ crypto: 'crypto perpetuals', stocks: 'US stocks', etfs: 'ETFs', futures: 'futures', fx: 'forex pairs' })[u.value] || u.value}`).join(', ')
             }.</>}
             {!inPlay.ai_summaries && <> AI catalyst summaries are off (no API key configured).</>}
           </p>
@@ -460,8 +461,8 @@ export default function Notifications() {
                         </div>
                       </td>
                       <td style={{ ...cellStyle, color: '#f59e0b', fontFamily: 'monospace' }}>
-                        {usdCompact(e.quote_volume)}
-                        <div style={{ fontSize: '0.75rem' }}>{e.volume_ratio.toFixed(1)}x avg</div>
+                        {e.volume_ratio == null ? <span className="muted">n/a</span> : usdCompact(e.quote_volume)}
+                        {e.volume_ratio != null && <div style={{ fontSize: '0.75rem' }}>{e.volume_ratio.toFixed(1)}x avg</div>}
                         {e.avg_quote_volume > 0 && <div className="muted" style={{ fontSize: '0.75rem' }}>avg {usdCompact(e.avg_quote_volume)}</div>}
                       </td>
                       <td style={{ ...cellStyle, color: '#e0e0e0', fontFamily: 'monospace' }}>

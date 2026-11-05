@@ -6,6 +6,7 @@ export const ASSET_CLASSES = [
   { value: 'etf', label: 'ETF', badge: 'badge-green' },
   { value: 'commodity', label: 'Commodity', badge: 'badge-yellow' },
   { value: 'bond', label: 'Bond', badge: 'badge-red' },
+  { value: 'fx', label: 'Forex', badge: 'badge-purple' },
   { value: 'rate', label: 'Yield', badge: 'badge-red' },
   { value: 'index', label: 'Index', badge: 'badge-blue' },
 ]
@@ -37,6 +38,16 @@ export function usd(n, { sign = false, compact = false } = {}) {
     }
   }
   return `${s}$${a.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
+// Price with its currency: "$4,132.30" for USD; pairs and other currencies without a "$"
+export function quotePrice(n, inst) {
+  if (n == null) return '--'
+  const ccy = inst?.currency || 'USD'
+  const cls = inst?.asset_class
+  if (cls === 'rate') return `${price(n, inst.price_decimals)}%`
+  if (cls === 'index' || cls === 'fx') return price(n, inst?.price_decimals)
+  return ccy === 'USD' ? `$${price(n, inst?.price_decimals)}` : `${price(n, inst?.price_decimals)} ${ccy}`
 }
 
 export const pct = (n) => (n == null ? '--' : `${n > 0 ? '+' : ''}${Number(n).toFixed(2)}%`)

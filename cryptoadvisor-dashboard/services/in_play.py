@@ -72,7 +72,7 @@ def max_lookback(timeframe: str) -> int:
 @dataclass(frozen=True)
 class Metrics:
     direction: Direction
-    volume_ratio: float
+    volume_ratio: float | None  # None when the market publishes no volume (forex)
     range_ratio: float
     opposing_wick_pct: float  # 0-100
     body_pct: float  # 0-100
@@ -137,7 +137,8 @@ DEFAULT_PROFILE = DEFAULT_RULES.profile
 
 
 def measure(candle: Candle, history: list[Candle], volume_lookback: int = DEFAULT_LOOKBACK,
-            price_lookback: int = DEFAULT_LOOKBACK, slot_of: Callable[[Candle], int] | None = None) -> Metrics | None:
+            price_lookback: int = DEFAULT_LOOKBACK, slot_of: Callable[[Candle], int] | None = None,
+            use_volume: bool = True) -> Metrics | None:
     """Metrics for `candle` vs `history` (the candles before it), or None if not measurable / below floors.
 
     `slot_of` (session markets, intraday bars) maps a candle to its position within its trading
@@ -151,13 +152,14 @@ def measure(candle: Candle, history: list[Candle], volume_lookback: int = DEFAUL
         same = [c for c in vol_hist if slot_of(c) == slot_of(candle)]
         if len(same) >= MIN_SAME_SLOT:
             vol_hist = same
-    avg_volume = sum(c.quote_volume for c in vol_hist) / len(vol_hist)
+    avg_volume = sum(c.quote_volume for c in vol_hist) / len(vol_hist) if use_volume else 0.0
     avg_range = sum(c.range for c in rng_hist) / len(rng_hist)
-    if avg_volume <= 0 or avg_range <= 0:
+    if (use_volume and avg_volume <= 0) or avg_range <= 0:
         return None
-    volume_ratio = candle.quote_volume / avg_volume
+    # No volume data (forex): judge the candle on size, body and wick alone
+    volume_ratio = candle.quote_volume / avg_volume if use_volume else None
     range_ratio = candle.range / avg_range
-    if volume_ratio <= BASE_VOLUME_MULT or range_ratio <= BASE_RANGE_MULT:
+    if (volume_ratio is not None and volume_ratio <= BASE_VOLUME_MULT) or range_ratio <= BASE_RANGE_MULT:
         return None
 
     if candle.close > candle.open:
@@ -184,7 +186,7 @@ def matches(m: Metrics | dict, rules: Rules) -> bool:
     if isinstance(m, Metrics):
         m = asdict(m)
     return (
-        m["volume_ratio"] > rules.volume_mult
+        (m["volume_ratio"] is None or m["volume_ratio"] > rules.volume_mult)
         and m["range_ratio"] > rules.range_mult
         and m["opposing_wick_pct"] <= rules.max_wick_pct
         and m["body_pct"] >= rules.min_body_pct
@@ -202,13 +204,13 @@ def session_slots(candles: list[Candle], bar_seconds: int) -> dict[int, int]:
 
 
 def measure_recent(candles: list[Candle], count: int = 2, volume_lookback: int = DEFAULT_LOOKBACK,
-                   price_lookback: int = DEFAULT_LOOKBACK, slot_of: Callable[[Candle], int] | None = None
-                   ) -> list[tuple[Candle, Metrics]]:
+                   price_lookback: int = DEFAULT_LOOKBACK, slot_of: Callable[[Candle], int] | None = None,
+                   use_volume: bool = True) -> list[tuple[Candle, Metrics]]:
     """Measure the last `count` candles (default: last closed + forming), each vs its own lookback."""
     window = max(volume_lookback, price_lookback)
     out = []
     for idx in range(max(1, len(candles) - count), len(candles)):
-        m = measure(candles[idx], candles[max(0, idx - window):idx], volume_lookback, price_lookback, slot_of)
+        m = measure(candles[idx], candles[max(0, idx - window):idx], volume_lookback, price_lookback, slot_of, use_volume)
         if m:
             out.append((candles[idx], m))
     return out
@@ -541,13 +543,14 @@ async def _scan(notify: bool, only_profiles: set[str] | None = None) -> dict:
                         group_errors += 1
                         return
                 slot_of = None
-                if inst.sessions != "24/7" and bar_s < 86400:
+                if inst.sessions not in ("24/7", "fx") and bar_s < 86400:
                     slots = session_slots(candles, bar_s)
                     slot_of = lambda c, slots=slots: slots.get(c.open_time, -1)  # noqa: E731
                 for k, r in builds:
                     is_new = k in new_builds
                     count = bf_bars + 1 if is_new else 2
-                    for candle, m in measure_recent(candles, count, r.volume_lookback, r.price_lookback, slot_of):
+                    for candle, m in measure_recent(candles, count, r.volume_lookback, r.price_lookback, slot_of,
+                                                    use_volume=inst.has_volume):
                         fresh = _candidate(inst, universe, candle, m, now, r)
                         key = _key(fresh)
                         if not is_new:
@@ -602,7 +605,7 @@ async def _scan(notify: bool, only_profiles: set[str] | None = None) -> dict:
                 continue
             r = user_rules[u]
             current = user_list(candidates, u, retention_days=r.retention_days, profile=r.profile, universe_set=r.universes)
-            for key in sorted(keys, key=lambda k: candidates[k]["volume_ratio"], reverse=True):
+            for key in sorted(keys, key=lambda k: candidates[k]["volume_ratio"] or 0, reverse=True):
                 title, body, tags = in_play_push.format_push(candidates[key], current)
                 pushed += await in_play_push.send_ntfy(cfg, title, body, tags)
 

@@ -24,6 +24,7 @@ UNIVERSES = {
     "stocks": "US large caps (S&P 500 + Nasdaq leaders)",
     "etfs": "Major ETFs (equity, sector, bond, commodity)",
     "futures": "Commodity & Treasury futures",
+    "fx": "Forex pairs (no volume data: candle size, body and wick rules only)",
 }
 DEFAULT_UNIVERSES = ("crypto",)
 SP500_URL = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
@@ -100,11 +101,14 @@ def members(universe: str) -> list[Instrument]:
         return [i for i in (registry.get(make_id("etf", s)) for s in catalog.ETF_TAGS) if i]
     if universe == "futures":
         return registry.all_instruments("commodity") + registry.all_instruments("bond")
+    if universe == "fx":
+        return registry.all_instruments("fx")
     return []
 
 
 def universe_of(inst: Instrument) -> str | None:
-    return {"crypto": "crypto", "stock": "stocks", "etf": "etfs", "commodity": "futures", "bond": "futures"}.get(inst.asset_class)
+    return {"crypto": "crypto", "stock": "stocks", "etf": "etfs", "commodity": "futures", "bond": "futures",
+            "fx": "fx"}.get(inst.asset_class)
 
 
 def market_open(universe: str, now: float | None = None) -> bool:
@@ -119,7 +123,7 @@ def market_open(universe: str, now: float | None = None) -> bool:
     wd, minutes = t.weekday(), t.hour * 60 + t.minute
     if universe in ("stocks", "etfs"):
         return wd < 5 and 13 * 60 <= minutes <= 21 * 60 + 30
-    if universe == "futures":
+    if universe in ("futures", "fx"):  # both trade Sunday 22:00 to Friday 22:00 UTC
         if wd == 5:
             return False
         if wd == 6:

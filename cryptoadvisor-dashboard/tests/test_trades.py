@@ -125,3 +125,37 @@ class TestGenericCsv:
     def test_all_rows_bad_raises(self):
         with pytest.raises(ValueError, match="not found"):
             asyncio.run(csv_import.parse_generic_csv(b"date,symbol,side,qty,price\n2026-01-01,NOPE,buy,1,1\n"))
+
+
+class TestForex:
+    def test_quote_currency_converted_to_usd(self):
+        # Long 100,000 USD/JPY at 150.00, now 151.00: +100,000 JPY of P&L, worth 100,000/151 USD
+        pos = replay([T("fx:USDJPY", "buy", 100_000, 150.0, "2026-11-01"), T("fx:EURGBP", "sell", 50_000, 0.86, "2026-11-01"),
+                      T("fx:EURUSD", "buy", 10_000, 1.08, "2026-11-01")])
+        prices = {"fx:USDJPY": {"price": 151.0, "change_pct": 0.0}, "fx:EURGBP": {"price": 0.85, "change_pct": 0.0},
+                  "fx:EURUSD": {"price": 1.09, "change_pct": 0.0}}
+        info = {"fx:USDJPY": {"asset_class": "fx", "currency": "JPY"}, "fx:EURGBP": {"asset_class": "fx", "currency": "GBP"},
+                "fx:EURUSD": {"asset_class": "fx", "currency": "USD"}}
+        out = value_positions(pos, prices, info, today="2026-11-05", fx_usd={"JPY": 1 / 151.0, "GBP": 1.30})
+        rows = {r["instrument_id"]: r for r in out["positions"]}
+        assert rows["fx:USDJPY"]["unrealized_pnl"] == pytest.approx(100_000 / 151.0, abs=0.01)
+        assert rows["fx:USDJPY"]["market_value"] == pytest.approx(100_000, abs=0.01)  # 100k USD notional
+        assert rows["fx:EURGBP"]["unrealized_pnl"] == pytest.approx(50_000 * 0.01 * 1.30, abs=0.01)  # short gained 0.01 GBP/EUR
+        assert rows["fx:EURUSD"]["unrealized_pnl"] == pytest.approx(100, abs=0.01)
+        assert rows["fx:USDJPY"]["currency"] == "JPY"
+
+    def test_missing_rate_is_unpriced_not_zero(self):
+        pos = replay([T("fx:USDTRY", "buy", 1000, 40.0, "2026-11-01")])
+        out = value_positions(pos, {"fx:USDTRY": {"price": 41.0}}, {"fx:USDTRY": {"asset_class": "fx", "currency": "TRY"}}, fx_usd={})
+        row = out["positions"][0]
+        assert row["price_available"] is False and row["unrealized_pnl"] is None and out["totals"]["unpriced"] == 1
+
+    def test_realized_converts_and_fees_stay_usd(self):
+        pos = replay([T("fx:USDJPY", "buy", 100_000, 150.0, "d1", fee=5), T("fx:USDJPY", "sell", 100_000, 152.0, "d2", fee=5)])
+        out = value_positions(pos, {}, {"fx:USDJPY": {"asset_class": "fx", "currency": "JPY"}}, fx_usd={"JPY": 0.01})
+        assert out["closed"][0]["realized_pnl"] == pytest.approx(200_000 * 0.01 - 10)
+
+    def test_csv_pairs(self):
+        registry.load_for_tests([])  # curated catalog includes the forex pairs
+        rows = asyncio.run(csv_import.parse_generic_csv(b"date,symbol,side,qty,price,asset_class\n2026-01-01,EUR/USD,buy,10000,1.08,forex\n"))
+        assert rows[0]["instrument_id"] == "fx:EURUSD"

@@ -142,7 +142,7 @@ YAHOO_TIMEFRAMES: dict[str, tuple[str, int]] = {
     "1d": ("1d", 1), "3d": ("1d", 3), "9d": ("1d", 9),
 }
 YAHOO_MAX_INTRADAY_DAYS = 729  # Yahoo serves hourly history for about two years
-_TRADING_HOURS = {"us_equity": 6.5, "futures": 23.0, "index": 6.5, "24/7": 24.0}
+_TRADING_HOURS = {"us_equity": 6.5, "futures": 23.0, "fx": 24.0, "index": 6.5, "24/7": 24.0}
 
 
 def parse_yahoo_chart(payload: dict, multiplier: float = 1.0) -> tuple[dict, list[Candle]]:

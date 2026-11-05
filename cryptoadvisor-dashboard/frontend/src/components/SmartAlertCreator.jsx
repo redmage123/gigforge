@@ -3,8 +3,8 @@ import { api } from '../api/client'
 
 const EXAMPLES = [
   'Alert me when BTC drops below $60,000',
-  'Notify me when ETH gas is under 20 gwei and SOL is up more than 10%',
-  'Tell me when any top-10 coin drops 15% in a day',
+  'Tell me when gold goes above $4,300',
+  'Notify me if Apple falls under $320 or Nvidia rises above $250',
 ]
 
 const styles = {
@@ -140,15 +140,13 @@ const styles = {
   },
 }
 
-// The AI may answer with tickers; alerts are checked against CoinGecko ids
-const COIN_IDS = {
-  BTC: 'bitcoin', ETH: 'ethereum', SOL: 'solana', ADA: 'cardano', DOT: 'polkadot', DOGE: 'dogecoin',
-  AVAX: 'avalanche-2', LINK: 'chainlink', XRP: 'ripple', BNB: 'binancecoin', MATIC: 'matic-network',
-  LTC: 'litecoin', UNI: 'uniswap', ATOM: 'cosmos', NEAR: 'near', TRX: 'tron', SUI: 'sui',
+// The AI answers with names or tickers ("BTC", "gold", "Apple"): resolve each via instrument search
+async function resolveInstrument(name) {
+  const res = await api.get(`/api/instruments/search?q=${encodeURIComponent(String(name || '').trim())}&limit=1`)
+  return res.results?.[0] || null
 }
-const toCoinId = (coin) => COIN_IDS[String(coin || '').toUpperCase()] || String(coin || '').toLowerCase().trim().replace(/\s+/g, '-')
 
-export default function SmartAlertCreator() {
+export default function SmartAlertCreator({ onSaved } = {}) {
   const [text, setText] = useState('')
   const [parsed, setParsed] = useState(null)
   const [suggestions, setSuggestions] = useState(null)
@@ -186,8 +184,10 @@ export default function SmartAlertCreator() {
         return
       }
       for (const c of priceConds) {
+        const inst = await resolveInstrument(c.coin)
+        if (!inst) throw new Error(`Couldn't find "${c.coin}". Try its ticker, e.g. AAPL, BTC or GC.`)
         await api.post('/api/alerts/', {
-          coin_id: toCoinId(c.coin),
+          instrument_id: inst.id,
           direction: c.operator === 'gt' ? 'above' : 'below',
           target_price: Number(c.value),
           notes: text,
@@ -197,6 +197,7 @@ export default function SmartAlertCreator() {
         (skipped ? ` ${skipped} condition${skipped > 1 ? 's' : ''} (volume, gas or % change) can't be saved as alerts yet.` : ''))
       setParsed(null)
       setText('')
+      onSaved?.()
     } catch (err) {
       setError(err.message || 'Failed to save alert')
     } finally {

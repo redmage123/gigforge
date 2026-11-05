@@ -1,78 +1,64 @@
-"""REST endpoints for per-user favorites/watchlist."""
+"""Watchlist API: any instrument, by instrument id (legacy CoinGecko ids still accepted)."""
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+
+from services import market
 from services.favorites import (
-    add_favorite,
-    get_favorites,
-    get_favorites_with_prices,
-    remove_favorite,
+    add_favorite, get_favorites, get_favorites_with_prices, remove_favorite, set_favorites, to_instrument_id,
 )
-from services.user_data import save_user_data
+from services.market import registry
 
 router = APIRouter()
 
 
 class AddFavoriteBody(BaseModel):
-    coin_id: str
+    instrument_id: str = ""
+    coin_id: str = ""  # legacy clients
 
 
 class ReorderBody(BaseModel):
     favorites: list[str]
 
 
+def _user(request: Request) -> str:
+    return request.state.user.get("sub", "")
+
+
 @router.get("/")
 async def list_favorites_with_prices(request: Request):
-    """Return the user's favorites with current price data."""
-    try:
-        username = request.state.user.get("sub", "")
-        data = await get_favorites_with_prices(username)
-        return {"favorites": data}
-    except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
+    """The watchlist with live quotes."""
+    return {"favorites": await get_favorites_with_prices(_user(request))}
 
 
 @router.get("/list")
 async def list_favorite_ids(request: Request):
-    """Return just the coin ID list (no prices)."""
-    try:
-        username = request.state.user.get("sub", "")
-        return {"favorites": get_favorites(username)}
-    except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
+    await registry.ensure_loaded()
+    return {"favorites": get_favorites(_user(request))}
 
 
 @router.post("/")
 async def add(request: Request, body: AddFavoriteBody):
-    """Add a coin to the user's favorites."""
+    await registry.ensure_loaded()
+    iid = to_instrument_id(body.instrument_id or body.coin_id)
+    inst = await market.get_instrument(iid) if iid else None
+    if not inst:
+        return JSONResponse({"error": f"Unknown instrument '{body.instrument_id or body.coin_id}'"}, status_code=400)
     try:
-        username = request.state.user.get("sub", "")
-        updated = add_favorite(username, body.coin_id)
-        return {"favorites": updated, "message": f"{body.coin_id} added to favorites"}
+        return {"favorites": add_favorite(_user(request), inst.id), "message": f"{inst.name} added to your watchlist"}
     except ValueError as e:
         return JSONResponse({"error": str(e)}, status_code=400)
-    except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
 
 
-@router.delete("/{coin_id}")
-async def remove(request: Request, coin_id: str):
-    """Remove a coin from the user's favorites."""
-    try:
-        username = request.state.user.get("sub", "")
-        updated = remove_favorite(username, coin_id)
-        return {"favorites": updated, "message": f"{coin_id} removed from favorites"}
-    except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
+@router.delete("/{item_id}")
+async def remove(request: Request, item_id: str):
+    await registry.ensure_loaded()
+    iid = to_instrument_id(item_id) or item_id
+    return {"favorites": remove_favorite(_user(request), iid), "message": f"{iid} removed from your watchlist"}
 
 
 @router.put("/reorder")
 async def reorder(request: Request, body: ReorderBody):
-    """Reorder the user's favorites list."""
-    try:
-        username = request.state.user.get("sub", "")
-        save_user_data(username, "favorites", body.favorites)
-        return {"favorites": body.favorites, "message": "Favorites reordered"}
-    except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
+    await registry.ensure_loaded()
+    return {"favorites": set_favorites(_user(request), body.favorites), "message": "Watchlist reordered"}

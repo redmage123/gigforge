@@ -30,6 +30,7 @@ export default function InstrumentDetail() {
   const [view, setView] = useState(VIEWS[2])
   const [candles, setCandles] = useState(null)
   const [position, setPosition] = useState(null)
+  const [watched, setWatched] = useState(false)
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -37,6 +38,7 @@ export default function InstrumentDetail() {
     const id = encodeURIComponent(instrumentId)
     api.get(`/api/instruments/${id}`).then(setInst).catch((err) => setError(err.message))
     api.get(`/api/instruments/quotes?ids=${id}`).then((r) => setQuote(r.quotes?.[instrumentId] || null)).catch(() => {})
+    api.get('/api/favorites/list').then((r) => setWatched((r.favorites || []).includes(instrumentId))).catch(() => {})
     api.get('/api/trades/portfolio').then((pf) => {
       setPosition([...(pf.positions || []), ...(pf.closed || [])].find((p) => p.instrument_id === instrumentId) || null)
     }).catch(() => {})
@@ -48,6 +50,16 @@ export default function InstrumentDetail() {
       .then((r) => setCandles(r.candles || []))
       .catch((err) => { setCandles([]); setError(err.message) })
   }, [instrumentId, view])
+
+  const toggleWatch = async () => {
+    try {
+      if (watched) await api.del(`/api/favorites/${encodeURIComponent(instrumentId)}`)
+      else await api.post('/api/favorites/', { instrument_id: instrumentId })
+      setWatched(!watched)
+    } catch (err) {
+      setError(err.message)
+    }
+  }
 
   if (error && !inst) return <Card title="Instrument"><p className="negative">{error}</p><Link to="/">Back to the dashboard</Link></Card>
   if (!inst) return <LoadingSpinner />
@@ -68,6 +80,9 @@ export default function InstrumentDetail() {
         {quote?.delayed && <span className="muted" style={{ fontSize: '0.8rem' }}>delayed ~15 min</span>}
         <span className="muted" style={{ fontSize: '0.8rem' }}>{SESSIONS[inst.sessions]}</span>
         {inst.tradable && <Link className="btn btn-sm" to={`/trades?instrument=${encodeURIComponent(inst.id)}`}>Log trade</Link>}
+        <button type="button" className={`btn btn-sm ${watched ? 'btn-secondary' : 'btn-ghost'}`} aria-pressed={watched} onClick={toggleWatch}>
+          {watched ? '\u2605 On watchlist' : '\u2606 Add to watchlist'}
+        </button>
       </div>
 
       <Card title="Price">

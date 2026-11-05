@@ -26,6 +26,17 @@ async def quotes(ids: str = Query(..., max_length=4000)):
     return {"quotes": {k: v.to_dict() for k, v in got.items()}, "missing": [i for i in wanted if i not in got]}
 
 
+@router.get("/top")
+async def top(asset_class: str = "crypto", limit: int = Query(8, ge=1, le=50)):
+    """Most-traded well-known instruments of a class by current volume (e.g. dashboard "Top Coins")."""
+    await registry.ensure_loaded()
+    pool = [i for i in registry.all_instruments(asset_class) if "popular" in i.tags]
+    got = await market.quotes([i.id for i in pool])
+    rows = [(got[i.id], i) for i in pool if i.id in got]
+    rows.sort(key=lambda r: r[0].volume or 0, reverse=True)
+    return {"results": [{**i.to_dict(), "quote": q.to_dict()} for q, i in rows[:limit]]}
+
+
 @router.get("/{instrument_id}/candles")
 async def candles(instrument_id: str, timeframe: str = "1d", bars: int = Query(120, ge=10, le=1000), perp: bool = False):
     if timeframe not in TIMEFRAMES:

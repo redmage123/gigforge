@@ -15,6 +15,7 @@ from services.recommendation_engine import generate_all_recommendations
 from services.news_scanner import get_articles, get_last_scan_time, get_article_count
 from services.sentiment_alerts import get_user_sentiment_alerts, mark_alert_read
 from services.user_data import get_username, load_user_data
+from services.favorites import favorite_coingecko_ids
 from services.investment_profile import (
     get_profile,
     save_profile,
@@ -48,12 +49,8 @@ async def recommendations(request: Request):
 
         # Get user's favorites to include in recommendations
         favs = load_user_data(username, "favorites")
-        user_coins = set(DEFAULT_COINS)
-        if isinstance(favs, list):
-            for fav in favs:
-                coin_id = fav.get("coin_id") if isinstance(fav, dict) else fav
-                if coin_id:
-                    user_coins.add(coin_id)
+        # Sentiment is crypto news keyed by CoinGecko id: take the watchlist's crypto entries
+        user_coins = set(DEFAULT_COINS) | favorite_coingecko_ids(favs)
         # Also add preferred coins from profile
         for coin_id in profile.get("preferred_coins", []):
             if coin_id:

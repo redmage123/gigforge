@@ -11,6 +11,7 @@ from typing import Any
 from config import DEFAULT_COINS
 from services.sentiment_analyzer import get_coin_sentiment
 from services.user_data import load_user_data, save_user_data
+from services.favorites import favorite_coingecko_ids
 
 logger = logging.getLogger(__name__)
 
@@ -44,12 +45,7 @@ async def check_sentiment_alerts():
     all_coins = set(DEFAULT_COINS)
     for username in _get_all_usernames():
         try:
-            favs = load_user_data(username, "favorites")
-            if isinstance(favs, list):
-                for fav in favs:
-                    coin_id = fav.get("coin_id") if isinstance(fav, dict) else fav
-                    if coin_id:
-                        all_coins.add(coin_id)
+            all_coins |= favorite_coingecko_ids(load_user_data(username, "favorites"))
         except Exception:
             pass
 
@@ -100,13 +96,7 @@ def _distribute_alert(coin_id: str, alert: dict):
     """Save a sentiment alert to all users who track this coin."""
     for username in _get_all_usernames():
         try:
-            favs = load_user_data(username, "favorites")
-            tracked_coins = set(DEFAULT_COINS)
-            if isinstance(favs, list):
-                for fav in favs:
-                    cid = fav.get("coin_id") if isinstance(fav, dict) else fav
-                    if cid:
-                        tracked_coins.add(cid)
+            tracked_coins = set(DEFAULT_COINS) | favorite_coingecko_ids(load_user_data(username, "favorites"))
 
             if coin_id in tracked_coins:
                 # Append to user's sentiment alerts

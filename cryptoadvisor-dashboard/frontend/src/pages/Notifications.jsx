@@ -16,6 +16,26 @@ function timeAgo(ts) {
   return `${Math.floor(s / 86400)}d ago`
 }
 
+// $1.2B / $34.5M / $812K / $950
+function usdCompact(n) {
+  const v = Number(n) || 0
+  for (const [div, unit] of [[1e9, 'B'], [1e6, 'M'], [1e3, 'K']]) {
+    if (Math.abs(v) >= div) return `$${(v / div).toFixed(1)}${unit}`
+  }
+  return `$${Math.round(v).toLocaleString()}`
+}
+
+// "60 candles of 1h" -> "2.5 days"
+function spanText(bars, barSeconds) {
+  const hours = (Number(bars) * barSeconds) / 3600
+  if (!Number.isFinite(hours) || hours <= 0) return ''
+  if (hours < 48) return `${+hours.toFixed(1)} hours`
+  const days = hours / 24
+  return days < 120 ? `${+days.toFixed(1)} days` : `${+(days / 30.4).toFixed(1)} months`
+}
+
+const candleName = (tf) => (tf === '1d' ? 'daily' : tf)
+
 function Headline({ h, muted }) {
   return (
     <a href={h.url} target="_blank" rel="noopener noreferrer" style={{ color: muted ? '#94a3b8' : '#7dd3fc', fontSize: '0.85rem' }}>
@@ -104,7 +124,7 @@ function InPlayList({ entries }) {
           </div>
           <div style={{ margin: '0.35rem 0' }}><MoveBadge e={e} /></div>
           <div className="muted" style={{ fontSize: '0.8rem', fontFamily: 'monospace', marginBottom: '0.35rem' }}>
-            Vol {e.volume_ratio.toFixed(1)}x · Candle {e.range_ratio.toFixed(1)}x · Body {Math.round(e.body_pct)}% · {e.candle_date}{e.candle_forming ? ' (live)' : ''}
+            Vol {usdCompact(e.quote_volume)} ({e.volume_ratio.toFixed(1)}x) · Candle {e.range_ratio.toFixed(1)}x · Body {Math.round(e.body_pct)}% · {e.candle_label || e.candle_date}{e.candle_forming ? ' (live)' : ''}
             {e.hits > 1 ? ` · ${e.hits} triggers` : ''}
           </div>
           <Catalyst catalyst={e.catalyst} />
@@ -115,11 +135,13 @@ function InPlayList({ entries }) {
 }
 
 const RULE_FIELDS = [
-  { key: 'volume_mult', label: 'Volume more than', suffix: 'x avg', step: 0.5, help: 'Candle volume vs the 60-day average' },
-  { key: 'range_mult', label: 'Candle size more than', suffix: 'x avg', step: 0.5, help: 'High-to-low range vs the 60-day average' },
+  { key: 'volume_mult', label: 'Volume more than', suffix: 'x avg', step: 0.5, help: 'Candle volume vs the volume average below' },
+  { key: 'range_mult', label: 'Candle size more than', suffix: 'x avg', step: 0.5, help: 'High-to-low range vs the price average below' },
   { key: 'max_wick_pct', label: 'Opposing wick at most', suffix: '% of candle', step: 5, help: 'Top wick on bullish, bottom wick on bearish' },
   { key: 'min_body_pct', label: 'Body at least', suffix: '% of candle', step: 5, help: 'Open-to-close vs high-to-low; filters spiky candles that went nowhere' },
 ]
+
+const SETTING_KEYS = ['timeframe', 'volume_lookback', 'price_lookback', 'retention_days']
 
 function RulesEditor({ data, onSaved }) {
   const toast = useToast()
@@ -127,13 +149,35 @@ function RulesEditor({ data, onSaved }) {
   const [saving, setSaving] = useState(false)
   useEffect(() => setDraft(data.rules), [data.rules])
 
+  const tfInfo = data.timeframes.find((t) => t.value === draft.timeframe) || data.timeframes.find((t) => t.value === '1d')
+  const maxLb = tfInfo.max_lookback
+  const [minDays, maxDays] = data.retention_range
   const dirty = RULE_FIELDS.some((f) => Number(draft[f.key]) !== data.rules[f.key])
+    || SETTING_KEYS.some((k) => String(draft[k]) !== String(data.rules[k]))
+
+  // Keep the averaging periods inside what the chosen timeframe supports
+  const setTimeframe = (tf) => {
+    const top = data.timeframes.find((t) => t.value === tf).max_lookback
+    setDraft({
+      ...draft, timeframe: tf,
+      volume_lookback: Math.min(Number(draft.volume_lookback), top),
+      price_lookback: Math.min(Number(draft.price_lookback), top),
+    })
+  }
+
   const save = async (rules) => {
     setSaving(true)
     try {
-      const res = await api.put('/api/in-play/rules', Object.fromEntries(RULE_FIELDS.map((f) => [f.key, Number(rules[f.key])])))
+      const body = Object.fromEntries(RULE_FIELDS.map((f) => [f.key, Number(rules[f.key])]))
+      body.timeframe = rules.timeframe
+      body.volume_lookback = Math.round(Number(rules.volume_lookback))
+      body.price_lookback = Math.round(Number(rules.price_lookback))
+      body.retention_days = Math.round(Number(rules.retention_days))
+      const res = await api.put('/api/in-play/rules', body)
       onSaved(res)
-      toast.success(`Rules saved: ${res.entries.length} coins match in the last ${data.retention_days} days`)
+      toast.success(res.profile_ready
+        ? `Rules saved: ${res.entries.length} coins match in the last ${res.rules.retention_days} days`
+        : `Rules saved. Building ${candleName(res.rules.timeframe)} candle history; the list fills in within a few minutes.`)
     } catch (err) {
       toast.error(err.message)
     } finally {
@@ -141,17 +185,70 @@ function RulesEditor({ data, onSaved }) {
     }
   }
 
+  const labelStyle = { display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.85rem', color: '#cbd5e1', minWidth: 0 }
+
   return (
     <Card title="Alert Rules">
       <p className="muted" style={{ fontSize: '0.85rem', marginTop: 0 }}>
-        Daily candles compared with the previous {data.lookback_days} days. Changes apply to the last {data.retention_days} days straight away
-        (without re-sending old alerts) and to every new move.
+        Threshold changes apply to your list straight away (without re-sending old alerts) and to every new move.
+        A new timeframe or averaging period first rebuilds {data.rules.retention_days} days of history, which takes a few minutes.
       </p>
+      <h4 style={{ color: '#e2e8f0', margin: '0 0 0.5rem', fontSize: '0.9rem' }}>Timeframe and averages</h4>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '0.75rem', marginBottom: '1rem' }}>
+        <label style={labelStyle} htmlFor="ip-timeframe">
+          Candle timeframe
+          <select id="ip-timeframe" className="input" value={draft.timeframe} onChange={(e) => setTimeframe(e.target.value)}>
+            {data.timeframes.map((t) => <option key={t.value} value={t.value}>{t.value}</option>)}
+          </select>
+          <span className="muted" style={{ fontSize: '0.75rem' }}>Every {candleName(draft.timeframe)} candle is checked against the rules</span>
+        </label>
+        {[
+          ['volume_lookback', 'Volume average over', 'Average volume of the previous candles'],
+          ['price_lookback', 'Price average over', 'Average candle size (high to low) of the previous candles'],
+        ].map(([key, label, help]) => (
+          <label key={key} style={labelStyle} htmlFor={`ip-${key}`}>
+            {label} (candles)
+            <input
+              id={`ip-${key}`}
+              className="input"
+              type="number"
+              inputMode="numeric"
+              step={1}
+              min={data.lookback_min}
+              max={maxLb}
+              value={draft[key]}
+              onChange={(e) => setDraft({ ...draft, [key]: e.target.value })}
+              style={{ width: '100%', boxSizing: 'border-box' }}
+            />
+            <span className="muted" style={{ fontSize: '0.75rem' }}>
+              {help}: {spanText(draft[key], tfInfo.bar_seconds)} on {draft.timeframe} ({data.lookback_min}-{maxLb})
+            </span>
+          </label>
+        ))}
+        <label style={labelStyle} htmlFor="ip-retention">
+          Keep coins on the list for (days)
+          <input
+            id="ip-retention"
+            className="input"
+            type="number"
+            inputMode="numeric"
+            step={1}
+            min={minDays}
+            max={maxDays}
+            value={draft.retention_days}
+            onChange={(e) => setDraft({ ...draft, retention_days: e.target.value })}
+            style={{ width: '100%', boxSizing: 'border-box' }}
+          />
+          <span className="muted" style={{ fontSize: '0.75rem' }}>A coin drops off this many days after it last triggered ({minDays}-{maxDays})</span>
+        </label>
+      </div>
+      <h4 style={{ color: '#e2e8f0', margin: '0 0 0.5rem', fontSize: '0.9rem' }}>Candle rules</h4>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '0.75rem' }}>
         {RULE_FIELDS.map((f) => (
-          <label key={f.key} style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.85rem', color: '#cbd5e1', minWidth: 0 }}>
+          <label key={f.key} style={labelStyle} htmlFor={`ip-${f.key}`}>
             {f.label} ({f.suffix})
             <input
+                id={`ip-${f.key}`}
                 className="input"
                 type="number"
                 inputMode="decimal"
@@ -255,11 +352,13 @@ export default function Notifications() {
     }
   }
 
+  const building = inPlay && !inPlay.profile_ready
   useEffect(() => {
     load()
-    const id = setInterval(load, 60000)
+    // Poll faster while the scanner builds history for a newly chosen timeframe
+    const id = setInterval(load, building ? 15000 : 60000)
     return () => clearInterval(id)
-  }, [])
+  }, [building])
 
   const markAllRead = async () => {
     await api.post('/api/notifications/read', {})
@@ -280,14 +379,23 @@ export default function Notifications() {
       <Card title={`In-Play Coins (${entries.length}/${inPlay?.max_entries ?? 25})`}>
         {rules && (
           <p className="muted" style={{ fontSize: '0.85rem', marginTop: 0 }}>
-            Daily candle with volume &gt;{rules.volume_mult}x and size &gt;{rules.range_mult}x the {inPlay.lookback_days}-day average,
-            body ≥ {rules.min_body_pct}% and opposing wick ≤ {rules.max_wick_pct}% of the candle. Kept {inPlay.retention_days} days, newest first.
+            {candleName(rules.timeframe).replace(/^./, (c) => c.toUpperCase())} candle with volume &gt;{rules.volume_mult}x the average of the
+            previous {rules.volume_lookback} candles and size &gt;{rules.range_mult}x the average of the previous {rules.price_lookback},
+            body ≥ {rules.min_body_pct}% and opposing wick ≤ {rules.max_wick_pct}% of the candle. Kept {rules.retention_days} days, newest first.
             {inPlay.last_scan && <> Last scan {timeAgo(inPlay.last_scan)} across {inPlay.symbols_scanned} Binance USDT pairs.</>}
             {!inPlay.ai_summaries && <> AI catalyst summaries are off (no API key configured).</>}
           </p>
         )}
+        {building && (
+          <div role="status" style={{ padding: '0.6rem 0.8rem', marginBottom: '0.75rem', borderRadius: 8, background: '#1e293b', color: '#cbd5e1', fontSize: '0.85rem' }}>
+            Building {candleName(rules.timeframe)} candle history for your settings. The list fills in within a few minutes; this page refreshes by itself.
+          </div>
+        )}
         {entries.length === 0 ? (
-          <p className="muted" style={{ textAlign: 'center' }}>No coins match your rules in the last 30 days. The scanner runs every 15 minutes; try loosening the rules below.</p>
+          <p className="muted" style={{ textAlign: 'center' }}>
+            {building ? 'Waiting for the first scan of your timeframe…'
+              : `No coins match your rules in the last ${rules?.retention_days ?? 14} days. The scanner runs every 15 minutes; try loosening the rules below.`}
+          </p>
         ) : narrow ? (
           <InPlayList entries={entries} />
         ) : (
@@ -315,11 +423,15 @@ export default function Notifications() {
                           {e.change_pct > 0 ? '+' : ''}{e.change_pct.toFixed(1)}%
                         </div>
                       </td>
-                      <td style={{ ...cellStyle, color: '#f59e0b', fontFamily: 'monospace' }}>{e.volume_ratio.toFixed(1)}x</td>
+                      <td style={{ ...cellStyle, color: '#f59e0b', fontFamily: 'monospace' }}>
+                        {usdCompact(e.quote_volume)}
+                        <div style={{ fontSize: '0.75rem' }}>{e.volume_ratio.toFixed(1)}x avg</div>
+                        {e.avg_quote_volume > 0 && <div className="muted" style={{ fontSize: '0.75rem' }}>avg {usdCompact(e.avg_quote_volume)}</div>}
+                      </td>
                       <td style={{ ...cellStyle, color: '#e0e0e0', fontFamily: 'monospace' }}>
                         {e.range_ratio.toFixed(1)}x
                         <div className="muted" style={{ fontSize: '0.75rem' }}>body {Math.round(e.body_pct)}%</div>
-                        <div className="muted" style={{ fontSize: '0.75rem' }}>{e.candle_date}{e.candle_forming ? ' (live)' : ''}</div>
+                        <div className="muted" style={{ fontSize: '0.75rem' }}>{e.candle_label || e.candle_date}{e.candle_forming ? ' (live)' : ''}</div>
                       </td>
                       <td style={{ ...cellStyle, color: '#aaa', whiteSpace: 'nowrap' }}>
                         {timeAgo(e.triggered_at)}

@@ -24,7 +24,12 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         # Skip public endpoints (login, register)
         public = ("/api/auth/login", "/api/auth/register", "/api/health")
         if any(request.url.path.startswith(p) for p in public):
-            return await call_next(request)
+            response = await call_next(request)
+            # Issue the token with login/signup so the first POST after it (e.g. the setup
+            # wizard) already has one; otherwise it races the first GET that would set it.
+            if not request.cookies.get("csrf_token"):
+                response.set_cookie("csrf_token", secrets.token_hex(32), httponly=False, samesite="lax")
+            return response
 
         # Validate CSRF token for state-changing requests
         cookie_token = request.cookies.get("csrf_token", "")

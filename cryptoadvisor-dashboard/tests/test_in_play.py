@@ -205,7 +205,7 @@ class TestAiSummary:
         cat = {"found": True, "headlines": [HEADLINE], "coin_name": "Abc"}
         create = AsyncMock(return_value=_response(text, stop))
         fake = SimpleNamespace(beta=SimpleNamespace(messages=SimpleNamespace(create=create)))
-        with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "test"}), \
+        with patch.dict("os.environ", {"ANTHROPIC_API_KEY": "test"}, clear=True), \
                 patch.object(in_play_news.anthropic, "AsyncAnthropic", return_value=fake):
             return asyncio.run(in_play_news.summarize_catalyst(_entry(cat), cat)), create
 
@@ -263,3 +263,126 @@ class TestClaudeCli:
             out = asyncio.run(in_play_news.summarize_catalyst(_entry(cat), cat))
         assert out["found"] and out["ai_summary"].startswith("ABC was listed")
         assert run.call_args.kwargs["system"] == in_play_news._SYSTEM
+
+
+# ── Timeframes, separate lookbacks, retention (feedback 2026-11) ─────────────
+
+from services import in_play  # noqa: E402
+from services.in_play import aggregate, backfill_bars, max_lookback  # noqa: E402
+
+HOUR = 3600
+
+
+class TestSeparateLookbacks:
+    def test_volume_and_price_use_their_own_windows(self):
+        # Volume was 10x higher 40+ candles ago: a 60-candle volume average is inflated, a 20-candle one is not
+        hist = [Candle(i * DAY * 1000, 100, 101, 99, 100.5, 10_000_000 if i < 40 else 1_000_000) for i in range(60)]
+        spike = _candle(100, 108, 99.5, 107.5, 5_000_000)
+        long_avg = measure(spike, hist, volume_lookback=60, price_lookback=60)
+        short_avg = measure(spike, hist, volume_lookback=20, price_lookback=60)
+        assert long_avg is None  # 5M vs ~4M average: below the 2x floor
+        assert short_avg and short_avg.volume_ratio == 5.0 and short_avg.avg_volume == 1_000_000
+
+    def test_min_history_follows_the_longer_lookback(self):
+        spike = _candle(100, 108, 99.5, 107.5, 9_000_000)
+        assert measure(spike, _flat_history(20), 20, 20) is not None
+        assert measure(spike, _flat_history(20), 20, 100) is None  # needs 50 candles
+
+
+class TestAggregate:
+    def test_3h_bars_from_1h_with_forming_tail(self):
+        hourly = [Candle((i + 1) * HOUR * 1000, 10 + i, 11 + i, 9 + i, 10.5 + i, 100) for i in range(8)]
+        bars = aggregate(hourly, 3, 3 * HOUR)
+        # hours 1-2 are a partial first bucket (dropped); 3-5 and 6-8 are full, 6-8 is... complete
+        assert [b.open_time for b in bars] == [3 * HOUR * 1000, 6 * HOUR * 1000]
+        first = bars[0]
+        assert (first.open, first.high, first.low, first.close, first.quote_volume) == (12, 15, 11, 14.5, 300)
+
+    def test_last_partial_bucket_is_the_forming_bar(self):
+        hourly = [Candle(i * HOUR * 1000, 1, 2, 0.5, 1.5, 10) for i in range(7)]  # 0-2, 3-5, 6
+        bars = aggregate(hourly, 3, 3 * HOUR)
+        assert len(bars) == 3 and bars[-1].quote_volume == 10
+
+    def test_9d_from_3d_candles_offset_by_one_day(self):
+        # Binance 3d candles open on epoch days 1, 4, 7 (mod 9) -> three per 9d bucket
+        three_day = [Candle((1 + 3 * i) * DAY * 1000, 1, 2, 0.5, 1.5, 5) for i in range(9)]
+        bars = aggregate(three_day, 3, 9 * DAY)
+        assert len(bars) == 3 and all(b.quote_volume == 15 for b in bars)
+        assert bars[0].open_time == DAY * 1000
+
+    def test_native_timeframes_pass_through(self):
+        hist = _flat_history(5)
+        assert aggregate(hist, 1, DAY) is hist
+
+
+class TestRulesV2:
+    def test_defaults_and_profile(self):
+        assert DEFAULT_RULES.timeframe == "1d" and DEFAULT_RULES.retention_days == 14
+        assert DEFAULT_RULES.profile == "1d:60:60"
+        assert Rules(timeframe="1h", volume_lookback=24, price_lookback=48).profile == "1h:24:48"
+
+    def test_from_dict_types(self):
+        r = Rules.from_dict({"timeframe": "3h", "volume_lookback": "30", "price_lookback": 45.0, "retention_days": "7"})
+        assert (r.timeframe, r.volume_lookback, r.price_lookback, r.retention_days) == ("3h", 30, 45, 7)
+
+    def test_validation(self):
+        assert Rules(timeframe="4h").validate()
+        assert Rules(volume_lookback=5).validate()
+        assert Rules(timeframe="9d", price_lookback=400).validate()  # 9d is built from 3x 3d candles
+        assert Rules(timeframe="9d", price_lookback=300).validate() is None
+        assert Rules(retention_days=0).validate() and Rules(retention_days=91).validate()
+        assert all(Rules(timeframe=tf).validate() is None for tf in in_play.TIMEFRAMES)
+
+    def test_max_lookback_fits_one_request(self):
+        assert max_lookback("1h") == 500 and max_lookback("3h") == 331 and max_lookback("9d") == 331
+
+    def test_backfill_covers_retention_where_it_fits(self):
+        assert backfill_bars("1d", 60, 14) == 14
+        assert backfill_bars("1h", 60, 14) == 336
+        assert backfill_bars("1h", 60, 90) == 1000 - 60 - 2  # 90 days of hours does not fit; take what fits
+
+
+class TestProfilesAndRetention:
+    NOW = 2_000_000_000
+
+    def test_only_the_users_profile_matches_and_switching_drops_old_hits(self):
+        c = {
+            "d": {**_cand("DDDUSDT", self.NOW), "profile": "1d:60:60"},
+            "h": {**_cand("HHHUSDT", self.NOW), "profile": "1h:60:60"},
+        }
+        assert rematch_user(c, "u", DEFAULT_RULES) == ["d"]
+        assert rematch_user(c, "u", Rules(timeframe="1h")) == ["h"]
+        assert "u" not in c["d"]["matched"]
+        rows = user_list(c, "u", self.NOW, profile="1h:60:60")
+        assert [r["symbol"] for r in rows] == ["HHHUSDT"]
+
+    def test_coins_fall_off_after_retention_days(self):
+        c = {
+            "new": _cand("NEWUSDT", self.NOW - 3 * DAY, {"u": self.NOW - 3 * DAY}),
+            "old": _cand("OLDUSDT", self.NOW - 10 * DAY, {"u": self.NOW - 10 * DAY}),
+        }
+        assert [r["symbol"] for r in user_list(c, "u", self.NOW, retention_days=14)] == ["NEWUSDT", "OLDUSDT"]
+        assert [r["symbol"] for r in user_list(c, "u", self.NOW, retention_days=7)] == ["NEWUSDT"]
+
+    def test_legacy_candidates_become_daily_default_profile(self):
+        legacy = {"ABCUSDT:123": {**_cand("ABCUSDT", 123), "quote_volume": 5_000_000, "volume_ratio": 5.0, "candle_date": "2026-10-01"}}
+        with patch.object(in_play, "load_shared_data", return_value=legacy):
+            got = in_play.load_candidates()
+        (key, c), = got.items()
+        assert key == "1d:60:60|ABCUSDT|123000" and c["timeframe"] == "1d" and c["avg_quote_volume"] == 1_000_000
+        assert c["candle_label"] == "2026-10-01"
+
+    def test_old_scan_state_counts_as_daily_history_built(self):
+        assert in_play._backfilled_profiles({"backfilled": True}) == {"1d:60:60"}
+        assert in_play._backfilled_profiles({"backfilled_profiles": ["1h:24:24"]}) == {"1h:24:24"}
+
+
+class TestPushV2:
+    def test_shows_volume_in_dollars_and_timeframe(self):
+        e = {**_entry({"found": False, "headlines": []}), "quote_volume": 12_345_678, "timeframe": "1h"}
+        body = format_push(e, [])[1]
+        assert "Volume $12.3M (5.1x avg)" in body and "forming 1h candle" in body
+
+    def test_daily_still_says_daily(self):
+        e = {**_entry({"found": False, "headlines": []}), "quote_volume": 812_000}
+        assert "Volume $812.0K" in format_push(e, [])[1] and "daily candle" in format_push(e, [])[1]

@@ -448,7 +448,7 @@ select:focus, .input:focus, .form-input:focus {
     border-color: var(--primary);
 }
 
-.input { min-width: 300px; }
+.input { min-width: min(300px, 100%); }  /* never wider than its column or the phone screen */
 
 .form-row {
     display: flex;

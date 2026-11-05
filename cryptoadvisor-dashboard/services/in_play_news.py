@@ -239,8 +239,10 @@ async def summarize_catalyst(entry: dict, catalyst: dict) -> dict:
     name = catalyst.get("coin_name") or entry["base"]
     prompt = (
         f"Coin: {name} ({entry['base']})\n"
-        f"Daily candle {entry['candle_date']}: {entry['direction']} {entry['change_pct']:+.1f}%, "
-        f"volume {entry['volume_ratio']:.1f}x and range {entry['range_ratio']:.1f}x the 60-day average.\n\n"
+        f"{entry.get('timeframe', '1d')} candle {entry.get('candle_label', entry['candle_date'])}: "
+        f"{entry['direction']} {entry['change_pct']:+.1f}%, volume {entry['volume_ratio']:.1f}x the average of the "
+        f"previous {entry.get('volume_lookback', 60)} candles and range {entry['range_ratio']:.1f}x the average of "
+        f"the previous {entry.get('price_lookback', 60)}.\n\n"
         f"Headlines:\n{listing}"
     )
     # Prefer the Claude CLI (subscription token); use the API directly only with an API key alone

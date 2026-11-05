@@ -28,16 +28,26 @@ class RulesBody(BaseModel):
     range_mult: float
     max_wick_pct: float
     min_body_pct: float
+    timeframe: str = in_play.DEFAULT_RULES.timeframe
+    volume_lookback: int = in_play.DEFAULT_RULES.volume_lookback
+    price_lookback: int = in_play.DEFAULT_RULES.price_lookback
+    retention_days: int = in_play.DEFAULT_RULES.retention_days
 
 
 def _rules_payload(username: str) -> dict:
+    rules = in_play.get_rules(username)
     return {
-        "rules": asdict(in_play.get_rules(username)),
+        "rules": asdict(rules),
         "defaults": asdict(in_play.DEFAULT_RULES),
         "floors": {"volume_mult": in_play.BASE_VOLUME_MULT, "range_mult": in_play.BASE_RANGE_MULT},
-        "timeframe": "1d",
-        "lookback_days": in_play.LOOKBACK_DAYS,
-        "retention_days": in_play.RETENTION_DAYS,
+        "timeframes": [
+            {"value": tf, "bar_seconds": bar_s, "max_lookback": in_play.max_lookback(tf)}
+            for tf, (_, _, bar_s) in in_play.TIMEFRAMES.items()
+        ],
+        "lookback_min": in_play.LOOKBACK_MIN,
+        "retention_range": [in_play.RETENTION_MIN_DAYS, in_play.RETENTION_MAX_DAYS],
+        # False while the scanner is still building history for a newly chosen timeframe/averages
+        "profile_ready": in_play.profile_ready(rules.profile),
         "max_entries": in_play.MAX_ENTRIES,
     }
 
@@ -62,9 +72,12 @@ async def save_rules(request: Request, body: RulesBody):
     error = rules.validate()
     if error:
         return JSONResponse({"error": error}, status_code=400)
-    in_play.update_rules(username, rules)
-    # Coins that just joined the list need their news looked up
-    asyncio.create_task(in_play.refresh_catalysts_for(username))
+    if in_play.update_rules(username, rules):
+        # Coins that just joined the list need their news looked up
+        asyncio.create_task(in_play.refresh_catalysts_for(username))
+    else:
+        # New timeframe/averaging combination: build its history now rather than at the next scan
+        asyncio.create_task(in_play.scan_in_play(only_profiles={rules.profile}, wait=True))
     return {"status": "saved", "entries": in_play.get_user_view(username), **_rules_payload(username)}
 
 

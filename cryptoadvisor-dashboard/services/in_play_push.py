@@ -52,12 +52,26 @@ def catalyst_line(cat: dict | None) -> str:
     return "No news catalyst found"
 
 
+def usd_compact(amount: float) -> str:
+    """$1.2B / $34.5M / $812K / $950."""
+    for div, unit in ((1e9, "B"), (1e6, "M"), (1e3, "K")):
+        if abs(amount) >= div:
+            return f"${amount / div:.1f}{unit}"
+    return f"${amount:,.0f}"
+
+
+def candle_name(timeframe: str) -> str:
+    return "daily" if timeframe == "1d" else timeframe
+
+
 def format_push(entry: dict, in_play: list[dict]) -> tuple[str, str, str]:
     arrow = "▲" if entry["direction"] == "bullish" else "▼"
     title = f"{arrow} {entry['base']} in play — {entry['direction']} {entry['change_pct']:+.1f}%"
+    volume = f"Volume {usd_compact(entry['quote_volume'])} ({entry['volume_ratio']:.1f}x avg)" if entry.get("quote_volume") \
+        else f"Volume {entry['volume_ratio']:.1f}x avg"
     lines = [
-        f"Volume {entry['volume_ratio']:.1f}x avg · Candle {entry['range_ratio']:.1f}x avg range · Body {entry['body_pct']:.0f}%",
-        f"Price ${entry['close']:,.6g} ({'forming' if entry['candle_forming'] else 'closed'} daily candle)",
+        f"{volume} · Candle {entry['range_ratio']:.1f}x avg range · Body {entry['body_pct']:.0f}%",
+        f"Price ${entry['close']:,.6g} ({'forming' if entry['candle_forming'] else 'closed'} {candle_name(entry.get('timeframe', '1d'))} candle)",
         catalyst_line(entry.get("catalyst")),
     ]
     others = ", ".join(f"{e['base']}{'▲' if e['direction'] == 'bullish' else '▼'}" for e in in_play[:10])

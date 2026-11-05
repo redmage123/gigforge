@@ -32,7 +32,7 @@ class LoginRequest(BaseModel):
 class ChangePasswordRequest(BaseModel):
     current_password: str
     new_password: str
-    confirm_password: str
+    confirm_password: str | None = None  # older frontends omit it; the form already checks the match
 
 
 @router.post("/register")
@@ -155,7 +155,7 @@ async def change_password(req: ChangePasswordRequest, request: Request):
     if not username:
         return JSONResponse(status_code=401, content={"error": "Not authenticated"})
 
-    if req.new_password != req.confirm_password:
+    if req.confirm_password is not None and req.new_password != req.confirm_password:
         return JSONResponse(status_code=400, content={"error": "New passwords do not match"})
 
     if len(req.new_password) < 6:

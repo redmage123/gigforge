@@ -311,8 +311,10 @@ async def _extract_and_store_facts(username: str, conversation: list[dict]):
 async def serve_react(full_path: str):
     """Serve React SPA — static assets or index.html for client-side routing."""
     # Try to serve the exact file first (JS, CSS, images, etc.)
-    file_path = REACT_DIR / full_path
-    if full_path and file_path.is_file():
+    # Resolve and confine to the build dir: "/../../etc/passwd" must never escape it
+    root = REACT_DIR.resolve()
+    file_path = (root / full_path).resolve()
+    if full_path and file_path.is_relative_to(root) and file_path.is_file():
         return FileResponse(file_path)
 
     # Never fall back to index.html for asset requests — return 404 instead

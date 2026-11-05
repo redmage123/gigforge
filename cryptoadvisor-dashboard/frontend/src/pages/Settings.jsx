@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { api } from '../api/client'
+import PasswordInput from '../components/PasswordInput'
 import Card from '../components/Card'
 import LoadingSpinner from '../components/LoadingSpinner'
 
@@ -76,8 +77,8 @@ export default function Settings() {
       setError('Passwords do not match')
       return
     }
-    if (newPassword.length < 8) {
-      setError('Password must be at least 8 characters')
+    if (newPassword.length < 6) {
+      setError('Password must be at least 6 characters')
       return
     }
     setChangingPassword(true)
@@ -86,6 +87,7 @@ export default function Settings() {
       await api.post('/api/auth/change-password', {
         current_password: currentPassword,
         new_password: newPassword,
+        confirm_password: confirmPassword,
       })
       setCurrentPassword('')
       setNewPassword('')
@@ -252,9 +254,7 @@ export default function Settings() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', maxWidth: 400 }}>
             <div className="form-group">
               <label>Current Password</label>
-              <input
-                className="form-input"
-                type="password"
+              <PasswordInput
                 value={currentPassword}
                 onChange={(e) => setCurrentPassword(e.target.value)}
                 required
@@ -262,20 +262,16 @@ export default function Settings() {
             </div>
             <div className="form-group">
               <label>New Password</label>
-              <input
-                className="form-input"
-                type="password"
+              <PasswordInput
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
-                minLength={8}
+                minLength={6}
                 required
               />
             </div>
             <div className="form-group">
               <label>Confirm New Password</label>
-              <input
-                className="form-input"
-                type="password"
+              <PasswordInput
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 required

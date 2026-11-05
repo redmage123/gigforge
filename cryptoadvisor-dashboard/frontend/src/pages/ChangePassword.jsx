@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { api } from '../api/client';
+import PasswordInput from '../components/PasswordInput';
 
 export default function ChangePassword() {
   const [currentPassword, setCurrentPassword] = useState('');
@@ -28,6 +29,7 @@ export default function ChangePassword() {
       await api.post('/api/auth/change-password', {
         current_password: currentPassword,
         new_password: newPassword,
+        confirm_password: confirmPassword,
       });
       setSuccess('Password changed successfully');
       setCurrentPassword('');
@@ -89,15 +91,15 @@ export default function ChangePassword() {
         <form onSubmit={handleSubmit}>
           <div style={{ marginBottom: '1rem' }}>
             <label style={{ color: '#aaa', fontSize: '0.85rem', display: 'block', marginBottom: 6 }}>Current Password</label>
-            <input type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} style={inputStyle} required />
+            <PasswordInput value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} style={inputStyle} required />
           </div>
           <div style={{ marginBottom: '1rem' }}>
             <label style={{ color: '#aaa', fontSize: '0.85rem', display: 'block', marginBottom: 6 }}>New Password</label>
-            <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} style={inputStyle} required />
+            <PasswordInput value={newPassword} onChange={(e) => setNewPassword(e.target.value)} style={inputStyle} required />
           </div>
           <div style={{ marginBottom: '1.5rem' }}>
             <label style={{ color: '#aaa', fontSize: '0.85rem', display: 'block', marginBottom: 6 }}>Confirm New Password</label>
-            <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} style={inputStyle} required />
+            <PasswordInput value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} style={inputStyle} required />
           </div>
           <button type="submit" disabled={loading} style={btnStyle}>
             {loading ? 'Changing...' : 'Change Password'}

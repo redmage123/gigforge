@@ -33,11 +33,11 @@ function ChatWindow() {
           history: messages.slice(-8).map(m => ({ role: m.role, content: m.content })),
         }),
       })
-      const data = await res.json()
-      setMessages((prev) => [
-        ...prev,
-        { role: 'assistant', content: data.response || 'No response received.' },
-      ])
+      const data = await res.json().catch(() => ({}))
+      const content = res.ok
+        ? data.response || 'No response received.'
+        : `Sorry, the assistant is unavailable right now (${data.error || data.detail || `HTTP ${res.status}`}).`
+      setMessages((prev) => [...prev, { role: 'assistant', content }])
     } catch {
       setMessages((prev) => [
         ...prev,

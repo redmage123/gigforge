@@ -11,8 +11,8 @@ How AssetAdvisor works (left sidebar; the ? icon at the top right replays the gu
 
 Instruments: every page works with US stocks, ETFs, commodity futures (gold, oil, grains...), Treasury
 futures, forex pairs (EUR/USD, USD/JPY, crosses and some emerging-market pairs), Treasury yields
-(reference only) and crypto. Search any of them by ticker or name ("AAPL",
-"gold", "10-year", "bitcoin"). Each has its own page (click it anywhere) with a chart, your position,
+(reference only) and crypto. Find any of them by ticker or name ("AAPL", "gold", "EUR/USD",
+"bitcoin") with the search box at the top of every page (desktop; on phones use Trades or Alerts). Each has its own page (click it anywhere) with a chart, your position,
 "Log trade" and "Add to watchlist". Stock, ETF and futures prices are delayed about 15 minutes.
 
 - Dashboard: Markets panel (S&P 500, Nasdaq, VIX, yields, dollar, gold, oil, crypto), your watchlist,

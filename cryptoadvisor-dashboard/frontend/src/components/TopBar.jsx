@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import NotificationBell from './NotificationBell'
+import InstrumentPicker from './InstrumentPicker'
 
 function TopBar({ onStartGuide }) {
   const { user, logout } = useAuth()
@@ -35,8 +36,19 @@ function TopBar({ onStartGuide }) {
 
   return (
     <header className="topbar">
-      <div className="topbar-left">
+      <div className="topbar-left" style={{ display: 'flex', alignItems: 'center', gap: '1rem', minWidth: 0, flex: 1 }}>
         <h1 className="topbar-title">AssetAdvisor</h1>
+        {/* Jump to any instrument page: stocks, ETFs, futures, forex, yields, crypto */}
+        <div className="topbar-search" style={{ flex: '0 1 360px', minWidth: 0 }}>
+          <label htmlFor="topbar-search" className="sr-only">Search instruments</label>
+          <InstrumentPicker
+            id="topbar-search"
+            value={null}
+            tradableOnly={false}
+            placeholder="Search AAPL, gold, EUR/USD, bitcoin…"
+            onChange={(inst) => inst && navigate(`/i/${encodeURIComponent(inst.id)}`)}
+          />
+        </div>
       </div>
       <div className="topbar-right" ref={menuRef}>
         <NotificationBell />

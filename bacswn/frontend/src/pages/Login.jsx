@@ -40,7 +40,7 @@ export default function Login() {
           <div className="form-group">
             <label htmlFor="login-pass">Password</label>
             <input id="login-pass" type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)}
-              placeholder="Enter password" required />
+              placeholder="Enter password" />
           </div>
           <button className="btn btn-primary login-btn" type="submit" disabled={loading}>
             {loading ? 'Signing in...' : 'Sign In'}

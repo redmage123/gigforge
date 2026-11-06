@@ -28,3 +28,17 @@ def client_ip(scope: dict) -> str:
             return value
     xff = headers.get("x-forwarded-for", "")
     return xff.split(",")[0].strip() or peer
+
+
+def is_https(scope: dict) -> bool:
+    """Did the visitor use HTTPS? Behind Cloudflare the app sees plain HTTP from nginx, so ask Cloudflare.
+
+    CF-Visitor is {"scheme":"https"} for HTTPS visitors; it is trusted only from our own proxy.
+    """
+    if scope.get("scheme") == "https":
+        return True
+    peer = (scope.get("client") or ("unknown", 0))[0] or "unknown"
+    if not _is_private(peer):
+        return False
+    headers = {k.decode("latin-1").lower(): v.decode("latin-1") for k, v in scope.get("headers") or []}
+    return '"https"' in headers.get("cf-visitor", "").replace(" ", "")

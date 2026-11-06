@@ -137,3 +137,12 @@ class TestDeleteAccount:
         from services import account
         with pytest.raises(ValueError):
             asyncio.run(account.delete_account("../etc"))
+
+
+class TestHttps:
+    def test_cloudflare_visitor_scheme_trusted_only_from_proxy(self):
+        from middleware.client_ip import is_https
+        s = lambda peer, v: {"client": (peer, 1), "headers": [(b"cf-visitor", v.encode())]}  # noqa: E731
+        assert is_https(s("172.17.0.1", '{"scheme":"https"}'))
+        assert not is_https(s("172.17.0.1", '{"scheme":"http"}'))
+        assert not is_https(s("8.8.8.8", '{"scheme":"https"}'))

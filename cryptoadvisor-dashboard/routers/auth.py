@@ -7,6 +7,8 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from middleware.client_ip import is_https
+
 from services.auth import (
     authenticate, create_token, load_users, save_users, hash_password, verify_password,
     check_lockout, record_failed_attempt, clear_attempts,
@@ -36,7 +38,7 @@ class ChangePasswordRequest(BaseModel):
 
 
 @router.post("/register")
-async def register(req: RegisterRequest):
+async def register(req: RegisterRequest, request: Request):
     if req.password != req.confirm_password:
         return JSONResponse(status_code=400, content={"error": "Passwords do not match"})
 
@@ -85,13 +87,14 @@ async def register(req: RegisterRequest):
         value=token,
         httponly=True,
         samesite="lax",
+        secure=is_https(request.scope),  # HTTPS visitors only send it back over HTTPS
         max_age=86400,
     )
     return response
 
 
 @router.post("/login")
-async def login(req: LoginRequest):
+async def login(req: LoginRequest, request: Request):
     if check_lockout(req.username):
         return JSONResponse(
             status_code=429,
@@ -118,6 +121,7 @@ async def login(req: LoginRequest):
         value=token,
         httponly=True,
         samesite="lax",
+        secure=is_https(request.scope),  # HTTPS visitors only send it back over HTTPS
         max_age=86400,  # 24 hours
     )
     return response

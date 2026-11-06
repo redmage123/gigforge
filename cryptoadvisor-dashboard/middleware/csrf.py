@@ -5,6 +5,8 @@ import secrets
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
+from middleware.client_ip import is_https
+
 
 class CSRFMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
@@ -18,7 +20,7 @@ class CSRFMiddleware(BaseHTTPMiddleware):
             # Set CSRF token cookie on GET requests
             if not request.cookies.get("csrf_token"):
                 token = secrets.token_hex(32)
-                response.set_cookie("csrf_token", token, httponly=False, samesite="lax")
+                response.set_cookie("csrf_token", token, httponly=False, samesite="lax", secure=is_https(request.scope))
             return response
 
         # Skip public endpoints (login, register)
@@ -28,7 +30,8 @@ class CSRFMiddleware(BaseHTTPMiddleware):
             # Issue the token with login/signup so the first POST after it (e.g. the setup
             # wizard) already has one; otherwise it races the first GET that would set it.
             if not request.cookies.get("csrf_token"):
-                response.set_cookie("csrf_token", secrets.token_hex(32), httponly=False, samesite="lax")
+                response.set_cookie("csrf_token", secrets.token_hex(32), httponly=False, samesite="lax",
+                                    secure=is_https(request.scope))
             return response
 
         # Validate CSRF token for state-changing requests

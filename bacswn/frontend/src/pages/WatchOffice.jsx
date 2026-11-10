@@ -3,6 +3,7 @@ import { MapContainer, TileLayer, Marker } from 'react-leaflet'
 import L from 'leaflet'
 import { api } from '../api/client'
 import { usePolling } from '../hooks/usePolling'
+import LiveBadge from '../components/LiveBadge'
 
 // ─── Flight category colors ────────────────────────────────────────────
 const CAT_COLORS = { VFR: '#10b981', MVFR: '#3b82f6', IFR: '#ef4444', LIFR: '#a855f7' }
@@ -206,7 +207,7 @@ export default function WatchOffice() {
             style={{ background: 'var(--bg-card)', color: 'var(--text-secondary)', border: '1px solid var(--border)' }}>
             <span aria-hidden="true">↻</span> Refresh
           </button>
-          <div className="live-badge"><div className="live-dot" />LIVE</div>
+          <LiveBadge />
         </div>
       </div>
 

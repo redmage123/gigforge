@@ -4,6 +4,8 @@ import json
 import logging
 from fastapi import WebSocket
 
+from services import demo_pause
+
 logger = logging.getLogger("bacswn.ws")
 
 
@@ -24,7 +26,9 @@ class WebSocketManager:
             conns.remove(websocket)
 
     async def broadcast(self, channel: str, data: dict):
-        """Send data to all connected clients on a channel."""
+        """Send data to all connected clients on a channel (nothing while the demo is paused)."""
+        if demo_pause.is_paused():
+            return
         conns = self._connections.get(channel, [])
         dead = []
         message = json.dumps(data)

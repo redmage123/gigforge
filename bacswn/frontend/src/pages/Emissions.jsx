@@ -5,6 +5,7 @@ import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Toolti
 import { api } from '../api/client'
 import { usePolling } from '../hooks/usePolling'
 import ChartTable, { chartTextColor, summarise } from '../components/a11y/ChartTable'
+import LiveBadge from '../components/LiveBadge'
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend)
 
@@ -40,7 +41,7 @@ export default function Emissions() {
         <div style={{display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap'}}>
           <Link to="/corsia-oversight" className="btn btn-primary btn-sm" style={{textDecoration: 'none'}}><span aria-hidden="true">📒</span> CORSIA Oversight</Link>
           <Link to="/carbon-trading" className="btn btn-primary btn-sm" style={{textDecoration: 'none'}}><span aria-hidden="true">💹</span> Hedge on Carbon Desk</Link>
-          <div className="live-badge"><div className="live-dot" /> LIVE</div>
+          <LiveBadge />
         </div>
       </div>
 

@@ -4,6 +4,8 @@ import asyncio
 import logging
 from typing import Callable, Coroutine
 
+from services import demo_pause
+
 logger = logging.getLogger("bacswn.scheduler")
 
 _tasks: dict[str, asyncio.Task] = {}
@@ -13,7 +15,8 @@ async def _run_periodic(func: Callable[[], Coroutine], interval: int, name: str)
     """Run an async function at a fixed interval."""
     while True:
         try:
-            await func()
+            if not demo_pause.is_paused():
+                await func()
         except asyncio.CancelledError:
             break
         except Exception as e:

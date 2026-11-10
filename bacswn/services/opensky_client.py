@@ -9,6 +9,7 @@ import random
 import time
 import httpx
 from services.cache import cache
+from services import demo_pause
 from config import BAHAMAS_BBOX, OPENSKY_API_URL, OPENSKY_USERNAME, OPENSKY_PASSWORD, CACHE_TTL_FLIGHTS
 
 logger = logging.getLogger("bacswn.opensky")
@@ -93,8 +94,19 @@ _SIM_FLIGHTS = [
 ]
 
 
+_last_simulated: list[dict] = []
+
+
 def _generate_simulated_flights() -> list[dict]:
-    """Generate realistic simulated flights with position drift."""
+    """Simulated flights with position drift; they hold position while the demo is paused."""
+    global _last_simulated
+    if demo_pause.is_paused() and _last_simulated:
+        return [dict(f) for f in _last_simulated]
+    _last_simulated = _generate_simulated_flights_now()
+    return [dict(f) for f in _last_simulated]
+
+
+def _generate_simulated_flights_now() -> list[dict]:
     t = time.time()
     flights = []
     for sf in _SIM_FLIGHTS:

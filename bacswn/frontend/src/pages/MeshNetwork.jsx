@@ -9,6 +9,7 @@ import StationDashboard from '../components/mesh/StationDashboard'
 import { useTourEvent } from '../tour/bus'
 import MeshLogs from '../components/mesh/MeshLogs'
 import '../components/mesh/mesh.css'
+import LiveBadge from '../components/LiveBadge'
 
 const LINK_COLORS = { vhf: '#10b981', cellular: '#3b82f6', satellite: '#a855f7' }
 const MSG_COLORS = { ALERT: '#ef4444', HAZARD: '#f59e0b', VOTE: '#facc15', PROPAGATION: '#c084fc', MAINT: '#fb923c', HEARTBEAT: '#94a3b8' }
@@ -155,7 +156,7 @@ export default function MeshNetwork() {
             15 autonomous stations · three independent AI models per station (2-of-3 consensus) · peer verification · self-healing routing
           </p>
         </div>
-        <div className="live-badge"><div className="live-dot" /> LIVE SIMULATION</div>
+        <LiveBadge label="LIVE SIMULATION" />
       </div>
 
       <div className="mesh-kpis">

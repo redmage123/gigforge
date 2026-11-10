@@ -1,3 +1,4 @@
+import { useDemoPaused } from './useDemoPause'
 import { useCallback, useEffect, useState } from 'react'
 
 /**
@@ -39,6 +40,7 @@ export function useA11yPrefs() {
 /** True when the user has asked the OS/browser to minimise motion. */
 export function usePrefersReducedMotion() {
   const query = '(prefers-reduced-motion: reduce)'
+  const paused = useDemoPaused()   // a paused demo holds decorative animation still too
   const [reduced, setReduced] = useState(() => typeof window !== 'undefined' && window.matchMedia?.(query).matches)
   useEffect(() => {
     const mq = window.matchMedia?.(query)
@@ -47,5 +49,5 @@ export function usePrefersReducedMotion() {
     mq.addEventListener('change', on)
     return () => mq.removeEventListener('change', on)
   }, [])
-  return reduced
+  return reduced || paused
 }

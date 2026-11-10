@@ -39,11 +39,11 @@ import itertools
 import logging
 import math
 import random
-import time
 from collections import deque
 from datetime import datetime, timedelta, timezone
 
 from config import STATION_COORDS, BAHAMAS_STATIONS
+from services import demo_pause
 from services.mesh_satellite import SatelliteFeed
 from services.mesh_sensor_network import SensorNetwork, METRICS as SENSOR_METRICS
 
@@ -133,7 +133,7 @@ class MeshSimulation:
     def reset(self) -> None:
         self.tick = 0
         self.sim_start = datetime.now(timezone.utc).replace(second=0, microsecond=0)
-        self._last_wall = time.time()
+        self._last_wall = demo_pause.clock()
         self.cells: list[dict] = []
         self.links = self._build_links()
         self.nodes = {code: self._new_node(code) for code in BAHAMAS_STATIONS}
@@ -192,8 +192,11 @@ class MeshSimulation:
         return self.sim_start + timedelta(minutes=SIM_MINUTES_PER_TICK * (self.tick if tick is None else tick))
 
     def advance(self) -> None:
-        """Catch the simulation up to wall-clock time (it runs only while observed)."""
-        now = time.time()
+        """Catch the simulation up to wall-clock time (it runs only while observed).
+
+        Uses the demo clock, which stands still while the demo is paused.
+        """
+        now = demo_pause.clock()
         due = int((now - self._last_wall) / TICK_SECONDS)
         if due <= 0:
             return

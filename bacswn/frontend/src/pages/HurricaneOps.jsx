@@ -4,6 +4,7 @@ import L from 'leaflet'
 import { api } from '../api/client'
 import { usePolling } from '../hooks/usePolling'
 import { usePrefersReducedMotion } from '../hooks/useA11yPrefs'
+import LiveBadge from '../components/LiveBadge'
 
 // ─── Category colors & labels ───────────────────────────────────────
 const CAT_COLORS = {
@@ -375,7 +376,7 @@ export default function HurricaneOps() {
           }}>
             {CAT_LABELS[cat]}
           </span>
-          <div className="live-badge"><div className="live-dot" />LIVE</div>
+          <LiveBadge />
         </div>
       </div>
 

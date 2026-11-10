@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
+import { isDemoPaused } from './useDemoPause'
 
 export function useWebSocket(channel) {
   const [lastMessage, setLastMessage] = useState(null)
@@ -17,6 +18,7 @@ export function useWebSocket(channel) {
       reconnectTimer.current = setTimeout(connect, 3000)
     }
     ws.onmessage = (e) => {
+      if (isDemoPaused()) return   // demo paused: hold the current picture
       try {
         setLastMessage(JSON.parse(e.data))
       } catch {

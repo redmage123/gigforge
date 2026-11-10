@@ -6,6 +6,7 @@ import time
 from datetime import datetime, timezone
 from services.database import db_insert
 from services.websocket_manager import ws_manager
+from services import demo_pause
 
 logger = logging.getLogger("bacswn.agents")
 
@@ -222,7 +223,8 @@ class AgentOrchestrator:
     async def _periodic_loop(self, agent: Agent):
         while True:
             try:
-                await agent.execute()
+                if not demo_pause.is_paused():
+                    await agent.execute()
             except asyncio.CancelledError:
                 break
             except Exception as e:

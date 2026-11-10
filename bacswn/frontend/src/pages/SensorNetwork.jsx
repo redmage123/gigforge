@@ -1,6 +1,7 @@
 import { useCallback } from 'react'
 import { api } from '../api/client'
 import { usePolling } from '../hooks/usePolling'
+import LiveBadge from '../components/LiveBadge'
 
 export default function SensorNetwork() {
   const { data, loading } = usePolling(useCallback(() => api.sensorGrid(), []), 60000)
@@ -15,7 +16,7 @@ export default function SensorNetwork() {
           <h2>Sensor Network</h2>
           <p className="subtitle">Weather station grid monitoring & health status</p>
         </div>
-        <div className="live-badge"><div className="live-dot" /> LIVE</div>
+        <LiveBadge />
       </div>
 
       {/* Overview */}

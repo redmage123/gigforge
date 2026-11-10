@@ -41,9 +41,10 @@ export function useChime() {
 /**
  * Operational alerts with equivalent visual, text and screen-reader output — the
  * optional chime is never the only signal (WCAG 1.1.1 / hearing impairment).
- * alerts: [{id, title, detail, severity, time: Date, source}] newest first.
+ * alerts: [{id, title, detail, severity, time: Date, source, conflict?, hazard?}] newest first.
+ * Each alert's text is a button that opens its details (onOpen).
  */
-export default function AlertCenter({ alerts, onDismiss, onDismissAll, prefs, setPref }) {
+export default function AlertCenter({ alerts, onDismiss, onDismissAll, onOpen, prefs, setPref }) {
   const [showLog, setShowLog] = useState(false)
   const [announcement, setAnnouncement] = useState('')
   const [flashId, setFlashId] = useState(null)
@@ -94,10 +95,12 @@ export default function AlertCenter({ alerts, onDismiss, onDismissAll, prefs, se
           {active.slice(0, 3).map(a => (
             <li key={a.id} className={`alert-banner sev-${a.severity} ${flashId === a.id ? 'alert-pulse' : ''}`}>
               <span className="alert-sev">{SEVERITY_LABEL[a.severity] || 'ALERT'}</span>
-              <div className="alert-text">
+              <button type="button" className="alert-text alert-open" aria-haspopup="dialog"
+                onClick={() => onOpen?.(a)} title="Show details">
                 <strong>{a.title}</strong>
                 <span>{a.detail}</span>
-              </div>
+                <span className="alert-more-link" aria-hidden="true">Details ›</span>
+              </button>
               <time dateTime={a.time.toISOString()}>{fmtTime(a.time)}</time>
               <button type="button" className="alert-dismiss" aria-label={`Dismiss alert: ${a.title}`} onClick={() => onDismiss(a.id)}>✕</button>
             </li>
@@ -117,7 +120,11 @@ export default function AlertCenter({ alerts, onDismiss, onDismissAll, prefs, se
                   <tr key={a.id}>
                     <td>{fmtTime(a.time)}</td>
                     <td>{SEVERITY_LABEL[a.severity] || 'ALERT'}</td>
-                    <td><strong>{a.title}</strong> — {a.detail}</td>
+                    <td>
+                      <button type="button" className="alert-log-open" aria-haspopup="dialog" onClick={() => onOpen?.(a)}>
+                        <strong>{a.title}</strong>
+                      </button> — {a.detail}
+                    </td>
                     <td>{a.source}</td>
                     <td>{a.dismissed ? 'Dismissed' : 'Active'}</td>
                   </tr>

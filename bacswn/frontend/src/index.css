@@ -1045,6 +1045,40 @@ main:focus { outline: none; }
 .sev-low .alert-sev { color: var(--info); }
 .alert-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .alert-text span { color: var(--text-secondary); font-size: 13px; }
+/* Alert text opens its details: a real button that keeps the banner's look. */
+.alert-open {
+  text-align: left; font: inherit; color: inherit; background: transparent; border: 0; border-radius: 6px;
+  padding: 2px 4px; margin: -2px -4px; cursor: pointer; min-height: 24px;
+}
+.alert-open:hover strong { text-decoration: underline; }
+.alert-open .alert-more-link { color: var(--info-text, var(--info)); font-size: 12px; font-weight: 600; }
+.alert-log-open {
+  font: inherit; color: inherit; background: transparent; border: 0; padding: 0; cursor: pointer;
+  text-align: left; text-decoration: underline; text-underline-offset: 2px; min-height: 24px;
+}
+.alert-sev.sev-severe { color: var(--danger); }
+.alert-sev.sev-low { color: var(--info); }
+
+/* Alert details dialog */
+.ad-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 0 10px; color: var(--text-secondary); font-size: 12.5px; }
+.ad-status { margin: 0 0 10px; padding: 6px 10px; border-radius: 6px; font-size: 12.5px; border: 1px solid var(--border); }
+.ad-status.is-live { border-left: 4px solid var(--success); }
+.ad-status.is-stale { border-left: 4px solid var(--text-muted); color: var(--text-secondary); }
+.ad-lead { margin: 0 0 10px; font-size: 14.5px; }
+.ad-advice {
+  display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; margin: 0 0 6px; padding: 10px 12px;
+  border: 1px solid var(--border); border-left: 6px solid var(--warning); border-radius: 8px; font-size: 14px; font-weight: 600;
+}
+.ad-advice.sev-severe { border-left-color: var(--danger); }
+.ad-advice-k { font-size: 11px; font-weight: 800; letter-spacing: .6px; text-transform: uppercase; color: var(--text-secondary); }
+.a11y-dialog-body h4 { font-size: 12px; text-transform: uppercase; letter-spacing: .6px; color: var(--text-secondary); margin: 14px 0 6px; }
+.ad-facts { display: grid; grid-template-columns: 1fr; gap: 0; margin: 0; }
+.ad-facts > div { display: grid; grid-template-columns: minmax(110px, 34%) 1fr; gap: 10px; padding: 5px 0; border-bottom: 1px solid var(--border); }
+.ad-facts dt { color: var(--text-secondary); font-size: 12.5px; }
+.ad-facts dd { margin: 0; }
+.ad-list { margin: 0; padding-left: 18px; }
+.ad-list li { margin-bottom: 4px; }
+@media (max-width: 480px) { .ad-facts > div { grid-template-columns: 1fr; gap: 0; } }
 .alert-banner time { color: var(--text-secondary); font-size: 12px; font-variant-numeric: tabular-nums; }
 .alert-dismiss {
   width: 32px; height: 32px; border-radius: 6px; border: 1px solid var(--border); background: transparent;
@@ -1210,3 +1244,29 @@ button.stat-card:hover { border-color: var(--text-muted); }
 .mt-status.sev-moderate { color: var(--warning-text); }
 .mt-status.sev-low { color: var(--text-secondary); }
 .mt-hazards { font-size: 13px; padding-left: 18px; margin-top: 6px; line-height: 1.6; }
+
+/* ── Demo pause ─────────────────────────────────────────────────────── */
+.demo-pause-btn {
+  margin-top: 8px; width: 100%; justify-content: center;
+  background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border);
+}
+.demo-pause-btn.is-paused { background: var(--warning); color: var(--bg-primary); border-color: var(--warning); font-weight: 700; }
+.demo-pause-live:empty { display: none; }
+.demo-pause-banner {
+  position: sticky; top: 0; z-index: 1100;
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin: 0 0 12px; padding: 10px 14px; border-radius: 8px;
+  background: var(--bg-card); color: var(--text-primary);
+  border: 2px solid var(--warning); border-left-width: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+.demo-pause-banner > span:nth-child(2) { flex: 1 1 220px; }
+.demo-pause-banner.is-error { border-color: var(--danger); }
+.demo-pause-icon { color: var(--warning); font-weight: 700; letter-spacing: -2px; }
+.live-badge.is-paused { background: rgba(245, 158, 11, 0.15); color: var(--warning-text); }
+.live-badge.is-paused .live-dot { background: var(--warning); animation: none; }
+@media (forced-colors: active) {
+  .demo-pause-banner { border: 2px solid CanvasText; }
+  .demo-pause-btn.is-paused { border: 2px solid Highlight; }
+}
+@media (max-width: 768px) { .demo-pause-banner { top: 56px; } }

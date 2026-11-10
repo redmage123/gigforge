@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { TOUR_STEPS } from '../../tour/steps'
 import { useA11yPrefs, usePrefersReducedMotion } from '../../hooks/useA11yPrefs'
+import { useDemoPaused } from '../../hooks/useDemoPause'
 
 const SPEECH_OK = typeof window !== 'undefined' && 'speechSynthesis' in window
 const TARGET_WAIT_MS = 6000
@@ -18,6 +19,7 @@ export default function GuidedTour({ open, onClose }) {
   const navigate = useNavigate()
   const [prefs] = useA11yPrefs()
   const reducedMotion = usePrefersReducedMotion()
+  const demoPaused = useDemoPaused()
   const [index, setIndex] = useState(0)
   const [auto, setAuto] = useState(false)
   const [speak, setSpeak] = useState(false)
@@ -30,6 +32,7 @@ export default function GuidedTour({ open, onClose }) {
   const highlighted = useRef([])
   const focusOnChange = useRef(true)
   const runId = useRef(0)
+  const carry = useRef(null)
   const step = TOUR_STEPS[index]
   const last = index === TOUR_STEPS.length - 1
 
@@ -94,7 +97,9 @@ export default function GuidedTour({ open, onClose }) {
   // Auto-advance (pausable). Counts down only once the step has settled.
   useEffect(() => {
     if (!open || !auto || busy || last || !step.seconds) { setRemaining(null); return }
-    let left = step.seconds
+    if (demoPaused) return                  // demo paused: hold the countdown where it is
+    // Continue a countdown interrupted by a pause; otherwise start this step's.
+    let left = carry.current?.index === index && carry.current.left > 0 ? carry.current.left : step.seconds
     setRemaining(left)
     const t = setInterval(() => {
       left -= 1
@@ -105,11 +110,19 @@ export default function GuidedTour({ open, onClose }) {
         setIndex(i => Math.min(i + 1, TOUR_STEPS.length - 1))
       }
     }, 1000)
-    return () => clearInterval(t)
-  }, [open, auto, busy, index]) // eslint-disable-line react-hooks/exhaustive-deps
+    return () => { clearInterval(t); carry.current = { index, left } }
+  }, [open, auto, busy, index, demoPaused]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Pause narration with the demo.
+  useEffect(() => {
+    if (!SPEECH_OK) return
+    if (demoPaused) window.speechSynthesis.pause()
+    else window.speechSynthesis.resume()
+  }, [demoPaused])
 
   const go = useCallback((delta) => {
     focusOnChange.current = true
+    carry.current = null
     setIndex(i => Math.max(0, Math.min(TOUR_STEPS.length - 1, i + delta)))
   }, [])
 

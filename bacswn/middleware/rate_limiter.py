@@ -13,7 +13,8 @@ class RateLimiter(BaseHTTPMiddleware):
         self._buckets: dict[str, list[float]] = {}
 
     async def dispatch(self, request, call_next):
-        if not request.url.path.startswith("/api/"):
+        # The demo-pause poll is tiny and must keep working, so it is not counted.
+        if not request.url.path.startswith("/api/") or request.url.path == "/api/demo/pause":
             return await call_next(request)
 
         client_ip = request.client.host if request.client else "unknown"

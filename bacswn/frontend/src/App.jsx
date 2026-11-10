@@ -1,6 +1,7 @@
 import { createContext, useState, useContext, useEffect, lazy, Suspense } from 'react'
 import { Routes, Route, Navigate, NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { api } from './api/client'
+import { useDemoPause, useDemoPauseSync, setDemoPaused } from './hooks/useDemoPause'
 
 // Auth context
 export const AuthContext = createContext(null)
@@ -53,6 +54,15 @@ function Layout() {
   const { theme, toggleTheme } = useTheme()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [tourOpen, setTourOpen] = useState(() => new URLSearchParams(window.location.search).has('tour'))
+  const pause = useDemoPause()
+  const [pauseError, setPauseError] = useState('')
+  useDemoPauseSync(true)
+  const pausedAt = pause.since ? new Date(pause.since).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : ''
+  const pausedBy = pause.by ? ` (paused by ${pause.by}${pausedAt ? ' at ' + pausedAt : ''})` : ''
+  const togglePause = async () => {
+    setPauseError('')
+    try { await setDemoPaused(!pause.paused) } catch { setPauseError('Could not change the pause. Check the connection and try again.') }
+  }
 
   return (
     <div className="app-layout">
@@ -69,6 +79,11 @@ function Layout() {
           <button type="button" className="btn btn-sm btn-primary tour-start" aria-pressed={tourOpen}
             onClick={() => { setTourOpen(true); setSidebarOpen(false) }}>
             <span aria-hidden="true">▶ </span>{tourOpen ? 'Demo running' : 'Guided demo'}
+          </button>
+          <button type="button" className={`btn btn-sm demo-pause-btn ${pause.paused ? 'is-paused' : ''}`}
+            aria-pressed={pause.paused} onClick={togglePause}
+            title="Freeze every screen and the simulations, for all viewers, until resumed">
+            <span aria-hidden="true">{pause.paused ? '▶ ' : '❚❚ '}</span>{pause.paused ? 'Resume demo' : 'Pause demo'}
           </button>
         </div>
         <nav className="sidebar-nav" aria-label="Main">
@@ -95,6 +110,18 @@ function Layout() {
         </div>
       </aside>
       <main className="main-content" id="main-content" tabIndex={-1}>
+        <div role="status" aria-live="polite" className="demo-pause-live">
+          {pause.paused && (
+            <div className="demo-pause-banner">
+              <span className="demo-pause-icon" aria-hidden="true">❚❚</span>
+              <span>
+                <b>Demo paused.</b> Screens, alerts and simulations are frozen for everyone{pausedBy}.
+              </span>
+              <button type="button" className="btn btn-sm btn-primary" onClick={togglePause}>Resume</button>
+            </div>
+          )}
+          {pauseError && <div className="demo-pause-banner is-error">{pauseError}</div>}
+        </div>
         <Outlet />
       </main>
       {tourOpen && (

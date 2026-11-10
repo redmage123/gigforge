@@ -43,7 +43,8 @@ export default function Dialog({ open, title, onClose, children, wide = false, a
               <button type="button" className="btn btn-sm" onClick={() => ref.current?.close()}>Close</button>
             </div>
           </div>
-          <div className="a11y-dialog-body">{children}</div>
+          {/* Focusable so keyboard users can scroll a long body (WCAG 2.1.1). */}
+          <div className="a11y-dialog-body" tabIndex={0} role="region" aria-labelledby={`${id}-t`}>{children}</div>
         </div>
       )}
     </dialog>

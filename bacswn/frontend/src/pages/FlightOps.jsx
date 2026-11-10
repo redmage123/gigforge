@@ -7,6 +7,7 @@ import Dialog from '../components/a11y/Dialog'
 import ChartTable, { chartTextColor, summarise } from '../components/a11y/ChartTable'
 import { Bar, Doughnut } from 'react-chartjs-2'
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, ArcElement, Title, Tooltip as ChartTooltip, Legend } from 'chart.js'
+import LiveBadge from '../components/LiveBadge'
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, Title, ChartTooltip, Legend)
 
@@ -247,7 +248,7 @@ export default function FlightOps() {
           }}>
             <span aria-hidden="true">✈ </span>{flights.length} aircraft in Bahamas FIR
           </div>
-          <div className="live-badge"><div className="live-dot" />LIVE</div>
+          <LiveBadge />
         </div>
       </div>
 

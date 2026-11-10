@@ -2,6 +2,8 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { MapContainer, TileLayer, Marker, Popup, Polyline, Polygon, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import { api } from '../api/client'
+import { useDemoPaused } from '../hooks/useDemoPause'
+import LiveBadge from '../components/LiveBadge'
 
 const SCENARIO_ICONS = {
   hurricane: '\u{1F300}', storm: '\u{26C8}\uFE0F', fault: '\u{26A0}\uFE0F',
@@ -259,6 +261,7 @@ export default function Simulations() {
   const [simState, setSimState] = useState(null)
   const [currentStep, setCurrentStep] = useState(0)
   const [playing, setPlaying] = useState(false)
+  const demoPaused = useDemoPaused()
   const [loadingStep, setLoadingStep] = useState(false)
   const timerRef = useRef(null)
 
@@ -287,7 +290,7 @@ export default function Simulations() {
   }, [fetchStep])
 
   useEffect(() => {
-    if (playing && activeScenario && simState) {
+    if (playing && !demoPaused && activeScenario && simState) {
       timerRef.current = setTimeout(() => {
         const nextStep = currentStep + 1
         if (nextStep < (simState.total_steps || 10)) {
@@ -298,7 +301,7 @@ export default function Simulations() {
       }, 3000)
     }
     return () => { if (timerRef.current) clearTimeout(timerRef.current) }
-  }, [playing, currentStep, activeScenario, simState, fetchStep])
+  }, [playing, demoPaused, currentStep, activeScenario, simState, fetchStep])
 
   const handlePlay = () => {
     if (currentStep >= ((simState && simState.total_steps) || 10) - 1) {
@@ -388,7 +391,7 @@ export default function Simulations() {
           <p className="subtitle">Step {String(currentStep + 1)} of {String(totalSteps)} — {String(elapsed)} min elapsed</p>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          {playing && <div className="live-badge"><div className="live-dot" /> RUNNING</div>}
+          {playing && <LiveBadge label="RUNNING" />}
           <button type="button" className="btn btn-sm" onClick={handleReset} style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)', border: '1px solid var(--border)' }}>Back to Scenarios</button>
         </div>
       </div>

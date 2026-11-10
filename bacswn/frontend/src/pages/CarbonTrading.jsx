@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../api/client'
 import { usePolling } from '../hooks/usePolling'
+import { isDemoPaused, useDemoPaused } from '../hooks/useDemoPause'
 import CandleChart from '../components/trading/CandleChart'
 import PriceLadder from '../components/trading/PriceLadder'
 import OrderTicket from '../components/trading/OrderTicket'
@@ -37,6 +38,7 @@ function useTradingFeed(focus) {
         if (!closed) timer = setTimeout(connect, 2000)
       }
       ws.onmessage = (e) => {
+        if (isDemoPaused()) return   // demo paused: hold the current market picture
         try {
           const msg = JSON.parse(e.data)
           if (msg.type === 'trading_update') setState({ market: msg.market, account: msg.account, at: Date.now() })
@@ -90,7 +92,9 @@ export default function CarbonTrading() {
   const [announce, liveRegions] = useAnnouncer()
   const { market, account, at, connected } = useTradingFeed(symbol)
   const now = useNow(1000)
-  const stale = !connected || (at && now - at > STALE_MS)
+  const demoPaused = useDemoPaused()
+  // While the demo is paused no market data arrives on purpose: that is not staleness.
+  const stale = !demoPaused && (!connected || (at && now - at > STALE_MS))
 
   useEffect(() => {
     const prev = document.title
@@ -196,7 +200,7 @@ export default function CarbonTrading() {
         <span className="tt-sim-badge" title="Synthetic prices from an in-process exchange. Not connected to CME Group.">
           SIMULATED · NOT CONNECTED TO CME
         </span>
-        <span className={`tt-conn ${stale ? 'off' : ''}`} role="status">{!at ? 'CONNECTING…' : stale ? 'STALE — RECONNECTING' : 'LIVE'}</span>
+        <span className={`tt-conn ${stale ? 'off' : ''}`} role="status">{!at ? 'CONNECTING…' : demoPaused ? 'PAUSED' : stale ? 'STALE — RECONNECTING' : 'LIVE'}</span>
         <div className="tt-metrics" aria-label="Account summary">
           <span className="tt-hide-md"><Clock /></span>
           <div className="tt-metric"><label>Net liq</label><span>{fmtUsd(account?.equity)}</span></div>

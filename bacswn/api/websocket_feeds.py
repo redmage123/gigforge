@@ -8,6 +8,7 @@ from websockets.exceptions import ConnectionClosed
 from services.carbon_exchange import venue
 from services.auth import decode_token
 from services.websocket_manager import ws_manager
+from services import demo_pause
 
 router = APIRouter()
 
@@ -123,6 +124,9 @@ async def ws_trading(websocket: WebSocket, token: str | None = Query(default=Non
     reader = asyncio.create_task(_reader())
     try:
         while not reader.done():
+            if demo_pause.is_paused():
+                await asyncio.sleep(TRADING_PUSH_SECONDS)
+                continue
             await websocket.send_json({
                 "type": "trading_update",
                 "market": venue.market_snapshot(focus=state["focus"] or next(iter(venue.instruments))),

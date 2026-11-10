@@ -6,9 +6,11 @@ import { usePolling } from '../hooks/usePolling'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useA11yPrefs, usePrefersReducedMotion } from '../hooks/useA11yPrefs'
 import AlertCenter, { useChime } from '../components/command/AlertCenter'
+import AlertDetails from '../components/command/AlertDetails'
 import BriefingPanel, { buildBriefing } from '../components/command/BriefingPanel'
 import SituationTables from '../components/command/SituationTables'
 import MeshTrafficPanel, { MeshHazardLayers } from '../components/command/MeshTraffic'
+import LiveBadge from '../components/LiveBadge'
 
 // ── 1. Aircraft icon — bright yellow plane ──────────────────────────
 const PLANE_D = 'M256 48 l20 120 l160 90 l-10 30 l-150-50 l0 130 l50 35 l0 30 l-70-20 l-70 20 l0-30 l50-35 l0-130 l-150 50 l-10-30 l160-90 Z'
@@ -185,6 +187,18 @@ function MapA11y() {
     el.setAttribute('aria-label', 'Interactive map. Arrow keys pan, plus and minus keys zoom.')
     el.setAttribute('aria-roledescription', 'map')
   }, [map])
+  return null
+}
+
+// Centre the map on a point chosen from an alert ("Show on map").
+function MapFocus({ focus, reducedMotion }) {
+  const map = useMap()
+  useEffect(() => {
+    if (!focus) return
+    const zoom = Math.max(map.getZoom(), 8)
+    if (reducedMotion) map.setView([focus.lat, focus.lon], zoom)
+    else map.flyTo([focus.lat, focus.lon], zoom, { duration: 0.8 })
+  }, [focus, map, reducedMotion])
   return null
 }
 
@@ -440,6 +454,7 @@ export default function CommandCenter() {
       detail: `${h.basis}. ${h.radius_nm} nm radius, moving ${h.speed_kt} kt.`,
       severity: h.kind === 'IFR' ? 'moderate' : 'severe',
       source: 'Mesh network',
+      hazard: h,
     }))
     airspace.conflicts.filter(c => c.minutes_to_entry <= 15).forEach(c => pushAlert({
       id: 'mesh-cf-' + c.icao24 + '-' + c.hazard_id,
@@ -447,8 +462,22 @@ export default function CommandCenter() {
       detail: `${c.hazard_status === 'confirmed' ? 'Mesh-confirmed' : 'Mesh-tracked'} hazard ${c.hazard_id}. Advice: ${c.advice.text}.`,
       severity: c.severity,
       source: 'Mesh network',
+      conflict: c,
+      hazard: airspace.hazards.find(h => h.id === c.hazard_id),
     }))
   }, [airspace, pushAlert])
+
+  // Alert details dialog and "Show on map".
+  const [openAlertId, setOpenAlertId] = useState(null)
+  const openAlert = alerts.find(a => a.id === openAlertId) || null
+  const [mapFocus, setMapFocus] = useState(null)
+  const dismissAlert = useCallback((id) => setAlerts(prev => prev.map(a => a.id === id ? { ...a, dismissed: true } : a)), [])
+  const locateOnMap = useCallback((p) => {
+    setOpenAlertId(null)
+    setMapFocus({ lat: p.lat, lon: p.lon, n: Date.now() })
+    requestAnimationFrame(() => document.querySelector('.leaflet-container')
+      ?.scrollIntoView({ block: 'center', behavior: reducedMotion ? 'auto' : 'smooth' }))
+  }, [reducedMotion])
 
   // State for layer toggles
   const [showMesh, setShowMesh] = useState(true)
@@ -519,7 +548,7 @@ export default function CommandCenter() {
             style={{background: wallboard ? 'var(--accent-strong)' : 'var(--bg-card)', color: wallboard ? '#fff' : 'var(--text-primary)', border: '1px solid var(--border)'}}>
             <span aria-hidden="true">🖥</span> Kiosk
           </button>
-          <div className="live-badge"><div className="live-dot" aria-hidden="true" /> LIVE</div>
+          <LiveBadge />
         </div>
       </div>
 
@@ -529,8 +558,11 @@ export default function CommandCenter() {
       </div>
 
       <AlertCenter alerts={alerts} prefs={prefs} setPref={setPref}
-        onDismiss={(id) => setAlerts(prev => prev.map(a => a.id === id ? { ...a, dismissed: true } : a))}
-        onDismissAll={() => setAlerts(prev => prev.map(a => ({ ...a, dismissed: true })))} />
+        onDismiss={dismissAlert}
+        onDismissAll={() => setAlerts(prev => prev.map(a => ({ ...a, dismissed: true })))}
+        onOpen={(a) => setOpenAlertId(a.id)} />
+      <AlertDetails alert={openAlert} airspace={airspace} onClose={() => setOpenAlertId(null)}
+        onDismiss={dismissAlert} onLocate={locateOnMap} />
 
       {/* Stats row */}
       {!wallboard && (
@@ -606,6 +638,7 @@ export default function CommandCenter() {
                 {/* 5. Wind Animation */}
                 <WindCanvas visible={showWind} reducedMotion={reducedMotion} />
                 <MapA11y />
+                <MapFocus focus={mapFocus} reducedMotion={reducedMotion} />
 
                 {/* FIR boundary */}
                 {firLatLngs.length > 0 && (

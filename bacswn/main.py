@@ -9,6 +9,7 @@ Built by AI Elevate for the Bahamas Aviation, Climate and Severe Weather Network
 import asyncio
 import logging
 import os
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -21,6 +22,7 @@ from services.database import init_db, seed_demo_data
 from services.auth import ensure_default_admin
 from services.agent_orchestrator import orchestrator
 from services.websocket_manager import ws_manager
+from services import demo_pause
 from middleware.auth import AuthMiddleware
 from middleware.rate_limiter import RateLimiter
 from middleware.request_logger import RequestLogger
@@ -39,6 +41,7 @@ from api.agents import router as agents_router
 from api.channels import router as channels_router
 from api.map_data import router as map_router
 from api.health import router as health_router
+from api.demo import router as demo_router
 from api.dashboard import router as dashboard_router
 from api.websocket_feeds import router as ws_router
 from api.ai_analysis import router as ai_router
@@ -175,7 +178,10 @@ async def lifespan(app: FastAPI):
         from services.carbon_exchange import venue
         while True:
             try:
-                venue.step()
+                if demo_pause.is_paused():
+                    venue._last_step = time.time()   # resume without a catch-up jump
+                else:
+                    venue.step()
             except Exception as e:
                 logger.error(f"Carbon market step error: {e}")
             await asyncio.sleep(0.5)
@@ -269,6 +275,7 @@ app.include_router(ai_router, prefix="/api/ai", tags=["ai"])
 app.include_router(chat_router, prefix="/api/chat", tags=["chat"])
 app.include_router(hurricane_router, prefix="/api/hurricane", tags=["hurricane"])
 app.include_router(mesh_router, prefix="/api/mesh", tags=["mesh"])
+app.include_router(demo_router, prefix="/api/demo", tags=["demo"])
 app.include_router(simulation_router, prefix="/api/simulation", tags=["simulation"])
 app.include_router(trading_router, prefix="/api/trading", tags=["trading"])
 app.include_router(carbon_oversight_router, prefix="/api/carbon-oversight", tags=["carbon-oversight"])

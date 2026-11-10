@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { api } from '../api/client'
 import { usePolling } from '../hooks/usePolling'
+import { demoSleep } from '../hooks/useDemoPause'
 import { usePrefersReducedMotion } from '../hooks/useA11yPrefs'
 import { useTourEvent } from '../tour/bus'
 
@@ -269,7 +270,7 @@ export default function AgentConsole() {
     setDemoLog([])
     for (let i = 0; i < DEMO_STEPS.length; i++) {
       const step = DEMO_STEPS[i]
-      await new Promise(r => setTimeout(r, 700 + i * 200))
+      await demoSleep(700 + i * 200)
       setActiveAgents(new Set([step.agent]))
       setDemoLog(prev => [...prev, {
         time: new Date().toISOString(),
@@ -278,7 +279,7 @@ export default function AgentConsole() {
         step: i + 1,
       }])
     }
-    await new Promise(r => setTimeout(r, 600))
+    await demoSleep(600)
     setActiveAgents(new Set())
     setDemoLog(prev => [...prev, {
       time: new Date().toISOString(),

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '../../api/client'
+import { useDemoPaused } from '../../hooks/useDemoPause'
 import { fmtPx, fmtUsd } from './Panels'
 
 /**
@@ -117,13 +118,17 @@ export default function AdvisorPanel({ open, onClose, onLoad, announce, returnFo
   const refresh = useCallback(() => {
     api.advisorIdeas().then(d => { setData(d); setError('') }).catch(e => setError(e.message))
   }, [])
+  const demoPaused = useDemoPaused()
   useEffect(() => {
     if (!open) return
     refresh()
     headingRef.current?.focus()
+  }, [open, refresh])
+  useEffect(() => {
+    if (!open || demoPaused) return
     const t = setInterval(refresh, 15000)
     return () => clearInterval(t)
-  }, [open, refresh])
+  }, [open, refresh, demoPaused])
   useEffect(() => { logEnd.current?.scrollIntoView({ block: 'nearest' }) }, [thread, asking])
 
   const close = () => { onClose(); requestAnimationFrame(() => returnFocusRef?.current?.focus()) }

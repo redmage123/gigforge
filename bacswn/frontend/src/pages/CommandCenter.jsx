@@ -11,6 +11,8 @@ import BriefingPanel, { buildBriefing } from '../components/command/BriefingPane
 import SituationTables from '../components/command/SituationTables'
 import MeshTrafficPanel, { MeshHazardLayers } from '../components/command/MeshTraffic'
 import LiveBadge from '../components/LiveBadge'
+import ResetViewControl from '../components/map/ResetViewControl'
+import { CommsLinksLayer, CommsFilterControl, DEFAULT_COMMS_FILTER, visibleLinks } from '../components/map/CommsChannels'
 
 // ── 1. Aircraft icon — bright yellow plane ──────────────────────────
 const PLANE_D = 'M256 48 l20 120 l160 90 l-10 30 l-150-50 l0 130 l50 35 l0 30 l-70-20 l-70 20 l0-30 l50-35 l0-130 l-150 50 l-10-30 l160-90 Z'
@@ -268,7 +270,8 @@ function SigmetOverlays({ sigmets }) {
 
 // ── Map Legend ──────────────────────────────────────────────────────
 function MapLegend({ visible }) {
-  const [open, setOpen] = useState(true)
+  // Collapsed by default on phones, where the open legend would cover the map.
+  const [open, setOpen] = useState(() => !(typeof window !== 'undefined' && window.matchMedia?.('(max-width: 768px)').matches))
   if (!visible) return null
   return (
     <div className="map-legend">
@@ -488,6 +491,18 @@ export default function CommandCenter() {
   const [showHurricanes, setShowHurricanes] = useState(true)
   const [showSigmets, setShowSigmets] = useState(true)
 
+  // Communication links between mesh stations, filtered from a panel on the map.
+  const [commsFilter, setCommsFilterState] = useState(() => {
+    try { return { ...DEFAULT_COMMS_FILTER, ...JSON.parse(localStorage.getItem('cc-comms-filter') || '{}') } } catch { return DEFAULT_COMMS_FILTER }
+  })
+  const setCommsFilter = (f) => {
+    setCommsFilterState(f)
+    try { localStorage.setItem('cc-comms-filter', JSON.stringify(f)) } catch { /* private mode */ }
+  }
+  const commsOn = commsFilter.vhf || commsFilter.cellular || commsFilter.satellite
+  const { data: meshStatus } = usePolling(
+    useCallback(() => (commsOn ? api.meshStatus() : Promise.resolve(null)), [commsOn]), 5000)
+
   const flights = data?.flights || []
   const stations = data?.stations || []
   const firPolygon = data?.fir_polygon || []
@@ -608,7 +623,7 @@ export default function CommandCenter() {
         currentIdx={timelapse.idx} onSeek={timelapse.setIdx} />
 
       {/* Map + Altitude Panel */}
-      <div style={{display: 'flex', gap: 12}}>
+      <div className="cc-map-row">
         <div className="card" style={{padding: 0, overflow: 'hidden', flex: 1}}>
           <div className="map-container" style={wallboard ? {height: 'calc(100vh - 80px)'} : {}}
             role="region" aria-label="Operational map of the Bahamas FIR" aria-describedby="map-alt-note">
@@ -623,6 +638,9 @@ export default function CommandCenter() {
                 zoomControl={true} attributionControl={false}
                 minZoom={5} maxZoom={18} scrollWheelZoom={true} dragging={true}
                 zoomAnimation={!reducedMotion} fadeAnimation={!reducedMotion} markerZoomAnimation={!reducedMotion}>
+                <ResetViewControl center={[24.5, -76.5]} zoom={7} />
+                <CommsFilterControl status={meshStatus} filter={commsFilter} onChange={setCommsFilter} />
+                <CommsLinksLayer status={meshStatus} filter={commsFilter} />
                 <TileLayer
                   url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
                   attribution='&copy; Esri'
@@ -778,7 +796,8 @@ export default function CommandCenter() {
 
       {!wallboard && <MeshTrafficPanel airspace={airspace} />}
 
-      {!wallboard && <SituationTables stations={stations} flights={displayFlights} sigmets={sigmets} hurricanes={hurricanes} />}
+      {!wallboard && <SituationTables stations={stations} flights={displayFlights} sigmets={sigmets} hurricanes={hurricanes}
+        links={commsOn ? visibleLinks(meshStatus?.links, commsFilter) : []} />}
     </div>
   )
 }

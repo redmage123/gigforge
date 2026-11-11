@@ -5,13 +5,15 @@
  */
 const CATEGORY_TEXT = { VFR: 'VFR', MVFR: 'Marginal VFR', IFR: 'IFR', LIFR: 'Low IFR' }
 
-export default function SituationTables({ stations, flights, sigmets, hurricanes }) {
+const LINK_TYPE = { vhf: 'VHF radio', cellular: 'Cellular', satellite: 'Satellite' }
+
+export default function SituationTables({ stations, flights, sigmets, hurricanes, links = [] }) {
   const sortedFlights = [...flights].sort((a, b) => (a.callsign || a.icao24).localeCompare(b.callsign || b.icao24))
   return (
     <details className="card situation-tables">
       <summary>
         <span>Map data as tables</span>
-        <small>{stations.length} stations · {flights.length} aircraft · {sigmets.length} SIGMETs · {hurricanes.length} cyclones</small>
+        <small>{stations.length} stations · {flights.length} aircraft · {sigmets.length} SIGMETs · {hurricanes.length} cyclones · {links.length} comms links</small>
       </summary>
 
       <h3 id="sit-stations">Weather stations</h3>
@@ -77,6 +79,30 @@ export default function SituationTables({ stations, flights, sigmets, hurricanes
             <li key={h.id}><strong>{h.name}</strong> — {h.classification}, {h.wind_mph} mph, {h.pressure_mb} mb, moving {h.movement}</li>
           ))}
         </ul>
+      )}
+
+      <h3 id="sit-links">Communication links (as filtered on the map)</h3>
+      {links.length === 0 ? <p>No communication links shown. Choose channel types in the map's "Comms links" panel.</p> : (
+        <div className="table-scroll" tabIndex={0} role="region" aria-labelledby="sit-links">
+          <table className="data-table">
+            <thead><tr>
+              <th scope="col">Link</th><th scope="col">Channel</th><th scope="col">Status</th>
+              <th scope="col">Distance</th><th scope="col">Latency</th><th scope="col">Quality</th>
+            </tr></thead>
+            <tbody>
+              {[...links].sort((a, b) => (a.up - b.up) || (a.a + a.b).localeCompare(b.a + b.b)).map(l => (
+                <tr key={l.a + l.b}>
+                  <th scope="row">{l.a}–{l.b}</th>
+                  <td>{LINK_TYPE[l.type] || l.type}</td>
+                  <td>{l.up ? 'Up' : 'Down'}</td>
+                  <td>{l.distance_nm} nm</td>
+                  <td>{l.latency_ms} ms</td>
+                  <td>{l.quality}%</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </details>
   )

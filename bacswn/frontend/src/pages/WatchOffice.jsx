@@ -4,6 +4,7 @@ import L from 'leaflet'
 import { api } from '../api/client'
 import { usePolling } from '../hooks/usePolling'
 import LiveBadge from '../components/LiveBadge'
+import ResetViewControl from '../components/map/ResetViewControl'
 
 // ─── Flight category colors ────────────────────────────────────────────
 const CAT_COLORS = { VFR: '#10b981', MVFR: '#3b82f6', IFR: '#ef4444', LIFR: '#a855f7' }
@@ -263,6 +264,7 @@ export default function WatchOffice() {
               ) : (
                 <MapContainer center={[24.5, -76.5]} zoom={7} style={{ height: '100%', width: '100%' }}
                   zoomControl attributionControl={false} minZoom={5} maxZoom={18}>
+                  <ResetViewControl center={[24.5, -76.5]} zoom={7} />
                   <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" />
                   <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}" />
 

@@ -4,6 +4,7 @@ import L from 'leaflet'
 import { api } from '../api/client'
 import { useDemoPaused } from '../hooks/useDemoPause'
 import LiveBadge from '../components/LiveBadge'
+import ResetViewControl from '../components/map/ResetViewControl'
 
 const SCENARIO_ICONS = {
   hurricane: '\u{1F300}', storm: '\u{26C8}\uFE0F', fault: '\u{26A0}\uFE0F',
@@ -136,6 +137,7 @@ function SimMap({ nodes, messageLines, propLines, hubLines, alerts, messages, hu
   return (
     <MapContainer key={'sim-' + step} center={[24.5, -76.5]} zoom={7} style={{ height: '100%', width: '100%' }}
       zoomControl={true} attributionControl={false} minZoom={5} maxZoom={18}>
+      <ResetViewControl center={[24.5, -76.5]} zoom={7} />
       <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" />
       <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}" />
 

@@ -10,6 +10,7 @@ import { useTourEvent } from '../tour/bus'
 import MeshLogs from '../components/mesh/MeshLogs'
 import '../components/mesh/mesh.css'
 import LiveBadge from '../components/LiveBadge'
+import ResetViewControl from '../components/map/ResetViewControl'
 
 const LINK_COLORS = { vhf: '#10b981', cellular: '#3b82f6', satellite: '#a855f7' }
 const MSG_COLORS = { ALERT: '#ef4444', HAZARD: '#f59e0b', VOTE: '#facc15', PROPAGATION: '#c084fc', MAINT: '#fb923c', HEARTBEAT: '#94a3b8' }
@@ -212,6 +213,7 @@ export default function MeshNetwork() {
           </p>
           <MapContainer bounds={[[20.7, -79.8], [27.1, -72.8]]} style={{ height: '100%', width: '100%' }} zoomControl={false}
             zoomAnimation={!reducedMotion} fadeAnimation={!reducedMotion} markerZoomAnimation={!reducedMotion}>
+            <ResetViewControl bounds={[[20.7, -79.8], [27.1, -72.8]]} />
             <MapA11y />
             <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" />
             <ClickToSpawn mode={spawnMode} onSpawn={(ll) => run(() => api.meshStorm({ kind: spawnMode, lat: ll.lat, lon: ll.lng }),

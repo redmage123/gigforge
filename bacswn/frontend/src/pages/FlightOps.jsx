@@ -8,6 +8,7 @@ import ChartTable, { chartTextColor, summarise } from '../components/a11y/ChartT
 import { Bar, Doughnut } from 'react-chartjs-2'
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, ArcElement, Title, Tooltip as ChartTooltip, Legend } from 'chart.js'
 import LiveBadge from '../components/LiveBadge'
+import ResetViewControl from '../components/map/ResetViewControl'
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, Title, ChartTooltip, Legend)
 
@@ -283,6 +284,7 @@ export default function FlightOps() {
             ) : (
               <MapContainer center={[24.5, -76.5]} zoom={7} style={{ height: '100%', width: '100%' }}
                 zoomControl attributionControl={false} minZoom={4} maxZoom={18}>
+                <ResetViewControl center={[24.5, -76.5]} zoom={7} />
                 <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" />
                 <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}" />
                 {/* Bahamas FIR boundary */}

@@ -5,6 +5,7 @@ import { api } from '../api/client'
 import { usePolling } from '../hooks/usePolling'
 import { usePrefersReducedMotion } from '../hooks/useA11yPrefs'
 import LiveBadge from '../components/LiveBadge'
+import ResetViewControl from '../components/map/ResetViewControl'
 
 // ─── Category colors & labels ───────────────────────────────────────
 const CAT_COLORS = {
@@ -509,6 +510,7 @@ export default function HurricaneOps() {
           <div style={{ height: 660, position: 'relative' }}>
             <MapContainer center={[24.5, -76.5]} zoom={7} style={{ height: '100%', width: '100%' }}
               zoomControl attributionControl={false} minZoom={5} maxZoom={18}>
+              <ResetViewControl center={[24.5, -76.5]} zoom={7} />
               <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" />
               <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}" />
 

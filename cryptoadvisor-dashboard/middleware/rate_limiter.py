@@ -34,6 +34,7 @@ class RateLimiter:
         self.default_rpm = default_rpm
         self.path_limits: dict[str, int] = path_limits or {
             "/api/chat": 10,
+            "/api/carbon-desk/advisor/chat": 10,
         }
         # {ip: [timestamps]} — auto-cleaned on access
         self._hits: dict[str, list[float]] = defaultdict(list)

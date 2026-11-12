@@ -93,6 +93,7 @@ from api.memory import router as memory_router
 from api.search import router as search_router
 from api.in_play import router as in_play_router
 from api.instruments import router as instruments_router
+from api.carbon_desk import router as carbon_desk_router, ws_router as carbon_desk_ws_router
 
 # Auth router (JSON API)
 from routers.auth import router as auth_router
@@ -153,9 +154,14 @@ async def lifespan(app: FastAPI):
     # Start WebSocket price feed
     asyncio.create_task(price_manager.start_price_feed())
 
+    # Carbon Desk: restore the simulated offset-futures market and start its loops
+    import services.carbon_desk as carbon_desk
+    await carbon_desk.start()
+
     yield
 
     cancel_all()
+    await carbon_desk.stop()
     print("AssetAdvisor shutting down.")
 
 
@@ -237,6 +243,8 @@ app.include_router(memory_router, prefix="/api/memory", tags=["memory"])
 app.include_router(search_router, prefix="/api/search", tags=["search"])
 app.include_router(in_play_router, prefix="/api/in-play", tags=["in-play"])
 app.include_router(instruments_router, prefix="/api/instruments", tags=["instruments"])
+app.include_router(carbon_desk_router, prefix="/api/carbon-desk", tags=["carbon-desk"])
+app.include_router(carbon_desk_ws_router, tags=["carbon-desk"])
 
 # Auth API router
 app.include_router(auth_router, prefix="/api/auth", tags=["auth"])

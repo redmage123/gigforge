@@ -47,6 +47,7 @@ const CoinDetail = lazy(() => import('./pages/CoinDetail'))
 const InstrumentDetail = lazy(() => import('./pages/InstrumentDetail'))
 const Memory = lazy(() => import('./pages/Memory'))
 const Search = lazy(() => import('./pages/Search'))
+const CarbonDesk = lazy(() => import('./pages/CarbonDesk'))
 
 export const AuthContext = createContext(null)
 
@@ -150,6 +151,7 @@ function App() {
               <Route path="api-keys" element={<ApiKeys />} />
               <Route path="memory" element={<Memory />} />
               <Route path="search" element={<Search />} />
+              <Route path="carbon-desk" element={<CarbonDesk />} />
               <Route path="coin/:coinId" element={<CoinDetail />} />
               <Route path="i/:instrumentId" element={<InstrumentDetail />} />
               <Route path="*" element={<Navigate to="/" replace />} />

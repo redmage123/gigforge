@@ -17,6 +17,7 @@ const navSections = [
       { path: '/correlation', label: 'Correlation', icon: '\uD83D\uDD17' },
       { path: '/orderbook', label: 'Order Book', icon: '\uD83D\uDCD6' },
       { path: '/liquidations', label: 'Liquidations', icon: '\uD83D\uDCA5' },
+      { path: '/carbon-desk', label: 'Carbon Desk', icon: '\uD83C\uDF3F' },
     ],
   },
   {

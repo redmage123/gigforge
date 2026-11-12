@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import HoverTip from '../components/a11y/HoverTip'
 import { HAZARD_COLORS } from '../components/mesh/PrecogChamber'
+import StateGallery from '../components/mesh/StateGallery'
 import '../components/mesh/mesh.css'
 
 /**
@@ -33,7 +34,7 @@ const SECTIONS = [
         when: 'Convective cells, a few times a day.',
         show: 'Presenter: Thunderstorm + any outcome.' },
       { term: 'SQUALL', color: HAZARD_COLORS.SQUALL, short: 'Squall line',
-        means: 'A line of storms (40 dBZ or more) with gusts of 34 kt or more and a sudden pressure jump. The most severe verdict.',
+        means: 'A line of storms (40 dBZ or more) with gusts of 34 kt or more plus a sudden pressure jump, or gusts of 50 kt or more. The most severe verdict.',
         when: 'Frontal squalls from the north-west.',
         show: 'Presenter: Squall line + any outcome, or the "Squall line from Florida" scenario.' },
     ],
@@ -182,8 +183,10 @@ export default function MeshGuide() {
         </div>
       </div>
       <nav className="mg-toc" aria-label="Guide sections">
+        <a href="#mg-glance">Every state at a glance</a>
         {SECTIONS.map(s => <a key={s.id} href={`#mg-${s.id}`}>{s.title}</a>)}
       </nav>
+      <StateGallery />
       {SECTIONS.map(s => (
         <section key={s.id} className="card mg-section" aria-labelledby={`mg-${s.id}`}>
           <h3 id={`mg-${s.id}`} tabIndex={-1}>{s.title}</h3>

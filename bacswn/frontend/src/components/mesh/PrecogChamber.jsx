@@ -3,6 +3,14 @@ import PresenterPanel from './PresenterPanel'
 export const HAZARD_COLORS = {
   CLEAR: '#10b981', SHOWERS: '#3b82f6', IFR: '#a855f7', TSRA: '#f59e0b', SQUALL: '#ef4444',
 }
+/** Plain-weather examples, so a verdict reads as weather (not system health). */
+export const VERDICT_EXAMPLES = {
+  CLEAR: 'fair weather: no rain, fog or storms',
+  SHOWERS: 'rain showers',
+  IFR: 'fog or low cloud',
+  TSRA: 'thunderstorm with rain',
+  SQUALL: 'squall line: violent gusts',
+}
 /** Hazard colour for TEXT on page surfaces — a CSS variable that meets 4.5:1 in both themes. */
 export const hz = (call) => `var(--hz-${String(call || 'clear').toLowerCase()})`
 
@@ -75,11 +83,12 @@ export default function PrecogChamber({ node, hub, onFault, onVerify, onPresent,
           <>
             <div className="verdict" style={{ borderColor: vColor }}>
               <div>
-                <small>Ensemble verdict</small>
+                <small>Weather verdict</small>
                 <div className="big" style={{ color: vColor }}>{v.call}</div>
+                <small className="verdict-example">{VERDICT_EXAMPLES[v.call]}</small>
               </div>
               <div style={{ textAlign: 'right' }}>
-                <small>Agreement</small>
+                <small>Models agreeing</small>
                 <div style={{ fontWeight: 800, fontSize: 18, color: v.split ? 'var(--warning)' : 'var(--text-primary)' }}>{v.agreement}</div>
                 <small>ground truth: <b style={{ color: hz(node.truth) }}>{node.truth}</b></small>
                 <br /><small>satellite: {node.satellite?.call
@@ -129,24 +138,50 @@ export default function PrecogChamber({ node, hub, onFault, onVerify, onPresent,
           </>
         )}
 
+        {node.alive && (
+          <div className="peer-verify">
+            <div>
+              <div className="section-label" id={`pv-${node.station}`}>Peer review</div>
+              <p className="dim">Neighbouring stations check {node.station}'s verdict with their own radar and the satellite, and vote to confirm or reject it.</p>
+            </div>
+            <button type="button" className="btn btn-sm btn-primary peer-verify-btn" disabled={busy}
+              aria-describedby={`pv-${node.station}`} onClick={() => onVerify(node.station)}>
+              <span aria-hidden="true">👥</span> Ask peers to verify
+            </button>
+          </div>
+        )}
+
         {node.alive && onPresent && <PresenterPanel key={node.station} node={node} busy={busy} onPresent={onPresent} />}
 
-        <div>
-          <div className="section-label">Inject fault</div>
-          <div className="fault-row">
-            {node.alive && <button className="mesh-chip danger" disabled={busy} onClick={() => act({ kind: 'node_down' })}>Take offline</button>}
+        <div className="fault-panel" role="group" aria-labelledby={`fi-${node.station}`}>
+          <div className="section-label" id={`fi-${node.station}`}>Inject fault (demo)</div>
+          {node.alive && (
+            <div className="fault-line">
+              <span className="fault-line-label">Station</span>
+              <button className="mesh-chip danger" disabled={busy} onClick={() => act({ kind: 'node_down' })}>Take offline</button>
+            </div>
+          )}
+          <div className="fault-line" role="group" aria-label="Corrupt a model">
+            <span className="fault-line-label" aria-hidden="true">Corrupt model</span>
             {node.precogs.map(pc => (
-              <button key={pc.id} className="mesh-chip danger" disabled={busy || pc.corrupted} onClick={() => act({ kind: 'corrupt_precog', precog: pc.id })}>
-                Corrupt {pc.id}
+              <button key={pc.id} className="mesh-chip danger" disabled={busy || pc.corrupted} aria-label={`Corrupt ${pc.id}`}
+                onClick={() => act({ kind: 'corrupt_precog', precog: pc.id })}>
+                {pc.id}
               </button>
             ))}
+          </div>
+          <div className="fault-line" role="group" aria-label="Stick a sensor">
+            <span className="fault-line-label" aria-hidden="true">Stick sensor</span>
             {['visibility', 'wind', 'pressure', 'rain'].map(s => (
-              <button key={s} className="mesh-chip danger" disabled={busy || faulted.has(s)} onClick={() => act({ kind: 'sensor_fault', sensor: s })}>
-                Stick {s}
+              <button key={s} className="mesh-chip danger" disabled={busy || faulted.has(s)} aria-label={`Stick ${s} sensor`}
+                onClick={() => act({ kind: 'sensor_fault', sensor: s })}>
+                {s}
               </button>
             ))}
+          </div>
+          <div className="fault-line">
+            <span className="fault-line-label" aria-hidden="true" />
             <button className="mesh-chip" disabled={busy} onClick={() => act({ kind: 'clear' })}>Clear faults</button>
-            {node.alive && <button className="mesh-chip" disabled={busy} onClick={() => onVerify(node.station)}>Ask peers to verify</button>}
           </div>
         </div>
       </div>

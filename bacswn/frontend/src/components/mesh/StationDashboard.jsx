@@ -104,14 +104,33 @@ function Product({ title, obs, children }) {
   )
 }
 
-function Satellite({ sat, node }) {
+/** Satellite pictogram for the Tomorrow.io panel (decorative; the heading carries the meaning). */
+function SatelliteIcon() {
+  return (
+    <svg className="sd-sat-icon" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false">
+      <g fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" strokeLinecap="round">
+        <g transform="rotate(-45 13 11)">
+          <rect x="10.5" y="8" width="5" height="6" rx="1" />
+          <rect x="3" y="9" width="5.5" height="4" />
+          <rect x="17.5" y="9" width="5.5" height="4" />
+          <path d="M8.5 11h2M15.5 11h2" />
+        </g>
+        <path d="M3 16a5 5 0 0 0 5 5M3 19.5A1.5 1.5 0 0 0 4.5 21" />
+      </g>
+    </svg>
+  )
+}
+
+function Satellite({ sat, node, station }) {
   const r = sat.radar, s = sat.sounder
   return (
-    <section className="sd-panel" aria-labelledby="sd-sat-h">
+    <section className="sd-panel sd-tomorrow" aria-labelledby="sd-sat-h">
       <div className="sd-panel-head">
-        <h4 id="sd-sat-h">Tomorrow.io satellite feed <span className="mbadge blue">Simulated</span></h4>
-        <p>Next passes: radar in {sat.next_pass_min.radar} min, sounder in {sat.next_pass_min.sounder} min · used for decisions while ≤ {sat.fresh_limit_min} min old</p>
+        <h4 id="sd-sat-h"><SatelliteIcon /> Tomorrow.io satellite data</h4>
+        <p>One feed, two views: what the mesh uses for its decisions, and the real conditions at {station} now.</p>
       </div>
+      <h5 className="sd-sub sd-sub-top">Used by the mesh <span className="mbadge blue">Simulated</span></h5>
+      <p className="sd-dim">Next passes: radar in {sat.next_pass_min.radar} min, sounder in {sat.next_pass_min.sounder} min · used for decisions while ≤ {sat.fresh_limit_min} min old</p>
       <div className="sd-sat-call">
         Satellite sees now: {sat.call ? <b style={{ color: hz(sat.call) }}>{sat.call}</b> : <span className="sd-dim">no fresh data</span>}
         {node.verdict?.tiebreak && <p className="sd-use"><b>Used:</b> {node.verdict.tiebreak}.</p>}
@@ -152,6 +171,7 @@ function Satellite({ sat, node }) {
           <li key={o.id}><b>{o.id}</b> {o.kind}, {o.dbz} dBZ — {o.eta_min === 0 ? 'overhead now' : `ETA ${o.eta_min} min`}</li>
         ))}</ul>
       )}
+      <LiveWeather station={station} />
     </section>
   )
 }
@@ -166,11 +186,9 @@ function LiveWeather({ station }) {
   useEffect(() => { setLive(null); load() }, [load])
   const v = live?.values
   return (
-    <section className="sd-panel" aria-labelledby="sd-live-h" aria-busy={!live && !error}>
-      <div className="sd-panel-head">
-        <h4 id="sd-live-h">Real conditions now — Tomorrow.io <span className="mbadge green">Live</span></h4>
-        <p>Actual weather at {station}, for reference. Not part of the simulation and not used in its decisions.</p>
-      </div>
+    <div className="sd-live-part" aria-busy={!live && !error}>
+      <h5 className="sd-sub">Real conditions now <span className="mbadge green">Live</span></h5>
+      <p className="sd-dim">Actual weather at {station}, for reference. Not part of the simulation and not used in its decisions.</p>
       {error && <p role="alert" className="sd-warn">{error}</p>}
       {!live && !error && <p className="sd-dim">Loading…</p>}
       {live && !live.configured && (
@@ -196,7 +214,7 @@ function LiveWeather({ station }) {
         </>
       )}
       <button type="button" className="mesh-chip" onClick={load}>Refresh live data</button>
-    </section>
+    </div>
   )
 }
 
@@ -210,8 +228,7 @@ export default function StationDashboard({ station }) {
         <div className="sd-grid">
           <SensorNetwork sensors={d.sensor_net} metrics={d.metrics} station={station} />
           <div className="sd-side">
-            <Satellite sat={d.satellite_detail} node={d} />
-            <LiveWeather station={station} />
+            <Satellite sat={d.satellite_detail} node={d} station={station} />
           </div>
         </div>
       )}

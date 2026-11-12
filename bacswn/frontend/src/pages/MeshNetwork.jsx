@@ -52,7 +52,7 @@ function nodeIcon(n, selected) {
   return L.divIcon({
     className: '', iconSize: [30, 30], iconAnchor: [15, 15],
     html: `<div class="${cls}" style="color:${color}"><div class="ring"></div><div class="core"></div>`
-      + (flag ? `<div class="flag">${flag}</div>` : '')
+      + (flag ? `<div class="flag${flag === '!' ? ' critical' : ''}" title="${flag === '!' ? 'Degraded: faulty sensor or model' : 'Models split'}">${flag}</div>` : '')
       + `<div class="tag">${n.station}<em style="color:${color}">${n.alive ? n.verdict.call : 'OFFLINE'}</em></div></div>`,
   })
 }

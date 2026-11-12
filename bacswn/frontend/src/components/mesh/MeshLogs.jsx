@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { hz } from './PrecogChamber'
+import { hz, VERDICT_EXAMPLES } from './PrecogChamber'
 import { useTourEvent } from '../../tour/bus'
 
 const simClock = (iso) => new Date(iso).toISOString().slice(11, 16) + 'Z'
@@ -22,8 +22,8 @@ function Stations({ nodes, onSelect }) {
     <table>
       <Caption>All stations — text equivalent of the map</Caption>
       <thead><tr>
-        <th scope="col">Station</th><th scope="col">Name</th><th scope="col">Status</th><th scope="col">Verdict</th>
-        <th scope="col">Agreement</th><th scope="col">Route to BACSWN hub</th><th scope="col">Queued</th><th scope="col">Faults</th>
+        <th scope="col">Station</th><th scope="col">Name</th><th scope="col">Status</th><th scope="col">Weather verdict</th>
+        <th scope="col">Models agreeing</th><th scope="col">Route to BACSWN hub</th><th scope="col">Queued</th><th scope="col">Faults</th>
       </tr></thead>
       <tbody>
         {nodes.map(n => (
@@ -31,7 +31,7 @@ function Stations({ nodes, onSelect }) {
             <th scope="row"><StationBtn code={n.station} onSelect={onSelect} />{n.is_hub && <span className="mbadge blue" style={{ marginLeft: 4 }}>BACSWN HUB</span>}</th>
             <td>{n.name}</td>
             <td>{STATUS_TEXT[n.status]}</td>
-            <td>{n.alive ? <Hz h={n.verdict.call} /> : '—'}</td>
+            <td>{n.alive ? <><Hz h={n.verdict.call} /> <span className="dim">· {VERDICT_EXAMPLES[n.verdict.call]}</span></> : '—'}</td>
             <td>{n.alive ? (n.verdict.split ? 'Split — no majority' : n.verdict.agreement) : '—'}</td>
             <td className="mono">{n.is_hub ? 'BACSWN hub' : n.route_to_hub ? `${n.route_to_hub.hops} hops · ${n.route_to_hub.latency_ms} ms` : 'No route'}</td>
             <td>{n.queue || 0}</td>

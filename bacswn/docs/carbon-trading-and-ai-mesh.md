@@ -1,51 +1,15 @@
-# Carbon Desk & Distributed AI Mesh
+# Distributed AI Mesh & CORSIA (Carbon Desk moved to AssetAdvisor)
 
 Two demo capabilities added to SkyWatch. Both are **simulations** and are labelled as such in the UI.
 
-## 1. Carbon Desk — CME emissions-offset futures (`/carbon-trading`)
+## 1. Carbon Desk — moved to AssetAdvisor
 
-### Can BACSWN trade on CME directly? Not today.
-CME Group lists physically delivered offset futures, all **1,000 offsets per contract**:
-
-| Product | Code | Underlying |
-|---|---|---|
-| CBL Global Emissions Offset | GEO | CORSIA-eligible units (Verra, ACR, CAR) |
-| CBL Nature-Based Global Emissions Offset | N-GEO (Globex `NGO`) | Verra AFOLU nature-based units |
-| CBL Core Global Emissions Offset | C-GEO (`CGO`) | Energy/technology Verra units |
-
-Order entry to CME Globex goes through **iLink 3** (binary/SBE over Market Segment Gateways) or CME's
-order-entry web APIs (REST / WebSocket). Either way it requires a **clearing FCM** that enables your firm ID,
-plus CME connectivity certification. CME's WebSocket *market-data* API (launched Nov 2023) gives top of book,
-trades, settlement, volume and open interest, but it is not an order-entry route. There is no public
-API key that lets an application place CME orders.
-
-**Practical route to live trading:** open an account with an FCM or broker that clears CME energy/emissions
-futures and exposes an API (e.g. CQG, Trading Technologies, Rithmic or Interactive Brokers). Then implement the
-`TradingVenue` protocol in `services/carbon_exchange.py` against that API. The UI and REST/WebSocket contract
-stay the same. Confirm the specific GEO/N-GEO/C-GEO listing and permissions with the broker first. Volumes in
-these contracts are thin.
-
-Sources: CME product pages and SER 9375 (vintage rules), CME electronic-trading notices on iLink 3 and
-Market Data over WebSocket.
-
-### What the simulator does
-- `services/carbon_exchange.py`: a price-time-priority matching engine per contract (next 4 quarterly
-  expiries per product). Order types MKT / LMT / STP / STL, TIF DAY / GTC / IOC / FOK. Simulated market
-  makers quote around a mean-reverting fair value with contango, and noise traders and market headlines
-  move it.
-- Risk: initial-margin buying-power check, ±20% price banding, 500-lot max. P&L is marked to last; fees are
-  $1.85 per contract per side.
-- The engine matches in memory; `services/trading_store.py` writes changes behind to SQLite every
-  second (market data every 15 s) and on shutdown, and restores them at startup: accounts, positions,
-  open orders (back in the book in time priority), order history, fills, spot levels, instrument stats
-  and 1-minute bars. A crash loses at most the last second. Positions in contracts that expired while
-  the server was down are closed at their last price (an `EXPIRY` fill) and their orders cancelled.
-  Contract specs are realistic; **prices are synthetic.**
-- `GET /api/trading/corsia-obligation` turns BACSWN's live CORSIA fuel-burn emissions for Bahamas FIR traffic
-  into an annualised offset requirement (illustrative 10% sector growth factor). It measures coverage by
-  long GEO positions, and the UI can load a hedge ticket from it.
-- Streaming: `ws /ws/trading?token=…` pushes market data and the caller's account every 500 ms. The client
-  sends `{"focus": "<symbol>"}` to choose which contract's depth and tape are included.
+The Carbon Desk (simulated CME-style GEO / N-GEO / C-GEO offset futures, with its AI trading advisor)
+is no longer part of BACSWN. It now runs inside AssetAdvisor at `/carbon-desk`
+(https://assetadvisor.ai-elevate.ai/carbon-desk); its code lives in that project under
+`services/carbon_desk/`, `api/carbon_desk.py` and `frontend/src/pages/CarbonDesk.jsx`. The Emissions page
+links to it. Because AssetAdvisor has no live Bahamas FIR traffic, the desk's CORSIA hedge is now sized from
+annual emissions the user enters (default: an estimate of a year of FIR traffic).
 
 ## 2. Distributed AI Mesh (`/mesh`)
 
@@ -77,7 +41,7 @@ wall-clock second is 5 simulated minutes):
 CORSIA-eligible units and cancel them in the issuing registry (Verra, Gold Standard, ACR, …). The state
 that administers an operator verifies its emissions reports and its cancellations, then reports to ICAO.
 The Bahamian government and ATC therefore do not acquire credits; BACSWN models the state's oversight role.
-(The Carbon Desk's hedging view is an operator's perspective and is kept as a market demo.)
+(The Carbon Desk's hedging view, an operator's perspective, has moved to AssetAdvisor.)
 
 **What is recorded** (`services/carbon_oversight.py`, `api/carbon_oversight.py`):
 
@@ -158,31 +122,3 @@ the conflict and advice in each aircraft's details.
 
 The mesh simulation clock is compressed (1 s = 5 sim-min); conflict prediction uses physical speeds in
 real minutes, so the geometry is right for the picture at the moment it is computed.
-
-## Carbon Desk AI trading advisor
-
-Opened from **✦ AI Advisor** in the desk's top bar: a drawer over the left column, so the chart, ladder and
-order ticket stay visible. The advisor suggests; it never trades — every suggestion loads into the order
-ticket (entry, or its protective stop) for the user to review and submit.
-
-**Ideas (rule-based, always on)** — `services/trading_advisor.py`, `GET /api/trading/advisor/ideas`.
-Per contract: 10/30-bar EMA trend, 30-bar momentum, stretch from the hourly mean, recent headlines for the
-product, and order-book imbalance, combined into a score. Ideas are complete tickets: limit at the touch,
-stop at 2 ATR, target at 3 ATR, sized to risk 1% of equity and at most half of free margin; plus a CORSIA
-hedge in the GEO front month when the hedge gap is open (no stop/target — it covers an obligation), and a
-review of each open position (cut / take profit / tighten / hold). Curve carry far from normal is reported
-for context but not traded (deferred months are thin in the simulation).
-
-**Ask the advisor (Claude via `claude -p`)** — `services/advisor_llm.py`, `POST /api/trading/advisor/chat`.
-Each question runs the Claude Code CLI headless with a JSON snapshot (quotes, headlines, account,
-positions, orders, fills, the engine's ideas and review, CORSIA gap) and must answer in a fixed schema
-(`--json-schema`): a plain-language answer, up to four trade proposals, and follow-up questions. Proposals
-are validated (listed contract, 1–500 lots, prices inside the ±20% band) before they reach the desk.
-The CLI runs with `--tools ""` (no tools), `--strict-mcp-config`, `--no-session-persistence`, a per-answer
-spend cap and a 180 s timeout, from an empty temporary directory, so it can only reason over the data it is
-given. The last six exchanges are kept per user (in memory) for follow-ups; 30 questions per user per hour.
-
-Typical answer: 20–40 s, ~$0.10 on Claude Opus 5.5 at medium effort. Settings (`.env`): `ADVISOR_MODEL`
-(default `opus`), `ADVISOR_EFFORT` (default `medium`), `ADVISOR_MAX_USD` (default `0.50`). The image installs
-`@anthropic-ai/claude-code`; it authenticates with `ANTHROPIC_API_KEY`. Without the CLI or credentials the
-"Ask" tab says so and the rule-based ideas keep working.

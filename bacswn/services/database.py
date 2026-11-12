@@ -23,13 +23,6 @@ _ALLOWED_TABLES = {
     "carbon_unit_claims",
     "carbon_claim_reviews",
     "carbon_fir_observations",
-    "trading_accounts",
-    "trading_positions",
-    "trading_orders",
-    "trading_fills",
-    "trading_instruments",
-    "trading_candles",
-    "trading_spot",
 }
 # Allows: column, column ASC, column DESC (case-insensitive)
 _COL_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*(\s+(ASC|DESC))?$", re.IGNORECASE)
@@ -259,81 +252,8 @@ CREATE TABLE IF NOT EXISTS carbon_fir_observations (
     last_seen   TEXT    NOT NULL
 );
 
--- Carbon Desk (services/carbon_exchange.py + services/trading_store.py).
--- The matching engine runs in memory; these tables are its write-behind store
--- so accounts, orders, fills and price history survive restarts.
-CREATE TABLE IF NOT EXISTS trading_accounts (
-    owner           TEXT    PRIMARY KEY,
-    cash            REAL    NOT NULL,
-    fees            REAL    NOT NULL DEFAULT 0,
-    start_equity    REAL    NOT NULL,
-    updated_at      TEXT    NOT NULL DEFAULT (datetime('now'))
-);
-
-CREATE TABLE IF NOT EXISTS trading_positions (
-    owner           TEXT    NOT NULL,
-    symbol          TEXT    NOT NULL,
-    qty             INTEGER NOT NULL,
-    avg_price       REAL    NOT NULL,
-    realized        REAL    NOT NULL DEFAULT 0,
-    PRIMARY KEY (owner, symbol)
-);
-
-CREATE TABLE IF NOT EXISTS trading_orders (
-    id              INTEGER PRIMARY KEY,
-    owner           TEXT    NOT NULL,
-    symbol          TEXT    NOT NULL,
-    side            TEXT    NOT NULL,
-    qty             INTEGER NOT NULL,
-    type            TEXT    NOT NULL,
-    tif             TEXT    NOT NULL,
-    price           INTEGER,            -- ticks
-    stop            INTEGER,            -- ticks
-    filled          INTEGER NOT NULL DEFAULT 0,
-    avg_fill        REAL    NOT NULL DEFAULT 0,
-    status          TEXT    NOT NULL,
-    reason          TEXT    NOT NULL DEFAULT '',
-    created         REAL    NOT NULL,
-    updated         REAL    NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS trading_fills (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    owner           TEXT    NOT NULL,
-    order_id        INTEGER,
-    symbol          TEXT    NOT NULL,
-    side            TEXT    NOT NULL,
-    qty             INTEGER NOT NULL,
-    price           REAL    NOT NULL,
-    fee             REAL    NOT NULL,
-    liquidity       TEXT    NOT NULL,
-    time            TEXT    NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS trading_instruments (
-    symbol          TEXT    PRIMARY KEY,
-    settle          REAL,
-    open            REAL,
-    high            REAL,
-    low             REAL,
-    last            REAL,
-    last_size       INTEGER NOT NULL DEFAULT 0,
-    volume          INTEGER NOT NULL DEFAULT 0,
-    open_interest   INTEGER NOT NULL DEFAULT 0
-);
-
-CREATE TABLE IF NOT EXISTS trading_candles (
-    symbol          TEXT    NOT NULL,
-    t               INTEGER NOT NULL,
-    o REAL NOT NULL, h REAL NOT NULL, l REAL NOT NULL, c REAL NOT NULL,
-    v               INTEGER NOT NULL,
-    PRIMARY KEY (symbol, t)
-);
-
-CREATE TABLE IF NOT EXISTS trading_spot (
-    product         TEXT    PRIMARY KEY,
-    spot            REAL    NOT NULL
-);
+-- (The Carbon Desk's trading_* tables moved with it to AssetAdvisor; any left in an
+-- existing database are no longer used.)
 
 CREATE TRIGGER IF NOT EXISTS carbon_reports_immutable_u BEFORE UPDATE ON carbon_emission_reports
 BEGIN SELECT RAISE(ABORT, 'carbon_emission_reports is append-only'); END;
@@ -376,8 +296,6 @@ CREATE INDEX IF NOT EXISTS idx_reports_op_year ON carbon_emission_reports(operat
 CREATE INDEX IF NOT EXISTS idx_claims_op_period ON carbon_unit_claims(operator_id, compliance_period);
 CREATE INDEX IF NOT EXISTS idx_reviews_claim ON carbon_claim_reviews(claim_id);
 CREATE INDEX IF NOT EXISTS idx_fir_obs_lookup ON carbon_fir_observations(icao24, callsign, last_seen);
-CREATE INDEX IF NOT EXISTS idx_trading_orders_owner ON trading_orders(owner, status);
-CREATE INDEX IF NOT EXISTS idx_trading_fills_owner ON trading_fills(owner, id);
 CREATE INDEX IF NOT EXISTS idx_fir_obs_designator ON carbon_fir_observations(designator, first_seen);
 """
 

@@ -55,13 +55,24 @@ class SatelliteFeed:
         ready = [p for p in sat["pending"] if p["available_tick"] <= tick]
         sat["pending"] = [p for p in sat["pending"] if p["available_tick"] > tick]
         for obs in ready:
-            sat[obs["instrument"]] = obs
+            current = sat[obs["instrument"]]
+            if current is None or obs["tick"] >= current["tick"]:   # never replace newer data with older
+                sat[obs["instrument"]] = obs
         for inst, spec in INSTRUMENTS.items():
             if (tick - sat["phase"][inst]) % spec["revisit_ticks"] == 0:
                 obs = self.observe_radar(n) if inst == "radar" else self.observe_sounder(n)
                 obs.update(instrument=inst, source=spec["name"], tick=tick,
                            available_tick=tick + spec["latency_ticks"])
                 sat["pending"].append(obs)
+
+    def task_pass(self, n: dict) -> None:
+        """An on-demand pass over one station, available at once (presenter controls)."""
+        sat, tick = n["satellite"], self.sim.tick
+        sat["pending"] = []                 # supersedes passes still being processed
+        for inst, spec in INSTRUMENTS.items():
+            obs = self.observe_radar(n) if inst == "radar" else self.observe_sounder(n)
+            obs.update(instrument=inst, source=spec["name"], tick=tick, available_tick=tick)
+            sat[inst] = obs
 
     def observe_radar(self, n: dict) -> dict:
         from services.mesh_network import _classify, _dbz_to_rain

@@ -45,7 +45,7 @@ export const TOUR_STEPS = [
     action: async () => { await api.meshScenario('squall_line'); meshStation('MYGF'); meshTab('propagation') },
     body: [
       'Three squall cells are sweeping south-east across Grand Bahama, Abaco and Nassau.',
-      'Watch the Hand-offs log: upstream stations warn the stations in the storm’s path before it reaches them, so downstream verdicts change ahead of the weather.',
+      'Watch the Audit trail log: upstream stations warn the stations in the storm’s path before it reaches them, so downstream verdicts change ahead of the weather.',
     ],
   },
   {
@@ -93,14 +93,6 @@ export const TOUR_STEPS = [
     ],
   },
   {
-    id: 'carbon-desk', path: '/carbon-trading', title: 'Carbon Desk: offset futures', seconds: 16,
-    target: '.tt-area-ladder',
-    body: [
-      'A trading screen for carbon-offset futures modelled on CME’s GEO, N-GEO and C-GEO contracts: depth of market, one-click orders, positions and risk checks.',
-      'The market is simulated — it is not connected to CME — and accounts and orders persist across restarts.',
-    ],
-  },
-  {
     id: 'oversight', path: '/corsia-oversight', title: 'CORSIA oversight: the state’s view', seconds: 18,
     target: '.co-findings',
     body: [
@@ -122,7 +114,7 @@ export const TOUR_STEPS = [
     action: async () => { emitTour('agents-demo') },
     body: [
       'Behind the screens, seven agents watch the weather, track flights, draft SIGMETs, calculate emissions, check data quality and dispatch alerts.',
-      'A demo run is playing now: watch the hand-off from one agent to the next in the activity feed.',
+      'A demo run is playing now: watch the audit trail in the activity feed as each agent passes the work to the next.',
     ],
   },
   {

@@ -17,6 +17,13 @@ class FaultRequest(BaseModel):
     sensor: str | None = None     # visibility|wind|pressure|rain
 
 
+class PresentRequest(BaseModel):
+    station: str
+    call: str                     # CLEAR|SHOWERS|IFR|TSRA|SQUALL
+    outcome: str                  # agree|dissent|split|peers_confirm|peers_reject
+    model: str | None = None      # dissenting model (TEMPO|VISTA|LEXIS)
+
+
 class StormRequest(BaseModel):
     kind: str = "squall"          # convective|squall|fog
     lat: float | None = None
@@ -92,3 +99,10 @@ async def run_scenario(name: str):
     """Canned demo scenarios: squall_line, rogue_precog, sensor_fault, partition, reset."""
     mesh.advance()
     return _result(mesh.run_scenario(name))
+
+
+@router.post("/present")
+async def present(req: PresentRequest):
+    """Presenter control: make a station show a chosen verdict and voting outcome now."""
+    mesh.advance()
+    return _result(mesh.present(req.station, req.call, req.outcome, req.model))

@@ -12,10 +12,10 @@ import SituationTables from '../components/command/SituationTables'
 import MeshTrafficPanel, { MeshHazardLayers } from '../components/command/MeshTraffic'
 import LiveBadge from '../components/LiveBadge'
 import ResetViewControl from '../components/map/ResetViewControl'
+import { PLANE_D } from '../components/map/plane'
 import { CommsLinksLayer, CommsFilterControl, DEFAULT_COMMS_FILTER, visibleLinks } from '../components/map/CommsChannels'
 
 // ── 1. Aircraft icon — bright yellow plane ──────────────────────────
-const PLANE_D = 'M256 48 l20 120 l160 90 l-10 30 l-150-50 l0 130 l50 35 l0 30 l-70-20 l-70 20 l0-30 l50-35 l0-130 l-150 50 l-10-30 l160-90 Z'
 function buildPlaneHtml(deg) {
   return '<div style="transform:rotate(' + deg + 'deg);width:32px;height:32px">'
     + '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="32" height="32">'

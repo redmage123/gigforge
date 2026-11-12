@@ -1,3 +1,4 @@
+import PresenterPanel from './PresenterPanel'
 /** Bright hazard colours for map symbols drawn over satellite imagery. */
 export const HAZARD_COLORS = {
   CLEAR: '#10b981', SHOWERS: '#3b82f6', IFR: '#a855f7', TSRA: '#f59e0b', SQUALL: '#ef4444',
@@ -33,6 +34,7 @@ function Precog({ pc, majority, split }) {
         {dissent && <span className="mbadge amber">MINORITY REPORT</span>}
         {pc.quarantined && <span className="mbadge grey">QUARANTINED</span>}
         {pc.corrupted && <span className="mbadge red">CORRUPTED</span>}
+        {pc.forced && <span className="mbadge blue" title={pc.forced.reason}>PRESENTER</span>}
       </div>
       <div className="reason" title={pc.reason}><span className="sr-only">Reasoning: </span>{pc.reason}</div>
     </li>
@@ -40,7 +42,7 @@ function Precog({ pc, majority, split }) {
 }
 
 /** Selected station: its 2-of-3 ensemble, sensors, route to hub, and fault controls. */
-export default function PrecogChamber({ node, hub, onFault, onVerify, busy }) {
+export default function PrecogChamber({ node, hub, onFault, onVerify, onPresent, busy }) {
   if (!node) {
     return (
       <div className="chamber">
@@ -58,7 +60,7 @@ export default function PrecogChamber({ node, hub, onFault, onVerify, busy }) {
     <section className="chamber" aria-labelledby="chamber-h">
       <div className="chamber-head">
         <h3 id="chamber-h">
-          {node.station} {node.is_hub && <span className="mbadge blue">HUB</span>}
+          {node.station} {node.is_hub && <span className="mbadge blue">BACSWN HUB</span>}
           <span className={`mbadge ${statusBadge}`}>{node.status.toUpperCase()}</span>
         </h3>
         <p>{node.name} · {node.peers.length} live peers · {node.msgs_sent.toLocaleString()} sent / {node.msgs_recv.toLocaleString()} recv</p>
@@ -94,7 +96,7 @@ export default function PrecogChamber({ node, hub, onFault, onVerify, busy }) {
 
             {node.warnings.length > 0 && (
               <div>
-                <div className="section-label">Inbound hand-offs from peers</div>
+                <div className="section-label">Audit trail: inbound warnings from peers</div>
                 {node.warnings.map(w => (
                   <div key={w.from + w.call} style={{ fontSize: 12 }}>
                     <b>{w.from}</b> → <span style={{ color: hz(w.call) }}>{w.call}</span> ETA {w.eta_ticks * 5} min
@@ -115,7 +117,7 @@ export default function PrecogChamber({ node, hub, onFault, onVerify, busy }) {
             </div>
 
             <div>
-              <div className="section-label">Route to hub ({hub})</div>
+              <div className="section-label">Route to BACSWN hub ({hub})</div>
               {node.is_hub ? <div className="route"><b>{hub}</b> local NOC</div>
                 : node.route_to_hub ? (
                   <div className="route">
@@ -126,6 +128,8 @@ export default function PrecogChamber({ node, hub, onFault, onVerify, busy }) {
             </div>
           </>
         )}
+
+        {node.alive && onPresent && <PresenterPanel key={node.station} node={node} busy={busy} onPresent={onPresent} />}
 
         <div>
           <div className="section-label">Inject fault</div>

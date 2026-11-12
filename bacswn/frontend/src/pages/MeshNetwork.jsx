@@ -16,7 +16,7 @@ const LINK_COLORS = { vhf: '#10b981', cellular: '#3b82f6', satellite: '#a855f7' 
 const MSG_COLORS = { ALERT: '#ef4444', HAZARD: '#f59e0b', VOTE: '#facc15', PROPAGATION: '#c084fc', MAINT: '#fb923c', HEARTBEAT: '#94a3b8' }
 const SCENARIOS = [
   ['squall_line', 'Squall line from Florida', 'Three squall cells sweep SE across Grand Bahama, Abaco and Nassau'],
-  ['rogue_precog', 'Rogue model @ Nassau', 'Corrupt the LEXIS model at the hub — watch it get outvoted, then quarantined'],
+  ['rogue_precog', 'Rogue model @ Nassau', 'Corrupt the LEXIS model at the BACSWN hub — watch it get outvoted, then quarantined'],
   ['sensor_fault', 'Stuck sensor @ Exuma', 'Visibility sensor sticks at ½ SM — fools two local models, peers reject it'],
   ['partition', 'Partition the south', 'Cut Inagua, Mayaguana & Ragged Island off — alerts queue (store-and-forward)'],
 ]
@@ -132,7 +132,8 @@ export default function MeshNetwork() {
   const run = async (fn, msg) => {
     setBusy(true)
     try {
-      await fn()
+      const result = await fn()
+      if (typeof msg === 'function') msg = msg(result)
       if (msg) {
         setToast(msg)
         clearTimeout(toastTimer.current)
@@ -162,8 +163,8 @@ export default function MeshNetwork() {
 
       <div className="mesh-kpis">
         <div className="mesh-kpi"><label>Stations online</label><b style={{ color: 'var(--success)' }}>{d.online_nodes}/{d.total_nodes}</b><small>{d.degraded_nodes} degraded / caution</small></div>
-        <div className="mesh-kpi"><label>Hub reachable</label><b style={{ color: d.hub_reachable === d.online_nodes ? 'var(--info)' : 'var(--danger)' }}>{d.hub_reachable}</b><small>{d.links_up}/{d.total_links} links up</small></div>
-        <div className="mesh-kpi"><label>Alerts to hub</label><b style={{ color: 'var(--danger)' }}>{c.alerts}</b><small>{c.store_forward} via store-and-forward</small></div>
+        <div className="mesh-kpi"><label>BACSWN hub reachable</label><b style={{ color: d.hub_reachable === d.online_nodes ? 'var(--info)' : 'var(--danger)' }}>{d.hub_reachable}</b><small>{d.links_up}/{d.total_links} links up</small></div>
+        <div className="mesh-kpi"><label>Alerts to BACSWN hub</label><b style={{ color: 'var(--danger)' }}>{c.alerts}</b><small>{c.store_forward} via store-and-forward</small></div>
         <div className="mesh-kpi"><label>Peer verification</label><b style={{ color: 'var(--warning)' }}>{c.confirmed}<span style={{ fontSize: 14, color: 'var(--text-muted)' }}> / {c.rejected}</span></b><small>confirmed / rejected</small></div>
         <div className="mesh-kpi"><label>Minority reports</label><b style={{ color: 'var(--accent)' }}>{openReports}</b><small>{c.vindicated} vindicated · {c.dismissed} dismissed</small></div>
         <div className="mesh-kpi"><label>Models quarantined</label><b style={{ color: quarantined ? 'var(--danger)' : 'var(--text-primary)' }}>{quarantined}</b><small>{c.quarantines} total this session</small></div>
@@ -251,7 +252,7 @@ export default function MeshNetwork() {
 
             {nodes.map(n => (
               <Marker key={n.station} position={[n.lat, n.lon]} icon={nodeIcon(n, n.station === selected)}
-                title={`${n.station} ${n.name}${n.is_hub ? ' (hub)' : ''}: ${n.alive ? `${n.verdict.call}, ${n.verdict.split ? 'models split' : n.verdict.agreement + ' agree'}` : 'offline'}, ${n.status}${n.station === selected ? ', selected' : ''}`}
+                title={`${n.station} ${n.name}${n.is_hub ? ' (BACSWN hub)' : ''}: ${n.alive ? `${n.verdict.call}, ${n.verdict.split ? 'models split' : n.verdict.agreement + ' agree'}` : 'offline'}, ${n.status}${n.station === selected ? ', selected' : ''}`}
                 eventHandlers={{
                   click: () => setSelected(n.station),
                   // Leaflet only maps Enter to "open popup"; these markers have none, so
@@ -272,13 +273,14 @@ export default function MeshNetwork() {
             <span><s style={{ borderColor: LINK_COLORS.vhf }} />VHF</span>
             <span><s style={{ borderColor: LINK_COLORS.cellular, borderTopStyle: 'dashed' }} />Cellular</span>
             <span><s style={{ borderColor: LINK_COLORS.satellite, borderTopStyle: 'dotted' }} />Satellite</span>
-            <span><s style={{ borderColor: '#22d3ee', borderTopWidth: 4 }} />Route to hub</span>
+            <span><s style={{ borderColor: '#22d3ee', borderTopWidth: 4 }} />Route to BACSWN hub</span>
           </div>
         </div>
 
         <PrecogChamber node={node} hub={d.hub} busy={busy}
           onFault={(f) => run(() => api.meshFault(f), `${f.kind.replace('_', ' ')} → ${f.station}`)}
-          onVerify={(s) => run(() => api.meshConsensus(s), `Verification requested from ${s}'s peers`)} />
+          onVerify={(s) => run(() => api.meshConsensus(s), `Verification requested from ${s}'s peers`)}
+          onPresent={(p) => run(() => api.meshPresent(p), r => `Presenter: ${r.detail}`)} />
       </div>
 
       <StationDashboard station={selected} />

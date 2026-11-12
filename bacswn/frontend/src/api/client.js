@@ -117,20 +117,9 @@ export const api = {
   meshConsensus: (station) => request('/api/mesh/consensus?station=' + (station || 'MYNN'), { method: 'POST' }),
   meshFault: (fault) => request('/api/mesh/fault', { method: 'POST', body: JSON.stringify(fault) }),
   meshStorm: (storm) => request('/api/mesh/storm', { method: 'POST', body: JSON.stringify(storm) }),
+  meshPresent: (p) => request('/api/mesh/present', { method: 'POST', body: JSON.stringify(p) }),
   meshScenario: (name) => request('/api/mesh/scenario/' + name, { method: 'POST' }),
 
-  // Carbon trading (simulated CME offset futures)
-  tradingSpecs: () => request('/api/trading/specs'),
-  tradingCandles: (symbol, minutes) => request('/api/trading/candles/' + symbol + '?minutes=' + (minutes || 1) + '&limit=240'),
-  tradingAccount: () => request('/api/trading/account'),
-  tradingSubmit: (order) => request('/api/trading/orders', { method: 'POST', body: JSON.stringify(order) }),
-  tradingCancel: (id) => request('/api/trading/orders/' + id, { method: 'DELETE' }),
-  tradingCancelAll: (symbol) => request('/api/trading/orders/cancel-all' + (symbol ? '?symbol=' + symbol : ''), { method: 'POST' }),
-  tradingFlatten: (symbol) => request('/api/trading/positions/' + symbol + '/flatten', { method: 'POST' }),
-  corsiaObligation: () => request('/api/trading/corsia-obligation'),
-  advisorIdeas: () => request('/api/trading/advisor/ideas'),
-  advisorAsk: (message) => request('/api/trading/advisor/chat', { method: 'POST', body: JSON.stringify({ message }) }),
-  advisorReset: () => request('/api/trading/advisor/reset', { method: 'POST' }),
 
   // CORSIA oversight register (state-side verification of aircraft operators)
   oversightPeriods: () => request('/api/carbon-oversight/periods'),

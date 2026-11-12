@@ -16,7 +16,6 @@ const CommandCenter = lazy(() => import('./pages/CommandCenter'))
 const WatchOffice = lazy(() => import('./pages/WatchOffice'))
 const FlightOps = lazy(() => import('./pages/FlightOps'))
 const Emissions = lazy(() => import('./pages/Emissions'))
-const CarbonTrading = lazy(() => import('./pages/CarbonTrading'))
 const CarbonOversight = lazy(() => import('./pages/CarbonOversight'))
 const Emergency = lazy(() => import('./pages/Emergency'))
 const SensorNetwork = lazy(() => import('./pages/SensorNetwork'))
@@ -24,6 +23,7 @@ const Training = lazy(() => import('./pages/Training'))
 const AgentConsole = lazy(() => import('./pages/AgentConsole'))
 const HurricaneOps = lazy(() => import('./pages/HurricaneOps'))
 const MeshNetwork = lazy(() => import('./pages/MeshNetwork'))
+const MeshGuide = lazy(() => import('./pages/MeshGuide'))
 const Simulations = lazy(() => import('./pages/Simulations'))
 const Verification = lazy(() => import('./pages/Verification'))
 const Login = lazy(() => import('./pages/Login'))
@@ -35,7 +35,6 @@ const NAV_ITEMS = [
   { path: '/verification', icon: '📈', label: 'Forecast Skill' },
   { path: '/flights', icon: '✈️', label: 'Flight Operations' },
   { path: '/emissions', icon: '🌱', label: 'Carbon & Emissions' },
-  { path: '/carbon-trading', icon: '💹', label: 'Carbon Trading' },
   { path: '/corsia-oversight', icon: '📒', label: 'CORSIA Oversight' },
   { path: '/emergency', icon: '🚨', label: 'Emergency Response' },
   { path: '/sensors', icon: '📡', label: 'Sensor Network' },
@@ -43,6 +42,7 @@ const NAV_ITEMS = [
   { path: '/agents', icon: '🤖', label: 'AI Agent Console' },
   { path: '/hurricane', icon: '🌀', label: 'Hurricane Ops' },
   { path: '/mesh', icon: '🔗', label: 'Mesh Network' },
+  { path: '/mesh-guide', icon: '📖', label: 'Station & Model Guide' },
   { path: '/simulations', icon: '🧪', label: 'Simulations' },
 ]
 
@@ -195,7 +195,6 @@ export default function App() {
               <Route path="watch-office" element={<WatchOffice />} />
               <Route path="flights" element={<FlightOps />} />
               <Route path="emissions" element={<Emissions />} />
-              <Route path="carbon-trading" element={<CarbonTrading />} />
               <Route path="corsia-oversight" element={<CarbonOversight />} />
               <Route path="emergency" element={<Emergency />} />
               <Route path="sensors" element={<SensorNetwork />} />
@@ -203,6 +202,7 @@ export default function App() {
               <Route path="agents" element={<AgentConsole />} />
               <Route path="hurricane" element={<HurricaneOps />} />
               <Route path="mesh" element={<MeshNetwork />} />
+              <Route path="mesh-guide" element={<MeshGuide />} />
               <Route path="simulations" element={<Simulations />} />
               <Route path="verification" element={<Verification />} />
             </Route>

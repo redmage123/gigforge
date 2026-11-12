@@ -171,14 +171,14 @@ function SimMap({ nodes, messageLines, propLines, hubLines, alerts, messages, hu
       {/* Station nodes with radar tower icons */}
       {nodes.map(n => (
         <Marker key={n.station} position={[n.lat, n.lon]} icon={nodeIcon(n.status, n.hub_connected, n.alert_level)}
-          title={`${n.station} ${n.name}: ${n.status}, alert level ${n.alert_level || 'normal'}${n.hub_connected ? '' : ', hub disconnected'}`}>
+          title={`${n.station} ${n.name}: ${n.status}, alert level ${n.alert_level || 'normal'}${n.hub_connected ? '' : ', BACSWN hub disconnected'}`}>
           <Popup>
             <div style={{ color: '#000', minWidth: 240, fontSize: 12, lineHeight: 1.5 }}>
               <div style={{ fontWeight: 700, fontSize: 14, borderBottom: '1px solid #ddd', paddingBottom: 4, marginBottom: 4 }}>
                 {String(n.station)} - {String(n.name)}
               </div>
               <div><strong>Status:</strong> <span style={{ color: STATUS_COLORS[n.status] || '#10b981', fontWeight: 700 }}>{String(n.status).toUpperCase()}</span></div>
-              <div><strong>Hub:</strong> {n.hub_connected ? 'Connected' : 'DISCONNECTED'}{n.autonomous_mode ? ' — AUTONOMOUS MODE' : ''}</div>
+              <div><strong>BACSWN hub:</strong> {n.hub_connected ? 'Connected' : 'DISCONNECTED'}{n.autonomous_mode ? ' — AUTONOMOUS MODE' : ''}</div>
               <div><strong>Alert Level:</strong> <span style={{ color: ALERT_LEVEL_COLORS[n.alert_level] || '#10b981', fontWeight: 700 }}>{String(n.alert_level || 'normal').toUpperCase()}</span></div>
               <div><strong>Pressure:</strong> {String(n.pressure_hpa)} hPa</div>
               <div><strong>Wind:</strong> {String(n.wind_kt)} kt</div>
@@ -445,7 +445,7 @@ export default function Simulations() {
             <ul style={{ fontSize: 12, paddingLeft: 18, marginTop: 6 }}>
               {nodes.map(n => (
                 <li key={n.station}><b>{String(n.station)}</b> {String(n.name)}: {String(n.status)}, alert {String(n.alert_level || 'normal')}
-                  {n.hub_connected ? '' : ', hub disconnected'}{n.autonomous_mode ? ', autonomous mode' : ''}
+                  {n.hub_connected ? '' : ', BACSWN hub disconnected'}{n.autonomous_mode ? ', autonomous mode' : ''}
                   {n.detection ? `, detection: ${String(n.detection).replace(/_/g, ' ')}` : ''}</li>
               ))}
             </ul>

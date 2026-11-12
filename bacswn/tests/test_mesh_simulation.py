@@ -18,6 +18,7 @@ def sim():
 
 def _quiet(m, ticks):
     """Step while suppressing random new storms."""
+    m.background_weather = False
     for _ in range(ticks):
         m.cells = [c for c in m.cells if c["id"].startswith("keep")]
         m.step()

@@ -9,6 +9,7 @@ import { Bar, Doughnut } from 'react-chartjs-2'
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, ArcElement, Title, Tooltip as ChartTooltip, Legend } from 'chart.js'
 import LiveBadge from '../components/LiveBadge'
 import ResetViewControl from '../components/map/ResetViewControl'
+import { drawPlane, PLANE_SIZE, PLANE_FILL } from '../components/map/plane'
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, Title, ChartTooltip, Legend)
 
@@ -105,36 +106,6 @@ function FlightCanvas({ flights, onSelect, reducedMotion }) {
 
     const LERP = 0.018
 
-    const drawPlane = (ctx, x, y, track, color, size, hover) => {
-      ctx.save()
-      ctx.translate(x, y)
-      // rotate: track is clockwise from north; canvas 0° = right, so subtract 90°
-      ctx.rotate(((track || 0) - 90) * Math.PI / 180)
-      const s = size
-      ctx.beginPath()
-      ctx.moveTo(0, -s)
-      ctx.lineTo(-s * 0.35, s * 0.22)
-      ctx.lineTo(-s * 0.12, s * 0.10)
-      ctx.lineTo(-s * 0.12, s * 0.56)
-      ctx.lineTo(-s * 0.24, s * 0.66)
-      ctx.lineTo(-s * 0.24, s * 0.74)
-      ctx.lineTo(-s * 0.05, s * 0.64)
-      ctx.lineTo(s * 0.05, s * 0.64)
-      ctx.lineTo(s * 0.24, s * 0.74)
-      ctx.lineTo(s * 0.24, s * 0.66)
-      ctx.lineTo(s * 0.12, s * 0.56)
-      ctx.lineTo(s * 0.12, s * 0.10)
-      ctx.lineTo(s * 0.35, s * 0.22)
-      ctx.closePath()
-      if (hover) { ctx.shadowColor = color; ctx.shadowBlur = 14 }
-      ctx.fillStyle = color
-      ctx.fill()
-      ctx.shadowBlur = 0
-      ctx.strokeStyle = 'rgba(0,0,0,0.45)'
-      ctx.lineWidth = 0.7
-      ctx.stroke()
-      ctx.restore()
-    }
 
     const frame = () => {
       const ctx = canvas.getContext('2d')
@@ -167,8 +138,16 @@ function FlightCanvas({ flights, onSelect, reducedMotion }) {
           }
         }
 
-        const size = hover ? 12 : 9
-        drawPlane(ctx, pt.x, pt.y, s.track || s.true_track || 0, color, size, hover)
+        const size = hover ? PLANE_SIZE + 6 : PLANE_SIZE
+        // Same yellow plane as the Command Center; the category colour sits behind it as a disc.
+        ctx.beginPath()
+        ctx.arc(pt.x, pt.y, size * 0.5, 0, Math.PI * 2)
+        ctx.fillStyle = color + '66'
+        ctx.fill()
+        ctx.lineWidth = 2
+        ctx.strokeStyle = color
+        ctx.stroke()
+        drawPlane(ctx, pt.x, pt.y, s.track || s.true_track || 0, PLANE_FILL, size, hover)
 
         // Callsign label on hover
         if (hover && (s.callsign || s.icao24)) {

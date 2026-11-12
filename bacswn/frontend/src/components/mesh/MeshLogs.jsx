@@ -23,17 +23,17 @@ function Stations({ nodes, onSelect }) {
       <Caption>All stations — text equivalent of the map</Caption>
       <thead><tr>
         <th scope="col">Station</th><th scope="col">Name</th><th scope="col">Status</th><th scope="col">Verdict</th>
-        <th scope="col">Agreement</th><th scope="col">Route to hub</th><th scope="col">Queued</th><th scope="col">Faults</th>
+        <th scope="col">Agreement</th><th scope="col">Route to BACSWN hub</th><th scope="col">Queued</th><th scope="col">Faults</th>
       </tr></thead>
       <tbody>
         {nodes.map(n => (
           <tr key={n.station}>
-            <th scope="row"><StationBtn code={n.station} onSelect={onSelect} />{n.is_hub && <span className="mbadge blue" style={{ marginLeft: 4 }}>HUB</span>}</th>
+            <th scope="row"><StationBtn code={n.station} onSelect={onSelect} />{n.is_hub && <span className="mbadge blue" style={{ marginLeft: 4 }}>BACSWN HUB</span>}</th>
             <td>{n.name}</td>
             <td>{STATUS_TEXT[n.status]}</td>
             <td>{n.alive ? <Hz h={n.verdict.call} /> : '—'}</td>
             <td>{n.alive ? (n.verdict.split ? 'Split — no majority' : n.verdict.agreement) : '—'}</td>
-            <td className="mono">{n.is_hub ? 'Hub' : n.route_to_hub ? `${n.route_to_hub.hops} hops · ${n.route_to_hub.latency_ms} ms` : 'No route'}</td>
+            <td className="mono">{n.is_hub ? 'BACSWN hub' : n.route_to_hub ? `${n.route_to_hub.hops} hops · ${n.route_to_hub.latency_ms} ms` : 'No route'}</td>
             <td>{n.queue || 0}</td>
             <td className="dim">{[...n.sensor_faults.map(f => `${f} sensor`), ...n.precogs.filter(p => p.corrupted).map(p => `${p.id} corrupted`),
               ...n.precogs.filter(p => p.quarantined).map(p => `${p.id} quarantined`)].join(', ') || 'None'}</td>
@@ -160,10 +160,10 @@ function Traffic({ rows }) {
 }
 
 function Propagation({ rows, onSelect }) {
-  if (!rows.length) return <p className="dim" style={{ padding: 12 }}>No cells currently being handed off between stations.</p>
+  if (!rows.length) return <p className="dim" style={{ padding: 12 }}>No entries in the audit trail: no storm warnings are being passed between stations.</p>
   return (
     <table>
-      <Caption>Storm hand-offs from one station to the next</Caption>
+      <Caption>Audit trail: storm warnings passed from one station to the next</Caption>
       <thead><tr><th scope="col">From</th><th scope="col">To</th><th scope="col">Phenomenon</th><th scope="col">Motion</th><th scope="col">ETA</th></tr></thead>
       <tbody>
         {rows.map(p => (
@@ -212,7 +212,7 @@ export default function MeshLogs({ data, onSelect }) {
     ['minority', 'Minority Reports', (data.minority_reports || []).filter(r => r.status === 'OPEN').length],
     ['consensus', 'Consensus Votes', 0],
     ['traffic', 'Mesh Traffic', 0],
-    ['propagation', 'Hand-offs', (data.propagation_forecasts || []).length],
+    ['propagation', 'Audit trail', (data.propagation_forecasts || []).length],
     ['events', 'Event Log', 0],
   ]
   const countLabel = { cells: 'cells', links: 'links down', minority: 'open', propagation: 'active' }

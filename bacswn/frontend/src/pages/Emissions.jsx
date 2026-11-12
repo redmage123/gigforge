@@ -40,7 +40,8 @@ export default function Emissions() {
         </div>
         <div style={{display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap'}}>
           <Link to="/corsia-oversight" className="btn btn-primary btn-sm" style={{textDecoration: 'none'}}><span aria-hidden="true">📒</span> CORSIA Oversight</Link>
-          <Link to="/carbon-trading" className="btn btn-primary btn-sm" style={{textDecoration: 'none'}}><span aria-hidden="true">💹</span> Hedge on Carbon Desk</Link>
+          <a href="https://assetadvisor.ai-elevate.ai/carbon-desk" target="_blank" rel="noopener noreferrer" className="btn btn-primary btn-sm" style={{textDecoration: 'none'}}
+            title="The Carbon Desk (offset futures trading) is now part of AssetAdvisor"><span aria-hidden="true">💹</span> Hedge on Carbon Desk (AssetAdvisor)<span className="sr-only"> (opens in a new tab)</span> <span aria-hidden="true">↗</span></a>
           <LiveBadge />
         </div>
       </div>

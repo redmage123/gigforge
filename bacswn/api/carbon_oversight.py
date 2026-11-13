@@ -86,3 +86,26 @@ async def review(claim_id: int, request: Request):
     if denied := _forbidden(request):
         return denied
     return await _run(co.review_claim(claim_id, await _body(request), _user(request)["sub"]))
+
+
+@router.post("/operators/{operator_id}/fuel-claims")
+async def add_fuel_claim(operator_id: int, request: Request):
+    if denied := _forbidden(request):
+        return denied
+    return await _run(co.add_fuel_claim(operator_id, await _body(request), _user(request)["sub"]))
+
+
+@router.post("/fuel-claims/{claim_id}/review")
+async def review_fuel(claim_id: int, request: Request):
+    if denied := _forbidden(request):
+        return denied
+    return await _run(co.review_fuel_claim(claim_id, await _body(request), _user(request)["sub"]))
+
+
+@router.get("/fuel-claims.csv")
+async def fuel_claims_csv(period: str):
+    result = await _run(co.export_fuel_csv(period))
+    if isinstance(result, JSONResponse):
+        return result
+    return Response(content=result, media_type="text/csv",
+                    headers={"Content-Disposition": f'attachment; filename="corsia-fuel-claims-{period}.csv"'})

@@ -23,6 +23,10 @@ _ALLOWED_TABLES = {
     "carbon_unit_claims",
     "carbon_claim_reviews",
     "carbon_fir_observations",
+    "carbon_fuel_claims",
+    "carbon_fuel_reviews",
+    "wx_benefit_events",
+    "wx_benefit_coverage",
 }
 # Allows: column, column ASC, column DESC (case-insensitive)
 _COL_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*(\s+(ASC|DESC))?$", re.IGNORECASE)
@@ -252,6 +256,80 @@ CREATE TABLE IF NOT EXISTS carbon_fir_observations (
     last_seen   TEXT    NOT NULL
 );
 
+-- CORSIA eligible fuel (CEF) claims: an operator's claim to reduce its offsetting
+-- requirement with sustainable / lower-carbon aviation fuel it used. Append-only,
+-- reviewed like unit claims (carbon_fuel_reviews).
+CREATE TABLE IF NOT EXISTS carbon_fuel_claims (
+    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+    operator_id          INTEGER NOT NULL REFERENCES carbon_operators(id),
+    year                 INTEGER NOT NULL,
+    fuel_type            TEXT    NOT NULL CHECK (fuel_type IN ('SAF', 'LCAF')),
+    pathway              TEXT    NOT NULL DEFAULT '',
+    feedstock            TEXT    NOT NULL DEFAULT '',
+    batch_id             TEXT    NOT NULL,
+    mass_t               REAL    NOT NULL CHECK (mass_t > 0),
+    ls_value             REAL    NOT NULL,
+    ls_basis             TEXT    NOT NULL CHECK (ls_basis IN ('DEFAULT', 'ACTUAL')),
+    scheme               TEXT    NOT NULL,
+    certificate_ref      TEXT    NOT NULL DEFAULT '',
+    producer             TEXT    NOT NULL DEFAULT '',
+    not_claimed_elsewhere INTEGER NOT NULL DEFAULT 1,
+    notes                TEXT    NOT NULL DEFAULT '',
+    created_by           TEXT    NOT NULL,
+    created_at           TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS carbon_fuel_reviews (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    claim_id    INTEGER NOT NULL REFERENCES carbon_fuel_claims(id),
+    decision    TEXT    NOT NULL CHECK (decision IN ('VERIFIED', 'REJECTED', 'REOPENED')),
+    reason      TEXT    NOT NULL DEFAULT '',
+    created_by  TEXT    NOT NULL,
+    created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TRIGGER IF NOT EXISTS carbon_fuel_claims_immutable_u BEFORE UPDATE ON carbon_fuel_claims
+BEGIN SELECT RAISE(ABORT, 'carbon_fuel_claims is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS carbon_fuel_claims_immutable_d BEFORE DELETE ON carbon_fuel_claims
+BEGIN SELECT RAISE(ABORT, 'carbon_fuel_claims is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS carbon_fuel_reviews_immutable_u BEFORE UPDATE ON carbon_fuel_reviews
+BEGIN SELECT RAISE(ABORT, 'carbon_fuel_reviews is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS carbon_fuel_reviews_immutable_d BEFORE DELETE ON carbon_fuel_reviews
+BEGIN SELECT RAISE(ABORT, 'carbon_fuel_reviews is append-only'); END;
+
+-- Weather-benefit ledger (services/weather_benefit.py): one row per flight and
+-- hazard the mesh warned about, with the estimated track/fuel/CO2 saved.
+CREATE TABLE IF NOT EXISTS wx_benefit_events (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id            TEXT    NOT NULL,
+    recorded_at       TEXT    NOT NULL,
+    icao24            TEXT    NOT NULL,
+    callsign          TEXT    NOT NULL DEFAULT '',
+    category          TEXT    NOT NULL,
+    simulated         INTEGER NOT NULL DEFAULT 0,
+    hazard_id         TEXT    NOT NULL,
+    hazard_kind       TEXT    NOT NULL,
+    hazard_status     TEXT    NOT NULL,
+    lead_min          INTEGER NOT NULL,
+    lead_nm           REAL    NOT NULL,
+    ground_speed_kt   INTEGER NOT NULL,
+    advice            TEXT    NOT NULL DEFAULT '',
+    offset_nm         REAL    NOT NULL DEFAULT 0,
+    early_extra_nm    REAL    NOT NULL DEFAULT 0,
+    baseline_extra_nm REAL    NOT NULL DEFAULT 0,
+    saved_nm          REAL    NOT NULL DEFAULT 0,
+    saved_fuel_kg     REAL    NOT NULL DEFAULT 0,
+    saved_co2_kg      REAL    NOT NULL DEFAULT 0,
+    credited          INTEGER NOT NULL DEFAULT 0,
+    reason            TEXT    NOT NULL DEFAULT '',
+    UNIQUE (run_id, icao24, hazard_id)
+);
+
+-- Minutes in which the airspace picture was computed (the ledger's coverage).
+CREATE TABLE IF NOT EXISTS wx_benefit_coverage (
+    minute TEXT PRIMARY KEY
+);
+
 -- (The Carbon Desk's trading_* tables moved with it to AssetAdvisor; any left in an
 -- existing database are no longer used.)
 
@@ -297,6 +375,9 @@ CREATE INDEX IF NOT EXISTS idx_claims_op_period ON carbon_unit_claims(operator_i
 CREATE INDEX IF NOT EXISTS idx_reviews_claim ON carbon_claim_reviews(claim_id);
 CREATE INDEX IF NOT EXISTS idx_fir_obs_lookup ON carbon_fir_observations(icao24, callsign, last_seen);
 CREATE INDEX IF NOT EXISTS idx_fir_obs_designator ON carbon_fir_observations(designator, first_seen);
+CREATE INDEX IF NOT EXISTS idx_fuel_claims_op_year ON carbon_fuel_claims(operator_id, year);
+CREATE INDEX IF NOT EXISTS idx_fuel_reviews_claim ON carbon_fuel_reviews(claim_id);
+CREATE INDEX IF NOT EXISTS idx_wx_benefit_time ON wx_benefit_events(recorded_at);
 """
 
 

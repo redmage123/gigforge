@@ -279,7 +279,7 @@ export default function FlightOps() {
         {/* Selected aircraft panel */}
         <div style={{ width: 260, flexShrink: 0 }}>
           {/* Charts dashboard */}
-          <div className="card" style={{ marginBottom: 12 }}>
+          <div className="card" style={{ marginBottom: 12 }} id="chart-aircraft-by-country">
             <div className="card-header"><h3>By Country</h3></div>
             <div style={{ height: 180, padding: 8 }}>
               <Doughnut aria-label={`Doughnut chart, aircraft by country of origin: ${summarise(Object.keys(statsData?.by_country || {}).slice(0, 8), Object.values(statsData?.by_country || {}).slice(0, 8))}`} data={{
@@ -291,10 +291,11 @@ export default function FlightOps() {
             </div>
             <div style={{ padding: '0 8px 8px' }}>
               <ChartTable caption="Aircraft by country of origin" labels={Object.keys(statsData?.by_country || {}).slice(0, 8)}
-                series={[{ name: 'Aircraft', values: Object.values(statsData?.by_country || {}).slice(0, 8) }]} />
+                series={[{ name: 'Aircraft', values: Object.values(statsData?.by_country || {}).slice(0, 8) }]}
+                shareId="chart-aircraft-by-country" filename="aircraft-by-country" labelHeader="Country" />
             </div>
           </div>
-          <div className="card" style={{ marginBottom: 12 }}>
+          <div className="card" style={{ marginBottom: 12 }} id="chart-altitude-bands">
             <div className="card-header"><h3>Altitude Distribution</h3></div>
             <div style={{ height: 180, padding: 8 }}>
               {(() => {
@@ -312,7 +313,8 @@ export default function FlightOps() {
             <div style={{ padding: '0 8px 8px' }}>
               <ChartTable caption="Aircraft by altitude band"
                 labels={['Ground', 'Low (<3km)', 'Medium (3-8km)', 'High (8-12km)', 'Cruise (>12km)']}
-                series={[{ name: 'Aircraft', values: ['ground', 'low', 'medium', 'high', 'cruise'].map(k => statsData?.altitude_bands?.[k] || 0) }]} />
+                series={[{ name: 'Aircraft', values: ['ground', 'low', 'medium', 'high', 'cruise'].map(k => statsData?.altitude_bands?.[k] || 0) }]}
+                shareId="chart-altitude-bands" filename="aircraft-by-altitude" labelHeader="Altitude band" />
             </div>
           </div>
 

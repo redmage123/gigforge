@@ -1,16 +1,24 @@
+import ChartActions from '../share/ChartActions'
+
 /**
  * Text alternative for a chart (WCAG 1.1.1): a collapsible table of exactly
  * the values drawn. Pair it with an aria-label summary on the chart itself.
+ * Give it the chart card's `shareId` to add the CSV download / copy-link
+ * toolbar for the same values.
  */
-export default function ChartTable({ caption, labels, series, unit = '' }) {
+export default function ChartTable({ caption, labels, series, unit = '', shareId, filename, labelHeader = 'Category' }) {
+  const columns = [labelHeader, ...series.map(s => `${s.name}${unit ? ` (${unit})` : ''}`)]
+  const rows = labels.map((l, i) => [l, ...series.map(s => s.values[i] ?? '')])
   return (
+    <>
+    {shareId && <ChartActions id={shareId} title={caption} filename={filename || shareId} columns={columns} rows={rows} />}
     <details className="chart-data">
       <summary>Show data as a table</summary>
       <div className="table-scroll" tabIndex={0} role="region" aria-label={caption}>
         <table className="data-table">
           <caption className="sr-only">{caption}</caption>
           <thead><tr>
-            <th scope="col">Category</th>
+            <th scope="col">{labelHeader}</th>
             {series.map(s => <th scope="col" key={s.name}>{s.name}{unit ? ` (${unit})` : ''}</th>)}
           </tr></thead>
           <tbody>{labels.map((l, i) => (
@@ -19,6 +27,7 @@ export default function ChartTable({ caption, labels, series, unit = '' }) {
         </table>
       </div>
     </details>
+    </>
   )
 }
 

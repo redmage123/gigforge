@@ -1,7 +1,9 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useMemo } from 'react'
 import { api } from '../api/client'
 import { usePolling } from '../hooks/usePolling'
 import Dialog from '../components/a11y/Dialog'
+import ChartActions from '../components/share/ChartActions'
+import { useUrlState, oneOf } from '../components/share/useUrlState'
 
 // ── Data-mode badge ──────────────────────────────────────────────────────
 const MODE_BADGE = {
@@ -552,14 +554,25 @@ function StationDetailModal({ stationId, windowHours, onClose, openInfo }) {
 }
 
 export default function Verification() {
-  const [windowHours, setWindowHours] = useState(168)
+  // View state lives in the URL so "Copy link" on a chart reopens exactly this view.
+  const [windowHours, setWindowHours] = useUrlState('window', 168, oneOf([24, 72, 168, 720]))
   const { data: sb, loading, refresh } = usePolling(useCallback(() => api.verificationScoreboard(windowHours), [windowHours]), 60000)
   const { data: stationsData } = usePolling(useCallback(() => api.verificationStations(windowHours), [windowHours]), 120000)
   const { data: corr } = usePolling(useCallback(() => api.verificationCorrection(720), []), 300000)
   const { data: brief } = usePolling(useCallback(() => api.briefing(), []), 300000)
   const { data: warn } = usePolling(useCallback(() => api.verificationWarnings(windowHours), [windowHours]), 120000)
 
-  const [sel, setSel] = useState({ station: 'MYNN', variable: 'temp_c', lead_h: 6 })
+  const [qStation, setQStation] = useUrlState('station', 'MYNN', (v) => (/^[A-Z]{4}$/.test(v) ? v : undefined))
+  const [qVariable, setQVariable] = useUrlState('var', 'temp_c', (v) => (/^[a-z_]{1,30}$/.test(v) ? v : undefined))
+  const [qLead, setQLead] = useUrlState('lead', 6, (v) => (/^\d{1,3}$/.test(v) ? Number(v) : undefined))
+  const sel = useMemo(() => ({ station: qStation, variable: qVariable, lead_h: qLead }), [qStation, qVariable, qLead])
+  // Each control changes one field, so one URL update per change.
+  const setSel = (fn) => {
+    const next = fn(sel)
+    if (next.station !== sel.station) setQStation(next.station)
+    else if (next.variable !== sel.variable) setQVariable(next.variable)
+    else if (next.lead_h !== sel.lead_h) setQLead(next.lead_h)
+  }
   const [series, setSeries] = useState(null)
   const [detailStation, setDetailStation] = useState(null)
   const [info, setInfo] = useState(null)
@@ -632,7 +645,7 @@ export default function Verification() {
 
       <div className="grid-2" style={{ marginBottom: 16 }}>
         {/* Lead-time skill curve */}
-        <div className="card">
+        <div className="card" id="chart-skill-lead">
           <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <h3 style={{ display: 'flex', alignItems: 'center' }}>Skill vs. Lead Time<InfoDot title="Skill vs. Lead Time" onClick={() => openInfo('Skill vs. Lead Time', SECTION_INFO.lead)} /></h3>
             <button type="button" className="btn btn-sm" onClick={() => setLeadExpanded(true)} aria-label="Expand Skill vs. Lead Time chart"><span aria-hidden="true">⤢</span> Expand</button>
@@ -640,11 +653,14 @@ export default function Verification() {
           <div style={{ padding: '8px 12px' }}>
             <LeadCurve byLead={board.by_lead} />
             <LeadTable byLead={board.by_lead} openInfo={openInfo} />
+            <ChartActions id="chart-skill-lead" title="Skill vs. lead time" filename={`skill-by-lead-${windowHours}h`}
+              columns={['Lead (h)', 'Temperature MAE (°C)', 'Wind MAE (kt)', 'Category hit rate (%)', 'Verified pairs']}
+              rows={(board.by_lead || []).map(r => [r.lead_h, r.temp_mae, r.wind_mae, r.cat_hit_rate, r.n])} />
           </div>
         </div>
 
         {/* Forecast vs observed */}
-        <div className="card">
+        <div className="card" id="chart-forecast-observed">
           <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <h3 style={{ display: 'flex', alignItems: 'center' }}>Forecast vs. Observed<InfoDot title="Forecast vs. Observed" onClick={() => openInfo('Forecast vs. Observed', SECTION_INFO.fvo)} /></h3>
             <button type="button" className="btn btn-sm" onClick={() => setExpanded(true)} aria-label="Expand Forecast vs. Observed chart"><span aria-hidden="true">⤢</span> Expand</button>
@@ -663,6 +679,11 @@ export default function Verification() {
               </select>
             </div>
             <ForecastVsObserved points={series?.points} unit={selUnit} />
+            <ChartActions id="chart-forecast-observed" title={`Forecast vs. observed, ${sel.station}`}
+              filename={`forecast-vs-observed-${sel.station}-${sel.variable}-${sel.lead_h}h`}
+              columns={['Valid time (UTC)', `Forecast (${selUnit})`, `Observed (${selUnit})`, 'Difference']}
+              rows={(series?.points || []).filter(p => p.forecast_value !== null && p.observed_value !== null)
+                .map(p => [p.valid_at, p.forecast_value, p.observed_value, +(p.forecast_value - p.observed_value).toFixed(2)])} />
           </div>
         </div>
       </div>

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
-import { api } from '../api/client'
+import { api, saveBlob } from '../api/client'
+import { useSearchParams } from 'react-router-dom'
+import { useUrlState } from '../components/share/useUrlState'
 import { useAuth } from '../App'
 import './CarbonOversight.css'
 
@@ -22,6 +24,9 @@ const SEVERITY = { high: ['High', 'bad'], medium: ['Medium', 'warn'], low: ['Low
 const KIND = {
   SHORTFALL: 'Shortfall', MISSING_REPORT: 'Missing report', DOUBLE_CLAIM: 'Units claimed twice',
   INELIGIBLE_UNIT: 'Ineligible units', VINTAGE_OUTSIDE_WINDOW: 'Vintage outside window', BELOW_OBSERVED: 'Below BACSWN observation',
+  FUEL_DOUBLE_CLAIM: 'Fuel batch claimed twice', FUEL_BELOW_THRESHOLD: 'Fuel not eligible (under 10 % reduction)',
+  FUEL_SCHEME_UNRECOGNISED: 'Unrecognised certification scheme', FUEL_CLAIMED_ELSEWHERE: 'Fuel not declared unclaimed elsewhere',
+  FUEL_EXCEEDS_USE: 'Fuel claimed exceeds fuel used',
 }
 const n = (v) => (v == null ? '—' : Number(v).toLocaleString())
 const today = () => new Date().toISOString().slice(0, 10)
@@ -79,6 +84,7 @@ function ApiForm({ title, submitLabel, onSubmit, onDone, children, className = '
 
 /** Modal review dialog (native <dialog>: focus trap + Esc built in). */
 function ReviewDialog({ claim, onClose, onReviewed }) {
+  const fuel = claim?.kind === 'fuel'
   const ref = useRef(null)
   const allowed = claim && (['VERIFIED', 'REJECTED'].includes(claim.status) ? ['REOPENED'] : ['VERIFIED', 'REJECTED'])
   useEffect(() => {
@@ -89,19 +95,29 @@ function ReviewDialog({ claim, onClose, onReviewed }) {
   if (!claim) return <dialog ref={ref} className="co-dialog" />
   return (
     <dialog ref={ref} className="co-dialog" aria-labelledby="co-review-h" onClose={onClose}>
-      <h3 id="co-review-h">Review claim #{claim.id}</h3>
-      <p className="co-dim">
-        {claim.icao_designator} · {n(claim.quantity)} units · {claim.registry} {claim.serial_block}
-        {claim.serial_start != null && ` ${claim.serial_start}–${claim.serial_end}`} · vintage {claim.vintage} ·
-        currently <Badge map={CLAIM_STATUS} value={claim.status} />
-      </p>
-      <ApiForm title={`Review claim ${claim.id}`} submitLabel="Record decision"
-        onSubmit={(d) => api.oversightReview(claim.id, d)} onDone={(r) => onReviewed(r)}>
+      <h3 id="co-review-h">Review {fuel ? `fuel claim F${claim.id}` : `claim #${claim.id}`}</h3>
+      {fuel ? (
+        <p className="co-dim">
+          {claim.icao_designator} · {claim.year} · {n(claim.mass_t)} t {claim.fuel_type} ({claim.pathway || 'pathway not given'}) ·
+          batch {claim.batch_id} · {claim.ls_value} gCO₂e/MJ ({claim.ls_basis.toLowerCase()}) · {claim.scheme}
+          {claim.certificate_ref && ` ${claim.certificate_ref}`} · reduction {n(claim.emissions_reduction_t)} t CO₂ ·
+          currently <Badge map={CLAIM_STATUS} value={claim.status} />
+        </p>
+      ) : (
+        <p className="co-dim">
+          {claim.icao_designator} · {n(claim.quantity)} units · {claim.registry} {claim.serial_block}
+          {claim.serial_start != null && ` ${claim.serial_start}–${claim.serial_end}`} · vintage {claim.vintage} ·
+          currently <Badge map={CLAIM_STATUS} value={claim.status} />
+        </p>
+      )}
+      <ApiForm title={`Review ${fuel ? 'fuel claim' : 'claim'} ${claim.id}`} submitLabel="Record decision"
+        onSubmit={(d) => (fuel ? api.oversightReviewFuel(claim.id, d) : api.oversightReview(claim.id, d))} onDone={(r) => onReviewed(r)}>
         <fieldset className="co-radios">
           <legend>Decision</legend>
           {allowed.map((d, i) => (
             <label key={d}><input type="radio" name="decision" value={d} required defaultChecked={i === 0} />
-              {{ VERIFIED: 'Verified — units confirmed cancelled in the registry', REJECTED: 'Rejected', REOPENED: 'Reopen for review' }[d]}</label>
+              {{ VERIFIED: fuel ? 'Verified — certificate and batch checked with the certification scheme' : 'Verified — units confirmed cancelled in the registry',
+                REJECTED: 'Rejected', REOPENED: 'Reopen for review' }[d]}</label>
           ))}
         </fieldset>
         <Field as="textarea" label="Reason" name="reason" rows={3} maxLength={1000}
@@ -112,7 +128,7 @@ function ReviewDialog({ claim, onClose, onReviewed }) {
   )
 }
 
-function OperatorDetail({ operatorId, period, row, isAdmin, onChanged, onReview, announce }) {
+function OperatorDetail({ operatorId, period, periodYears, row, isAdmin, onChanged, onReview, announce }) {
   const [detail, setDetail] = useState(null)
   const headingRef = useRef(null)
   const focused = useRef(false)
@@ -126,6 +142,7 @@ function OperatorDetail({ operatorId, period, row, isAdmin, onChanged, onReview,
   if (!detail) return <section className="card" aria-busy="true"><p>Loading operator…</p></section>
   const op = detail.operator
   const claims = detail.claims.filter(c => c.compliance_period === period)
+  const fuelClaims = (detail.fuel_claims || []).filter(f => f.year >= periodYears[0] && f.year <= periodYears[1])
   return (
     <section className="card co-detail" aria-labelledby="co-detail-h">
       <h3 id="co-detail-h" tabIndex={-1} ref={headingRef}>{op.icao_designator} — {op.name}</h3>
@@ -135,7 +152,8 @@ function OperatorDetail({ operatorId, period, row, isAdmin, onChanged, onReview,
         <table className="data-table co-table">
           <thead><tr>
             <th scope="col">Year</th><th scope="col">Verified CO₂ (t)</th><th scope="col">Growth factor</th>
-            <th scope="col">Requirement (units)</th><th scope="col">BACSWN observed in FIR (t)</th><th scope="col">Report</th>
+            <th scope="col">Requirement (units)</th><th scope="col">Eligible fuel claimed (t)</th><th scope="col">Verified fuel reduction (t CO₂)</th>
+            <th scope="col">BACSWN observed in FIR (t)</th><th scope="col">Report</th>
           </tr></thead>
           <tbody>
             {row?.years.map(y => (
@@ -144,6 +162,8 @@ function OperatorDetail({ operatorId, period, row, isAdmin, onChanged, onReview,
                 <td className="num">{y.report ? n(y.report.verified_co2_t) : <span className="co-dim">Not reported</span>}</td>
                 <td className="num">{y.report ? y.report.growth_factor : '—'}</td>
                 <td className="num">{n(y.offsetting_requirement_t)}</td>
+                <td className="num">{n(y.cef_mass_t)}</td>
+                <td className="num">{n(y.cef_reduction_t)}</td>
                 <td className="num">
                   {y.observed_live_co2_t != null ? n(y.observed_live_co2_t) : '—'}
                   {y.observed_simulated_co2_t ? <small className="co-dim"> (+{n(y.observed_simulated_co2_t)} simulated, excluded)</small> : null}
@@ -193,6 +213,48 @@ function OperatorDetail({ operatorId, period, row, isAdmin, onChanged, onReview,
         </div>
       )}
 
+      <h4 id="co-fuel-h">Eligible-fuel claims (SAF / LCAF), {period}</h4>
+      <p className="co-note">
+        CORSIA lets an operator reduce its offsetting requirement with eligible fuel it used: reduction =
+        3.16 × fuel mass (t) × (1 − life-cycle value ÷ 89 gCO₂e/MJ). Only verified claims for fuels with a life-cycle
+        value of 80.1 or less (at least a 10 % cut) count.
+      </p>
+      {fuelClaims.length === 0 ? <p className="co-dim">No eligible-fuel claims recorded for this period.</p> : (
+        <div className="table-scroll" role="region" aria-labelledby="co-fuel-h" tabIndex={0}>
+          <table className="data-table co-table">
+            <thead><tr>
+              <th scope="col">Claim</th><th scope="col">Year</th><th scope="col">Fuel</th><th scope="col">Mass (t)</th>
+              <th scope="col">Life-cycle value</th><th scope="col">Reduction (t CO₂)</th><th scope="col">Batch / certificate</th>
+              <th scope="col">Status</th><th scope="col">Review history</th>
+              {isAdmin && <th scope="col"><span className="sr-only">Actions</span></th>}
+            </tr></thead>
+            <tbody>
+              {fuelClaims.map(f => (
+                <tr key={f.id} id={`co-fuel-${f.id}`}>
+                  <th scope="row">F{f.id}</th>
+                  <td>{f.year}</td>
+                  <td>{f.fuel_type}{f.pathway && ` · ${f.pathway}`}{f.feedstock && <small className="co-dim"><br />{f.feedstock}</small>}</td>
+                  <td className="num">{n(f.mass_t)}</td>
+                  <td className="num">{f.ls_value} <small className="co-dim">gCO₂e/MJ, {f.ls_basis.toLowerCase()}</small>
+                    {!f.eligible && <><br /><span className="co-badge bad">Under 10 % cut</span></>}</td>
+                  <td className="num">{f.eligible ? n(f.emissions_reduction_t) : <span className="co-dim">0 (not eligible)</span>}</td>
+                  <td>{f.batch_id}<small className="co-dim"><br />{f.scheme}{f.certificate_ref && ` · ${f.certificate_ref}`}{f.producer && ` · ${f.producer}`}</small>
+                    {!f.not_claimed_elsewhere && <><br /><span className="co-badge bad">May be claimed elsewhere</span></>}</td>
+                  <td><Badge map={CLAIM_STATUS} value={f.status} /></td>
+                  <td>{f.reviews.length === 0 ? <span className="co-dim">None</span> : (
+                    <ol className="co-history">{f.reviews.map((r, i) => (
+                      <li key={i}><b>{CLAIM_STATUS[r.decision]?.[0] || r.decision}</b> by {r.created_by}, {r.created_at.slice(0, 10)}{r.reason && ` — ${r.reason}`}</li>
+                    ))}</ol>
+                  )}</td>
+                  {isAdmin && <td><button type="button" className="toggle-btn" onClick={() => onReview({ ...f, kind: 'fuel', icao_designator: op.icao_designator }, () => refresh(`Fuel claim F${f.id} reviewed`))}
+                    aria-label={`Review fuel claim F${f.id}`}>Review</button></td>}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       {isAdmin && (
         <div className="co-forms">
           <details>
@@ -230,6 +292,33 @@ function OperatorDetail({ operatorId, period, row, isAdmin, onChanged, onReview,
               </div>
             </ApiForm>
           </details>
+          <details>
+            <summary>Record an eligible-fuel claim (SAF / LCAF)</summary>
+            <ApiForm title="Record eligible-fuel claim" submitLabel="Record fuel claim"
+              onSubmit={(d) => api.oversightAddFuelClaim(op.id, d)}
+              onDone={(r) => refresh(`Fuel claim F${r.id} recorded as pending review; it would reduce the requirement by ${n(r.emissions_reduction_t)} t CO₂.`)}>
+              <Field label="Year used" name="year" type="number" required min={periodYears[0]} max={Math.min(periodYears[1], new Date().getFullYear())} inputMode="numeric" />
+              <Field as="select" label="Fuel type" name="fuel_type" required defaultValue="SAF"
+                hint="SAF: sustainable aviation fuel. LCAF: lower-carbon aviation fuel (fossil).">
+                <option value="SAF">SAF</option><option value="LCAF">LCAF</option>
+              </Field>
+              <Field label="Fuel mass (tonnes)" name="mass_t" type="number" required min={0.001} step="any" inputMode="decimal" />
+              <Field label="Life-cycle emissions value (gCO₂e/MJ)" name="ls_value" type="number" required min={-100} max={88.99} step="any"
+                inputMode="decimal" hint="From the ICAO default values or the certified actual value. 80.1 or less to be eligible." />
+              <Field as="select" label="Life-cycle value basis" name="ls_basis" required defaultValue="DEFAULT">
+                <option value="DEFAULT">ICAO default value</option><option value="ACTUAL">Actual (certified) value</option>
+              </Field>
+              <Field label="Batch ID" name="batch_id" required maxLength={120} hint="Used to detect the same batch claimed twice." />
+              <Field label="Certification scheme" name="scheme" required maxLength={80} list="co-schemes" />
+              <Field label="Certificate / proof of sustainability" name="certificate_ref" maxLength={120} />
+              <Field label="Conversion pathway" name="pathway" maxLength={80} list="co-pathways" />
+              <Field label="Feedstock" name="feedstock" maxLength={120} />
+              <Field label="Producer" name="producer" maxLength={120} />
+              <div className="co-field co-check">
+                <label><input type="checkbox" name="not_claimed_elsewhere" defaultChecked /> Operator declares the batch is not claimed under any other scheme</label>
+              </div>
+            </ApiForm>
+          </details>
         </div>
       )}
     </section>
@@ -240,10 +329,12 @@ export default function CarbonOversight() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
   const [periods, setPeriods] = useState([])
-  const [period, setPeriod] = useState('')
+  const [urlPeriod] = useUrlState('period', '')
+  const [, setParams] = useSearchParams()
+  const [defaultPeriod, setDefaultPeriod] = useState('')
   const [reg, setReg] = useState(null)
   const [error, setError] = useState('')
-  const [selected, setSelected] = useState(null)
+  const [selected, setSelected] = useUrlState('operator', null, (s) => (/^\d+$/.test(s) ? Number(s) : undefined))
   const [reviewing, setReviewing] = useState(null)
   const [message, setMessage] = useState('')
   const reviewReturn = useRef(null)
@@ -251,9 +342,20 @@ export default function CarbonOversight() {
   useEffect(() => {
     api.oversightPeriods().then(d => {
       setPeriods(d.periods)
-      setPeriod((d.periods.find(p => p.current) || d.periods[0])?.id || '')
+      setDefaultPeriod((d.periods.find(p => p.current) || d.periods[0])?.id || '')
     }).catch(e => setError(e.message))
   }, [])
+  // A shared link may name a period; ignore it if it is not a real one.
+  const period = periods.some(p => p.id === urlPeriod) ? urlPeriod : defaultPeriod
+  // Changing period also closes the operator: one URL update (two would overwrite each other).
+  const changePeriod = (p) => setParams(q => {
+    const next = new URLSearchParams(q)
+    if (p === defaultPeriod) next.delete('period'); else next.set('period', p)
+    next.delete('operator')
+    return next
+  }, { replace: true, preventScrollReset: true })
+  const periodYears = periods.find(p => p.id === period)?.years || [0, 9999]
+
   const load = useCallback(() => {
     if (!period) return
     api.oversightRegister(period).then(d => { setReg(d); setError('') }).catch(e => setError(e.message))
@@ -269,17 +371,17 @@ export default function CarbonOversight() {
     setReviewing(null)
     reviewReturn.current?.el?.focus?.()
   }
-  const exportCsv = async () => {
+  const exportCsv = async (fuel) => {
     try {
-      const blob = await api.oversightCsv(period)
-      const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: `corsia-claims-${period}.csv` })
-      a.click(); URL.revokeObjectURL(a.href)
-      announce('Claims register downloaded as CSV')
+      const blob = await (fuel ? api.oversightFuelCsv(period) : api.oversightCsv(period))
+      saveBlob(blob, `corsia-${fuel ? 'fuel-' : ''}claims-${period}.csv`)
+      announce(`${fuel ? 'Eligible-fuel' : 'Unit'} claims downloaded as CSV`)
     } catch (e) { announce(e.message) }
   }
   const showClaim = (f) => {
     setSelected(f.operator_id)
-    if (f.claim_id) setTimeout(() => document.getElementById(`co-claim-${f.claim_id}`)?.scrollIntoView({ block: 'center' }), 400)
+    const target = f.claim_id ? `co-claim-${f.claim_id}` : f.fuel_claim_id ? `co-fuel-${f.fuel_claim_id}` : null
+    if (target) setTimeout(() => document.getElementById(target)?.scrollIntoView({ block: 'center' }), 400)
   }
 
   const t = reg?.totals
@@ -295,19 +397,20 @@ export default function CarbonOversight() {
         </div>
         <div className="co-head-actions">
           <label className="co-period">Compliance period
-            <select value={period} onChange={e => { setPeriod(e.target.value); setSelected(null) }}>
+            <select value={period} onChange={e => changePeriod(e.target.value)}>
               {periods.map(p => <option key={p.id} value={p.id}>{p.id} · {p.label}{p.current ? ' (current)' : ''}</option>)}
             </select>
           </label>
-          <button type="button" className="toggle-btn" onClick={exportCsv} disabled={!reg}>Export claims (CSV)</button>
+          <button type="button" className="toggle-btn" onClick={() => exportCsv(false)} disabled={!reg}>Export unit claims (CSV)</button>
+          <button type="button" className="toggle-btn" onClick={() => exportCsv(true)} disabled={!reg}>Export fuel claims (CSV)</button>
         </div>
       </div>
       <div className="sr-only" role="status" aria-live="polite">{message}</div>
       {error && <p role="alert" className="co-form-error">{error}</p>}
 
       <p className="co-intro">
-        Airlines buy and cancel CORSIA-eligible units in a registry. This register records what each operator reports and
-        the state’s review of every claim. Entries are never edited or deleted: a revised report supersedes the earlier one,
+        Airlines buy and cancel CORSIA-eligible units in a registry, and can reduce what they owe by using CORSIA-eligible
+        fuel. This register records what each operator reports and the state’s review of every claim. Entries are never edited or deleted: a revised report supersedes the earlier one,
         and each review decision is added to the claim’s history.
         {!isAdmin && ' You have read-only access; administrators record evidence and review claims.'}
       </p>
@@ -316,7 +419,11 @@ export default function CarbonOversight() {
         <>
           <div className="card-grid co-stats">
             <div className="stat-card"><span className="stat-label">Offsetting requirement</span>
-              <span className="stat-value">{n(t.offsetting_requirement_t)}</span><span className="stat-detail">units, from verified reports</span></div>
+              <span className="stat-value">{n(t.final_requirement_t)}</span>
+              <span className="stat-detail">units: {n(t.offsetting_requirement_t)} from verified reports, less eligible fuel</span></div>
+            <div className="stat-card"><span className="stat-label">Eligible-fuel reduction</span>
+              <span className="stat-value info">{n(t.cef_reduction_t)}</span>
+              <span className="stat-detail">t CO₂ verified{t.pending_cef_reduction_t ? `; ${n(t.pending_cef_reduction_t)} awaiting review` : ''}</span></div>
             <div className="stat-card"><span className="stat-label">Verified cancelled</span>
               <span className="stat-value success">{n(t.verified_units)}</span><span className="stat-detail">units confirmed by review</span></div>
             <div className="stat-card"><span className="stat-label">Awaiting review</span>
@@ -337,7 +444,7 @@ export default function CarbonOversight() {
                     <Badge map={SEVERITY} value={f.severity} />
                     <span><b>{f.operator}</b> · {KIND[f.kind] || f.kind}: {f.message}</span>
                     <button type="button" className="toggle-btn" onClick={() => showClaim(f)}
-                      aria-label={`Open ${f.operator}${f.claim_id ? `, claim ${f.claim_id}` : ''}`}>Open</button>
+                      aria-label={`Open ${f.operator}${f.claim_id ? `, claim ${f.claim_id}` : f.fuel_claim_id ? `, fuel claim F${f.fuel_claim_id}` : ''}`}>Open</button>
                   </li>
                 ))}
               </ul>
@@ -350,7 +457,8 @@ export default function CarbonOversight() {
               <div className="table-scroll" role="region" aria-labelledby="co-ops-h" tabIndex={0}>
                 <table className="data-table co-table">
                   <thead><tr>
-                    <th scope="col">Operator</th><th scope="col">Reports</th><th scope="col">Requirement</th><th scope="col">Verified</th>
+                    <th scope="col">Operator</th><th scope="col">Reports</th><th scope="col">Requirement</th>
+                    <th scope="col">Fuel reduction</th><th scope="col">Net requirement</th><th scope="col">Verified</th>
                     <th scope="col">Pending</th><th scope="col">Shortfall</th><th scope="col">Status</th>
                   </tr></thead>
                   <tbody>
@@ -362,6 +470,9 @@ export default function CarbonOversight() {
                         </th>
                         <td>{o.reported_years} of {o.years.length}</td>
                         <td className="num">{n(o.offsetting_requirement_t)}</td>
+                        <td className="num">{o.cef_reduction_t ? `−${n(o.cef_reduction_t)}` : '—'}
+                          {o.pending_cef_reduction_t ? <small className="co-dim"><br />{n(o.pending_cef_reduction_t)} pending</small> : null}</td>
+                        <td className="num">{n(o.final_requirement_t)}</td>
                         <td className="num">{n(o.verified_units)}</td>
                         <td className="num">{n(o.pending_units)}</td>
                         <td className="num">{n(o.shortfall_units)}</td>
@@ -386,7 +497,7 @@ export default function CarbonOversight() {
             )}
           </section>
 
-          {selected && <OperatorDetail key={`${selected}-${period}`} operatorId={selected} period={period} row={selRow}
+          {selected && <OperatorDetail key={`${selected}-${period}`} operatorId={selected} period={period} periodYears={periodYears} row={selRow}
             isAdmin={isAdmin} onChanged={load} onReview={openReview} announce={announce} />}
         </>
       )}
@@ -394,6 +505,12 @@ export default function CarbonOversight() {
       <datalist id="co-registries">
         {['Verra (VCS)', 'Gold Standard', 'American Carbon Registry', 'Climate Action Reserve', 'ART TREES',
           'Global Carbon Council', 'Article 6.4 Mechanism'].map(r => <option key={r} value={r} />)}
+      </datalist>
+      <datalist id="co-schemes">
+        {['ISCC CORSIA', 'ISCC CORSIA PLUS', 'RSB CORSIA'].map(r => <option key={r} value={r} />)}
+      </datalist>
+      <datalist id="co-pathways">
+        {['HEFA', 'FT (Fischer–Tropsch)', 'ATJ (alcohol-to-jet)', 'Co-processing', 'SIP', 'PtL (power-to-liquid)'].map(r => <option key={r} value={r} />)}
       </datalist>
       <ReviewDialog claim={reviewing} onClose={closeReview}
         onReviewed={() => { const after = reviewReturn.current?.after; closeReview(); after?.() }} />

@@ -223,3 +223,139 @@ async def test_api_errors(client, admin_headers):
                           headers={**admin_headers, "content-type": "application/json"})
     assert r.status_code == 400 and "required" in r.json()["error"]
     assert (await client.get("/api/carbon-oversight/periods")).status_code == 401
+
+
+# ── CORSIA eligible fuel claims ─────────────────────────────────────────────
+
+def _fuel(**kw):
+    base = {"year": 2025, "fuel_type": "SAF", "pathway": "HEFA", "feedstock": "Used cooking oil",
+            "batch_id": "UCO-2025-0001", "mass_t": 1000, "ls_value": 20.0, "ls_basis": "DEFAULT",
+            "scheme": "ISCC CORSIA", "certificate_ref": "PoS-77", "producer": "Example Renewables"}
+    return {**base, **kw}
+
+
+def test_emissions_reduction_formula():
+    # ER = 3.16 × MS × (1 − LS/89)
+    assert co.emissions_reduction_t(1000, 20.0) == pytest.approx(3.16 * 1000 * (1 - 20 / 89))
+    assert co.emissions_reduction_t(10, 89.0) == 0
+
+
+async def test_fuel_claim_validation():
+    op = await _op()
+    r = await co.add_fuel_claim(op, _fuel(), "reg")
+    assert r["status"] == "PENDING" and r["emissions_reduction_t"] == pytest.approx(2449.9, abs=0.1)
+    for bad, msg in (({"fuel_type": "BIO"}, "SAF or LCAF"), ({"mass_t": 0}, "Fuel mass"),
+                     ({"ls_value": 89}, "below 89"), ({"ls_value": "x"}, "must be a number"),
+                     ({"ls_basis": "GUESS"}, "DEFAULT or ACTUAL"), ({"batch_id": ""}, "Batch ID is required"),
+                     ({"scheme": ""}, "scheme is required"), ({"year": 2019}, "2,021"),
+                     ({"mass_t": float("nan")}, "Fuel mass")):
+        with pytest.raises(co.OversightError, match=msg):
+            await co.add_fuel_claim(op, _fuel(**bad), "reg")
+    with pytest.raises(co.OversightError, match="not found"):
+        await co.add_fuel_claim(999, _fuel(), "reg")
+
+
+async def test_verified_fuel_reduces_requirement_and_shortfall():
+    op = await _op()
+    await co.add_emission_report(op, {"year": 2025, "verified_co2_t": 100_000, "growth_factor": 0.1}, "reg")
+    fid = (await co.add_fuel_claim(op, _fuel(), "reg"))["id"]      # ER ≈ 2,450 t
+    row = (await co.register(FIRST))["operators"][0]
+    assert row["offsetting_requirement_t"] == 10_000
+    assert (row["cef_reduction_t"], row["pending_cef_reduction_t"]) == (0, 2450)
+    assert row["final_requirement_t"] == 10_000 and row["shortfall_units"] == 10_000
+
+    await co.review_fuel_claim(fid, {"decision": "VERIFIED"}, "reg")
+    reg = await co.register(FIRST)
+    row = reg["operators"][0]
+    assert row["cef_reduction_t"] == 2450 and row["final_requirement_t"] == 7550
+    assert row["shortfall_units"] == 7550 and reg["totals"]["final_requirement_t"] == 7550
+    y2025 = next(y for y in row["years"] if y["year"] == 2025)
+    assert y2025["cef_mass_t"] == 1000 and y2025["cef_reduction_t"] == pytest.approx(2449.9, abs=0.1)
+
+    # Units now only need to cover the reduced requirement.
+    cid = (await co.add_unit_claim(op, _claim(quantity=7550, serial_end=7550), "reg"))["id"]
+    await co.review_claim(cid, {"decision": "VERIFIED"}, "reg")
+    row = (await co.register(FIRST))["operators"][0]
+    assert row["status"] == "COVERED" and row["shortfall_units"] == 0
+
+    # Reductions never push the requirement below zero.
+    big = (await co.add_fuel_claim(op, _fuel(batch_id="UCO-2", mass_t=31_000, ls_value=0.0), "reg"))["id"]
+    await co.review_fuel_claim(big, {"decision": "VERIFIED"}, "reg")
+    assert (await co.register(FIRST))["operators"][0]["final_requirement_t"] == 0
+
+
+async def test_pending_fuel_counts_toward_awaiting_review():
+    op = await _op()
+    await co.add_emission_report(op, {"year": 2025, "verified_co2_t": 10_000, "growth_factor": 0.1}, "reg")  # 1,000
+    await co.add_fuel_claim(op, _fuel(mass_t=200, ls_value=10.0), "reg")                                   # ~561
+    cid = (await co.add_unit_claim(op, _claim(quantity=500, serial_end=500), "reg"))["id"]
+    assert (await co.register(FIRST))["operators"][0]["status"] == "AWAITING_REVIEW"
+    await co.review_claim(cid, {"decision": "REJECTED", "reason": "not cancelled"}, "reg")
+    assert (await co.register(FIRST))["operators"][0]["status"] == "SHORTFALL"
+
+
+async def test_fuel_findings():
+    op = await _op()
+    other = await _op("JBU", "JetBlue")
+    await co.add_emission_report(op, {"year": 2025, "verified_co2_t": 3_160, "growth_factor": 0.1}, "reg")  # 1,000 t fuel
+    a = (await co.add_fuel_claim(op, _fuel(mass_t=600), "reg"))["id"]
+    b = (await co.add_fuel_claim(other, _fuel(batch_id=" uco-2025-0001 ", mass_t=10), "reg"))["id"]
+    c = (await co.add_fuel_claim(op, _fuel(batch_id="B2", mass_t=500, ls_value=85, scheme="Acme Green Label",
+                                           not_claimed_elsewhere=False), "reg"))["id"]
+    reg = await co.register(FIRST)
+    kinds = {(f["kind"], f["fuel_claim_id"]) for f in reg["findings"]}
+    assert ("FUEL_DOUBLE_CLAIM", b) in kinds
+    assert {("FUEL_BELOW_THRESHOLD", c), ("FUEL_SCHEME_UNRECOGNISED", c), ("FUEL_CLAIMED_ELSEWHERE", c)} <= kinds
+    assert ("FUEL_EXCEEDS_USE", None) in kinds                     # 1,100 t claimed > 1,000 t burned
+    assert all(f["claim_id"] is None for f in reg["findings"] if f["kind"].startswith("FUEL"))
+    # An ineligible fuel earns nothing even if verified.
+    await co.review_fuel_claim(c, {"decision": "VERIFIED"}, "reg")
+    row = next(r for r in (await co.register(FIRST))["operators"] if r["id"] == op)
+    assert row["cef_reduction_t"] == 0
+    # Rejecting the duplicate clears that finding.
+    await co.review_fuel_claim(b, {"decision": "REJECTED", "reason": "already claimed by BHS"}, "reg")
+    kinds = {(f["kind"], f["fuel_claim_id"]) for f in (await co.register(FIRST))["findings"]}
+    assert ("FUEL_DOUBLE_CLAIM", b) not in kinds
+    assert a
+
+
+async def test_fuel_claims_are_append_only_and_reviewed():
+    op = await _op()
+    fid = (await co.add_fuel_claim(op, _fuel(), "reg"))["id"]
+    with pytest.raises(co.OversightError, match="cannot be marked"):
+        await co.review_fuel_claim(fid, {"decision": "REOPENED", "reason": "why"}, "reg")
+    await co.review_fuel_claim(fid, {"decision": "REJECTED", "reason": "certificate expired"}, "reg")
+    with pytest.raises(co.OversightError, match="not found"):
+        await co.review_fuel_claim(999, {"decision": "VERIFIED"}, "reg")
+    async with get_db() as db:
+        for sql in ("UPDATE carbon_fuel_claims SET mass_t = 1", "DELETE FROM carbon_fuel_claims",
+                    "UPDATE carbon_fuel_reviews SET reason = 'x'", "DELETE FROM carbon_fuel_reviews"):
+            with pytest.raises(sqlite3.IntegrityError):
+                await db.execute(sql)
+    detail = await co.operator_detail(op)
+    assert detail["fuel_claims"][0]["status"] == "REJECTED"
+    assert detail["fuel_claims"][0]["reviews"][0]["reason"] == "certificate expired"
+
+
+async def test_fuel_csv_and_api(client, auth_token, admin_headers):
+    client.cookies.clear()
+    user = {"Authorization": f"Bearer {auth_token}"}
+    op = await _op()
+    r = await client.post(f"/api/carbon-oversight/operators/{op}/fuel-claims",
+                          json=_fuel(producer="=cmd()"), headers=user)
+    assert r.status_code == 403
+    r = await client.post(f"/api/carbon-oversight/operators/{op}/fuel-claims",
+                          json=_fuel(producer="=cmd()"), headers=admin_headers)
+    assert r.status_code == 200
+    fid = r.json()["id"]
+    r = await client.post(f"/api/carbon-oversight/operators/{op}/fuel-claims", json=_fuel(ls_value=100),
+                          headers=admin_headers)
+    assert r.status_code == 400
+    assert (await client.post(f"/api/carbon-oversight/fuel-claims/{fid}/review", json={"decision": "VERIFIED"},
+                              headers=user)).status_code == 403
+    r = await client.post(f"/api/carbon-oversight/fuel-claims/{fid}/review", json={"decision": "VERIFIED"},
+                          headers=admin_headers)
+    assert r.json()["status"] == "VERIFIED"
+    text = (await client.get(f"/api/carbon-oversight/fuel-claims.csv?period={FIRST}", headers=user)).text
+    assert text.startswith("fuel_claim_id,operator") and "'=cmd()" in text and "VERIFIED" in text
+    assert (await client.get("/api/carbon-oversight/fuel-claims.csv?period=1999", headers=user)).status_code == 400

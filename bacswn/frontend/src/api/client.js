@@ -27,6 +27,21 @@ async function request(path, options = {}) {
   return data
 }
 
+/** Authenticated GET returning a Blob (CSV downloads). */
+async function fetchBlob(path) {
+  const token = localStorage.getItem('token')
+  const resp = await fetch(path, { headers: token ? { Authorization: `Bearer ${token}` } : {}, credentials: 'include' })
+  if (!resp.ok) throw new Error(`Export failed: ${resp.status}`)
+  return resp.blob()
+}
+
+/** Save a Blob as a file in the browser. */
+export function saveBlob(blob, filename) {
+  const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: filename })
+  document.body.appendChild(a); a.click(); a.remove()
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000)
+}
+
 export const api = {
   get: (path) => request(path),
   post: (path, body) => request(path, { method: 'POST', body: JSON.stringify(body) }),
@@ -129,14 +144,14 @@ export const api = {
   oversightAddReport: (id, data) => request('/api/carbon-oversight/operators/' + id + '/reports', { method: 'POST', body: JSON.stringify(data) }),
   oversightAddClaim: (id, data) => request('/api/carbon-oversight/operators/' + id + '/claims', { method: 'POST', body: JSON.stringify(data) }),
   oversightReview: (claimId, data) => request('/api/carbon-oversight/claims/' + claimId + '/review', { method: 'POST', body: JSON.stringify(data) }),
-  oversightCsv: async (period) => {
-    const token = localStorage.getItem('token')
-    const resp = await fetch('/api/carbon-oversight/register.csv?period=' + encodeURIComponent(period), {
-      headers: token ? { Authorization: `Bearer ${token}` } : {}, credentials: 'include',
-    })
-    if (!resp.ok) throw new Error(`Export failed: ${resp.status}`)
-    return resp.blob()
-  },
+  oversightCsv: (period) => fetchBlob('/api/carbon-oversight/register.csv?period=' + encodeURIComponent(period)),
+  oversightAddFuelClaim: (id, data) => request('/api/carbon-oversight/operators/' + id + '/fuel-claims', { method: 'POST', body: JSON.stringify(data) }),
+  oversightReviewFuel: (claimId, data) => request('/api/carbon-oversight/fuel-claims/' + claimId + '/review', { method: 'POST', body: JSON.stringify(data) }),
+  oversightFuelCsv: (period) => fetchBlob('/api/carbon-oversight/fuel-claims.csv?period=' + encodeURIComponent(period)),
+
+  // Weather-benefit ledger (fuel / CO2 saved by early storm warnings)
+  weatherBenefit: (days) => request('/api/emissions/weather-benefit?days=' + (days || 30)),
+  weatherBenefitCsv: (days) => fetchBlob('/api/emissions/weather-benefit.csv?days=' + (days || 30)),
 
   // Simulations
   simulationScenarios: () => request('/api/simulation/scenarios'),

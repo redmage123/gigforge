@@ -40,6 +40,23 @@ async def get_emissions_history(limit: int = 50):
     return {"records": records, "count": len(records)}
 
 
+@router.get("/weather-benefit")
+async def weather_benefit_summary(days: int = 30):
+    """Estimated fuel and CO2 saved because the mesh warned aircraft about storms early."""
+    from services import weather_benefit
+    return await weather_benefit.summary(days)
+
+
+@router.get("/weather-benefit.csv")
+async def weather_benefit_csv(days: int = 30):
+    """The weather-benefit ledger entries for the window, as CSV."""
+    from fastapi.responses import Response
+    from services import weather_benefit
+    body = await weather_benefit.export_csv(days)
+    return Response(content=body, media_type="text/csv",
+                    headers={"Content-Disposition": f'attachment; filename="weather-benefit-{days}d.csv"'})
+
+
 @router.get("/summary")
 async def get_emissions_summary():
     """Get emissions compliance summary."""

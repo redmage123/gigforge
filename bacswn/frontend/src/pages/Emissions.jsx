@@ -6,6 +6,7 @@ import { api } from '../api/client'
 import { usePolling } from '../hooks/usePolling'
 import ChartTable, { chartTextColor, summarise } from '../components/a11y/ChartTable'
 import LiveBadge from '../components/LiveBadge'
+import WeatherBenefit from '../components/emissions/WeatherBenefit'
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend)
 
@@ -70,9 +71,11 @@ export default function Emissions() {
         </div>
       </div>
 
+      <WeatherBenefit />
+
       {/* Charts */}
       <div className="grid-2" style={{marginBottom: 16}}>
-        <div className="card">
+        <div className="card" id="chart-flight-categories">
           <div className="card-header"><h3>Flights by Aircraft Category</h3></div>
           <Bar data={categoryChartData} aria-label={`Bar chart, monitored flights by aircraft category: ${summarise(catLabels, Object.values(categories))}`} options={{
             responsive: true,
@@ -80,7 +83,8 @@ export default function Emissions() {
             scales: { y: { grid: { color: 'rgba(148,163,184,0.2)' }, ticks: { color: tickColor } }, x: { grid: { display: false }, ticks: { color: tickColor } } },
           }} />
           <ChartTable caption="Monitored flights by aircraft category" labels={catLabels}
-            series={[{ name: 'Flights', values: Object.values(categories) }]} />
+            series={[{ name: 'Flights', values: Object.values(categories) }]}
+            shareId="chart-flight-categories" filename="flights-by-category" labelHeader="Aircraft category" />
         </div>
         <div className="card">
           <div className="card-header"><h3>CORSIA Compliance Summary</h3></div>

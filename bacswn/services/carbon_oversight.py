@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import csv
 import io
+import math
 import re
 from datetime import date, datetime, timedelta, timezone
 
@@ -48,6 +49,20 @@ OBSERVED_TOLERANCE = 1.10
 SEGMENT_GAP = timedelta(minutes=10)
 # Sightings are taken once a minute; each counts for one interval of FIR time.
 OBSERVE_INTERVAL = timedelta(seconds=60)
+
+# CORSIA eligible fuels (Annex 16 Vol IV): the emissions reduction claimed is
+#   ER = FCF × Σ MS × (1 − LS_f / LS_0)
+# with FCF the fuel conversion factor (3.16 t CO2 per t of jet fuel), MS the mass
+# of eligible fuel (t), LS_f its life-cycle emissions value and LS_0 the fossil
+# jet-fuel baseline (89 gCO2e/MJ). To be eligible a fuel must cut life-cycle
+# emissions by at least 10 % (LS_f ≤ 80.1) and be certified by an ICAO-approved
+# Sustainability Certification Scheme. Check the scheme list and baseline against
+# ICAO's current CORSIA documents before relying on them for real compliance work.
+FCF_JET = CO2_PER_KG_FUEL
+LS_BASELINE = 89.0
+LS_MAX_ELIGIBLE = 80.1
+RECOGNISED_SCHEMES = ("ISCC", "RSB")
+FUEL_TYPES = {"SAF", "LCAF"}
 
 _DESIGNATOR_RE = re.compile(r"^[A-Z]{3}$")
 _CALLSIGN_RE = re.compile(r"^([A-Z]{3})\d[0-9A-Z]*$")
@@ -209,7 +224,7 @@ async def add_unit_claim(operator_id: int, data: dict, user: str) -> dict:
         return {"id": cur.lastrowid, "status": "PENDING"}
 
 
-async def review_claim(claim_id: int, data: dict, user: str) -> dict:
+async def _review(claims_table: str, reviews_table: str, claim_id: int, data: dict, user: str) -> dict:
     decision = _text(data.get("decision"), "Decision", 10, required=True).upper()
     if decision not in _DECISIONS:
         raise OversightError("Decision must be VERIFIED, REJECTED or REOPENED")
@@ -219,14 +234,14 @@ async def review_claim(claim_id: int, data: dict, user: str) -> dict:
     async with get_db() as db:
         await db.execute("BEGIN IMMEDIATE")  # status check + insert must not interleave
         try:
-            cur = await db.execute("SELECT id FROM carbon_unit_claims WHERE id = ?", [claim_id])
+            cur = await db.execute(f"SELECT id FROM {claims_table} WHERE id = ?", [claim_id])
             if not await cur.fetchone():
                 raise OversightError("Claim not found", status=404)
-            status = await _claim_status(db, claim_id)
+            status = await _claim_status(db, claim_id, reviews_table)
             if decision not in _TRANSITIONS[status]:
                 raise OversightError(f"A {status.lower()} claim cannot be marked {decision.lower()}", status=409)
             await db.execute(
-                "INSERT INTO carbon_claim_reviews (claim_id, decision, reason, created_by) VALUES (?, ?, ?, ?)",
+                f"INSERT INTO {reviews_table} (claim_id, decision, reason, created_by) VALUES (?, ?, ?, ?)",
                 [claim_id, decision, reason, user])
             await db.commit()
         except BaseException:
@@ -235,9 +250,71 @@ async def review_claim(claim_id: int, data: dict, user: str) -> dict:
     return {"id": claim_id, "status": decision}
 
 
-async def _claim_status(db, claim_id: int) -> str:
+async def review_claim(claim_id: int, data: dict, user: str) -> dict:
+    return await _review("carbon_unit_claims", "carbon_claim_reviews", claim_id, data, user)
+
+
+async def review_fuel_claim(claim_id: int, data: dict, user: str) -> dict:
+    return await _review("carbon_fuel_claims", "carbon_fuel_reviews", claim_id, data, user)
+
+
+def _float(value, field: str, lo: float, hi: float, hi_inclusive: bool = True) -> float:
+    if isinstance(value, bool) or value is None or value == "":
+        raise OversightError(f"{field} is required")
+    try:
+        x = float(value)
+    except (TypeError, ValueError):
+        raise OversightError(f"{field} must be a number") from None
+    if not math.isfinite(x) or x < lo or (x > hi if hi_inclusive else x >= hi):
+        raise OversightError(f"{field} must be from {lo:g} to {'' if hi_inclusive else 'below '}{hi:g}")
+    return x
+
+
+def emissions_reduction_t(mass_t: float, ls_value: float) -> float:
+    """CORSIA emissions reduction (t CO2) from a mass of eligible fuel."""
+    return FCF_JET * mass_t * (1 - ls_value / LS_BASELINE)
+
+
+def _scheme_recognised(scheme: str) -> bool:
+    return any(s in scheme.upper() for s in RECOGNISED_SCHEMES)
+
+
+async def add_fuel_claim(operator_id: int, data: dict, user: str) -> dict:
+    year = _int(data.get("year"), "Year", 2021, _now().year)
+    if not period_for_year(year):
+        raise OversightError("Year is outside the CORSIA compliance periods")
+    fuel_type = _text(data.get("fuel_type"), "Fuel type", 4, required=True).upper()
+    if fuel_type not in FUEL_TYPES:
+        raise OversightError("Fuel type must be SAF or LCAF")
+    mass = _float(data.get("mass_t"), "Fuel mass (tonnes)", 0.001, 10_000_000)
+    ls = _float(data.get("ls_value"), "Life-cycle emissions value (gCO₂e/MJ)", -100, LS_BASELINE, hi_inclusive=False)
+    basis = _text(data.get("ls_basis"), "Life-cycle value basis", 7, required=True).upper()
+    if basis not in ("DEFAULT", "ACTUAL"):
+        raise OversightError("Life-cycle value basis must be DEFAULT or ACTUAL")
+    row = [operator_id, year, fuel_type,
+           _text(data.get("pathway"), "Conversion pathway", 80),
+           _text(data.get("feedstock"), "Feedstock", 120),
+           _text(data.get("batch_id"), "Batch ID", 120, required=True),
+           round(mass, 3), round(ls, 2), basis,
+           _text(data.get("scheme"), "Certification scheme", 80, required=True),
+           _text(data.get("certificate_ref"), "Certificate / proof of sustainability", 120),
+           _text(data.get("producer"), "Producer", 120),
+           1 if data.get("not_claimed_elsewhere", True) else 0,
+           _text(data.get("notes"), "Notes", 1000), user]
+    async with get_db() as db:
+        await _require_operator(db, operator_id)
+        cur = await db.execute(
+            "INSERT INTO carbon_fuel_claims (operator_id, year, fuel_type, pathway, feedstock, batch_id, mass_t,"
+            " ls_value, ls_basis, scheme, certificate_ref, producer, not_claimed_elsewhere, notes, created_by)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", row)
+        await db.commit()
+        return {"id": cur.lastrowid, "status": "PENDING",
+                "emissions_reduction_t": round(emissions_reduction_t(mass, ls), 1)}
+
+
+async def _claim_status(db, claim_id: int, reviews_table: str = "carbon_claim_reviews") -> str:
     cur = await db.execute(
-        "SELECT decision FROM carbon_claim_reviews WHERE claim_id = ? ORDER BY id DESC LIMIT 1", [claim_id])
+        f"SELECT decision FROM {reviews_table} WHERE claim_id = ? ORDER BY id DESC LIMIT 1", [claim_id])
     row = await cur.fetchone()
     return row[0] if row else "PENDING"
 
@@ -297,6 +374,16 @@ async def observed_emissions(year: int) -> dict[str, dict]:
 
 # ── reads ───────────────────────────────────────────────────────────────────
 
+_FUEL_SELECT = (
+    "SELECT f.*, o.icao_designator, COALESCE((SELECT decision FROM carbon_fuel_reviews v WHERE v.claim_id = f.id"
+    " ORDER BY v.id DESC LIMIT 1), 'PENDING') AS status FROM carbon_fuel_claims f"
+    " JOIN carbon_operators o ON o.id = f.operator_id")
+
+
+async def _load_fuel(db) -> list[dict]:
+    return [dict(r) for r in await (await db.execute(_FUEL_SELECT + " ORDER BY f.id")).fetchall()]
+
+
 async def _load(db, period: str) -> tuple[list[dict], list[dict], list[dict]]:
     p = _period(period)
     y0, y1 = p["years"]
@@ -330,6 +417,7 @@ async def register(period: str) -> dict:
     this_year = _now().year
     async with get_db() as db:
         ops, reports, all_claims = await _load(db, period)
+        all_fuel = await _load_fuel(db)
 
     latest: dict[tuple[int, int], dict] = {}
     for r in reports:
@@ -337,6 +425,8 @@ async def register(period: str) -> dict:
     claims = [c for c in all_claims if c["compliance_period"] == period]
     # Units claimed twice can span periods, so compare against every live claim.
     live = [c for c in all_claims if c["status"] != "REJECTED"]
+    fuel = [f for f in all_fuel if y0 <= f["year"] <= y1]
+    live_fuel = [f for f in all_fuel if f["status"] != "REJECTED"]
 
     observed = {y: await observed_emissions(y) for y in range(y0, min(y1, this_year) + 1)}
     findings: list[dict] = []
@@ -349,15 +439,27 @@ async def register(period: str) -> dict:
     for op in ops:
         years = []
         requirement = 0
+        my_fuel = [f for f in fuel if f["operator_id"] == op["id"]]
         for y in range(y0, y1 + 1):
             r = latest.get((op["id"], y))
             obs = observed.get(y, {}).get(op["icao_designator"], {})
             req = round(r["verified_co2_t"] * r["growth_factor"]) if r else None
             requirement += req or 0
+            year_fuel = [f for f in my_fuel if f["year"] == y and f["status"] != "REJECTED"]
+            cef_mass = sum(f["mass_t"] for f in year_fuel)
             years.append({"year": y, "report": r and {k: r[k] for k in (
                 "id", "verified_co2_t", "growth_factor", "verifier", "reference", "revision", "created_by", "created_at")},
                 "offsetting_requirement_t": req,
+                "cef_mass_t": round(cef_mass, 3) if year_fuel else None,
+                "cef_reduction_t": round(sum(emissions_reduction_t(f["mass_t"], f["ls_value"]) for f in year_fuel
+                                             if f["status"] == "VERIFIED" and f["ls_value"] <= LS_MAX_ELIGIBLE), 1)
+                if year_fuel else None,
                 "observed_live_co2_t": obs.get("live_co2_t"), "observed_simulated_co2_t": obs.get("simulated_co2_t")})
+            # An airline cannot have burned more eligible fuel than fuel in total.
+            if r and cef_mass > r["verified_co2_t"] / FCF_JET:
+                finding("high", "FUEL_EXCEEDS_USE", op,
+                        f"{y}: eligible-fuel claims total {cef_mass:,.0f} t, more than the "
+                        f"{r['verified_co2_t'] / FCF_JET:,.0f} t of fuel implied by its verified CO₂ report")
             if not r and y < this_year:
                 finding("medium", "MISSING_REPORT", op, f"No verified emissions report for {y}")
             if r and obs.get("live_co2_t") and obs["live_co2_t"] > r["verified_co2_t"] * OBSERVED_TOLERANCE:
@@ -368,14 +470,22 @@ async def register(period: str) -> dict:
         mine = [c for c in claims if c["operator_id"] == op["id"]]
         units = {s: sum(c["quantity"] for c in mine if c["status"] == s) for s in ("VERIFIED", "PENDING", "REOPENED", "REJECTED")}
         pending = units["PENDING"] + units["REOPENED"]
-        shortfall = max(0, requirement - units["VERIFIED"])
+
+        def reduction(statuses):
+            return sum(emissions_reduction_t(f["mass_t"], f["ls_value"]) for f in my_fuel
+                       if f["status"] in statuses and f["ls_value"] <= LS_MAX_ELIGIBLE)
+        cef_verified = round(reduction({"VERIFIED"}))
+        cef_pending = round(reduction({"PENDING", "REOPENED"}))
+        # Verified eligible-fuel reductions come off the requirement (never below zero).
+        final_requirement = max(0, requirement - cef_verified)
+        shortfall = max(0, final_requirement - units["VERIFIED"])
         reported_years = sum(1 for y in years if y["report"])
         period_closed = y1 < this_year
         if reported_years == 0:
             status = "NO_REPORTS"
         elif shortfall == 0:
             status = "COVERED"
-        elif shortfall <= pending:
+        elif shortfall <= pending + cef_pending:
             status = "AWAITING_REVIEW"
         else:
             status = "SHORTFALL"
@@ -399,19 +509,51 @@ async def register(period: str) -> dict:
                     finding("high", "DOUBLE_CLAIM", op,
                             f"Claim #{c['id']} overlaps units already claimed in #{other['id']} by {who}", c["id"])
 
+        for f in my_fuel:
+            if f["status"] == "REJECTED":
+                continue
+            label = f"Fuel claim F{f['id']} (batch {f['batch_id']})"
+            if f["ls_value"] > LS_MAX_ELIGIBLE:
+                finding("high", "FUEL_BELOW_THRESHOLD", op,
+                        f"{label}: life-cycle value {f['ls_value']:g} gCO₂e/MJ is above {LS_MAX_ELIGIBLE:g}, so it is "
+                        "less than a 10 % reduction and not an eligible fuel; it earns no reduction", -f["id"])
+            if not _scheme_recognised(f["scheme"]):
+                finding("medium", "FUEL_SCHEME_UNRECOGNISED", op,
+                        f"{label}: certification scheme '{f['scheme']}' is not an ICAO-approved scheme on file "
+                        f"({', '.join(RECOGNISED_SCHEMES)})", -f["id"])
+            if not f["not_claimed_elsewhere"]:
+                finding("high", "FUEL_CLAIMED_ELSEWHERE", op,
+                        f"{label}: operator has not declared the batch unclaimed under other schemes", -f["id"])
+            for other in live_fuel:
+                if other["id"] < f["id"] and other["batch_id"].strip().lower() == f["batch_id"].strip().lower():
+                    who = "the same operator" if other["operator_id"] == op["id"] else other["icao_designator"]
+                    finding("high", "FUEL_DOUBLE_CLAIM", op,
+                            f"{label} was already claimed in F{other['id']} by {who}", -f["id"])
+
         rows.append({"id": op["id"], "icao_designator": op["icao_designator"], "name": op["name"],
                      "years": years, "reported_years": reported_years,
-                     "offsetting_requirement_t": requirement, "verified_units": units["VERIFIED"],
+                     "offsetting_requirement_t": requirement, "cef_reduction_t": cef_verified,
+                     "pending_cef_reduction_t": cef_pending, "final_requirement_t": final_requirement,
+                     "verified_units": units["VERIFIED"],
                      "pending_units": pending, "rejected_units": units["REJECTED"],
                      "shortfall_units": shortfall, "status": status})
 
     order = {"high": 0, "medium": 1, "low": 2}
-    findings.sort(key=lambda f: (order[f["severity"]], f["operator"], f["claim_id"] or 0))
+    findings.sort(key=lambda f: (order[f["severity"]], f["operator"], abs(f["claim_id"] or 0)))
+    # Unit-claim findings carry the claim id; fuel-claim findings a negative id (see fuel_claim_id).
+    for f in findings:
+        cid = f["claim_id"]
+        f["fuel_claim_id"] = -cid if cid and cid < 0 else None
+        f["claim_id"] = cid if cid and cid > 0 else None
     totals = {k: sum(r[k] for r in rows) for k in
-              ("offsetting_requirement_t", "verified_units", "pending_units", "shortfall_units")}
+              ("offsetting_requirement_t", "cef_reduction_t", "pending_cef_reduction_t", "final_requirement_t",
+               "verified_units", "pending_units", "shortfall_units")}
     return {"period": period, **{k: p[k] for k in ("label", "years", "vintages")},
             "period_closed": y1 < this_year, "operators": rows, "totals": totals,
-            "findings": findings, "claims": [_claim_view(c) for c in claims]}
+            "findings": findings, "claims": [_claim_view(c) for c in claims],
+            "fuel_claims": [_fuel_view(f) for f in fuel],
+            "fuel_constants": {"fcf": FCF_JET, "ls_baseline": LS_BASELINE, "ls_max_eligible": LS_MAX_ELIGIBLE,
+                               "recognised_schemes": list(RECOGNISED_SCHEMES)}}
 
 
 def _claim_view(c: dict) -> dict:
@@ -420,6 +562,17 @@ def _claim_view(c: dict) -> dict:
             "registry_reference", "notes", "status", "created_by", "created_at")
     v = {k: c[k] for k in keys}
     v["declared_eligible"] = bool(v["declared_eligible"])
+    return v
+
+
+def _fuel_view(f: dict) -> dict:
+    keys = ("id", "operator_id", "icao_designator", "year", "fuel_type", "pathway", "feedstock", "batch_id", "mass_t",
+            "ls_value", "ls_basis", "scheme", "certificate_ref", "producer", "not_claimed_elsewhere", "notes",
+            "status", "created_by", "created_at")
+    v = {k: f[k] for k in keys}
+    v["not_claimed_elsewhere"] = bool(v["not_claimed_elsewhere"])
+    v["eligible"] = f["ls_value"] <= LS_MAX_ELIGIBLE
+    v["emissions_reduction_t"] = round(emissions_reduction_t(f["mass_t"], f["ls_value"]), 1)
     return v
 
 
@@ -435,6 +588,11 @@ async def operator_detail(operator_id: int) -> dict:
         reviews = [dict(r) for r in await (await db.execute(
             "SELECT v.* FROM carbon_claim_reviews v JOIN carbon_unit_claims c ON c.id = v.claim_id"
             " WHERE c.operator_id = ? ORDER BY v.id", [operator_id])).fetchall()]
+        fuel = [dict(r) for r in await (await db.execute(
+            _FUEL_SELECT + " WHERE f.operator_id = ? ORDER BY f.id", [operator_id])).fetchall()]
+        fuel_reviews = [dict(r) for r in await (await db.execute(
+            "SELECT v.* FROM carbon_fuel_reviews v JOIN carbon_fuel_claims f ON f.id = v.claim_id"
+            " WHERE f.operator_id = ? ORDER BY v.id", [operator_id])).fetchall()]
     seen: dict[int, int] = {}
     for r in reports:
         seen[r["year"]] = seen.get(r["year"], 0) + 1
@@ -446,8 +604,13 @@ async def operator_detail(operator_id: int) -> dict:
     for v in reviews:
         by_claim.setdefault(v["claim_id"], []).append(
             {k: v[k] for k in ("decision", "reason", "created_by", "created_at")})
+    by_fuel: dict[int, list] = {}
+    for v in fuel_reviews:
+        by_fuel.setdefault(v["claim_id"], []).append(
+            {k: v[k] for k in ("decision", "reason", "created_by", "created_at")})
     return {"operator": op, "reports": reports,
-            "claims": [{**_claim_view(c), "reviews": by_claim.get(c["id"], [])} for c in claims]}
+            "claims": [{**_claim_view(c), "reviews": by_claim.get(c["id"], [])} for c in claims],
+            "fuel_claims": [{**_fuel_view(f), "reviews": by_fuel.get(f["id"], [])} for f in fuel]}
 
 
 def _csv_safe(v) -> str:
@@ -480,3 +643,22 @@ def periods() -> list[dict]:
     this_year = _now().year
     return [{"id": k, "label": v["label"], "years": v["years"], "vintages": v["vintages"],
              "current": v["years"][0] <= this_year <= v["years"][1]} for k, v in PERIODS.items()]
+
+
+async def export_fuel_csv(period: str) -> str:
+    reg = await register(period)
+    flagged: dict[int, list[str]] = {}
+    for f in reg["findings"]:
+        if f["fuel_claim_id"]:
+            flagged.setdefault(f["fuel_claim_id"], []).append(f["kind"])
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    cols = ("id", "icao_designator", "year", "fuel_type", "pathway", "feedstock", "batch_id", "mass_t", "ls_value",
+            "ls_basis", "emissions_reduction_t", "eligible", "scheme", "certificate_ref", "producer",
+            "not_claimed_elsewhere", "status")
+    w.writerow(["fuel_claim_id" if c == "id" else "operator" if c == "icao_designator" else c for c in cols]
+               + ["findings", "recorded_by", "recorded_at"])
+    for f in reg["fuel_claims"]:
+        w.writerow([_csv_safe("yes" if f[c] is True else "no" if f[c] is False else f[c]) for c in cols]
+                   + [" ".join(flagged.get(f["id"], [])), _csv_safe(f["created_by"]), f["created_at"]])
+    return buf.getvalue()

@@ -1,5 +1,7 @@
 """BACSWN — Distributed Mesh Network API router."""
 
+import logging
+
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -7,6 +9,7 @@ from pydantic import BaseModel
 from services.mesh_network import mesh, get_mesh_status, get_node_detail, trigger_consensus
 
 router = APIRouter()
+logger = logging.getLogger("bacswn.mesh")
 
 
 class FaultRequest(BaseModel):
@@ -57,7 +60,14 @@ async def mesh_airspace():
     from services.mesh_airspace import airspace
     from services.opensky_client import fetch_flights
     mesh.advance()
-    return airspace(mesh, await fetch_flights())
+    flights = await fetch_flights()
+    result = airspace(mesh, flights)
+    try:
+        from services import weather_benefit
+        await weather_benefit.record(result, flights)
+    except Exception as e:  # the ledger must never break the live picture
+        logger.error(f"Weather-benefit ledger error: {e}")
+    return result
 
 
 @router.get("/node/{station_id}/live-weather")

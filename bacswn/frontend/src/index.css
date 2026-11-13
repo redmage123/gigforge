@@ -1391,3 +1391,27 @@ button.stat-card:hover { border-color: var(--text-muted); }
 .sg-result.red { background: rgba(239,68,68,.15); }
 .sg-result.blue { background: rgba(59,130,246,.14); }
 .sg-result.grey { background: rgba(148,163,184,.15); }
+
+/* Save / share / export toolbar under each chart (components/share/ChartActions) */
+.chart-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; }
+.chart-actions .toggle-btn { min-height: 28px; }
+.chart-actions-link { flex: 1 1 220px; min-width: 0; font-size: 12px; padding: 4px 6px; border: 1px solid var(--border);
+  border-radius: 4px; background: var(--bg-secondary, transparent); color: var(--text-primary); }
+.chart-actions-msg { font-size: 12px; color: var(--success-text, var(--text-secondary)); }
+.chart-linked { outline: 3px solid var(--accent); outline-offset: 3px; transition: outline-color 0.4s; }
+@media (prefers-reduced-motion: reduce) { .chart-linked { transition: none; } }
+
+/* Weather-benefit ledger (components/emissions/WeatherBenefit) */
+.wb-head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
+.wb-window { font-size: 13px; color: var(--text-secondary); display: flex; align-items: center; gap: 6px; }
+.wb-window select { min-height: 32px; }
+.wb-intro { color: var(--text-secondary); font-size: 13px; margin: 4px 0 12px; max-width: 80ch; }
+.wb-stats { margin-bottom: 12px; }
+.wb-chart h4, #wx-benefit-ledger h4 { font-size: 14px; margin: 4px 0 8px; }
+.wb-chart { min-width: 0; }
+#wx-benefit-ledger { margin-top: 16px; }
+.wb-empty, .wb-dim { color: var(--text-secondary); font-size: 13px; }
+.wb-method { margin-top: 12px; font-size: 13px; }
+.wb-method summary { cursor: pointer; color: var(--accent); min-height: 24px; }
+.wb-method ul { padding-left: 18px; color: var(--text-secondary); }
+.wb-method li { margin: 4px 0; }

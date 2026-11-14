@@ -134,6 +134,8 @@ export const api = {
   meshStorm: (storm) => request('/api/mesh/storm', { method: 'POST', body: JSON.stringify(storm) }),
   meshPresent: (p) => request('/api/mesh/present', { method: 'POST', body: JSON.stringify(p) }),
   meshScenario: (name) => request('/api/mesh/scenario/' + name, { method: 'POST' }),
+  meshStory: (story, beat) => request('/api/mesh/story', { method: 'POST', body: JSON.stringify({ story, beat }) }),
+  meshStoryEnd: () => request('/api/mesh/story/end', { method: 'POST' }),
 
 
   // CORSIA oversight register (state-side verification of aircraft operators)

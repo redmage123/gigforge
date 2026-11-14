@@ -65,7 +65,7 @@ const STATES = [
     id: 'corrupt', title: 'Corrupted model quarantined', station: 'MYAM', name: 'Marsh Harbour', status: 'DEGRADED', call: 'CLEAR', flag: '!',
     models: [['TEMPO', 'CLEAR'], ['VISTA', 'CLEAR'], ['LEXIS', 'SQUALL', 'quarantined']],
     result: '2 of 2 active models agree · LEXIS switched out', tone: 'red',
-    means: 'A model that keeps contradicting the evidence is quarantined. The remaining two models keep the station working, so one bad model never takes it down.',
+    means: 'A model that keeps contradicting the evidence is quarantined. The remaining two models keep the station working, so one bad model never takes it down. A quarantined model keeps running in the background and is restored once its calls match the station again for an hour; a corrupted one stays out until it is repaired.',
     when: 'Software faults or bad model inputs.',
     show: 'Inject fault ▸ Corrupt model ▸ LEXIS (or TEMPO / VISTA).',
   },

@@ -1415,3 +1415,16 @@ button.stat-card:hover { border-color: var(--text-muted); }
 .wb-method summary { cursor: pointer; color: var(--accent); min-height: 24px; }
 .wb-method ul { padding-left: 18px; color: var(--text-secondary); }
 .wb-method li { margin: 4px 0; }
+
+/* Guided stories (components/tour/StoryLauncher) */
+.story-grid { list-style: none; margin: 8px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+.story-card { display: flex; flex-direction: column; gap: 6px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-primary); }
+.story-title { font-size: 14px; }
+.story-summary { font-size: 13px; color: var(--text-secondary); }
+.story-meta { font-size: 12px; color: var(--text-muted); }
+.story-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: auto; }
+.story-msg { font-size: 12px; color: var(--success-text, var(--text-secondary)); min-height: 1em; margin: 6px 0 0; word-break: break-all; }
+.story-held { margin: 0 0 10px; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--warning); background: color-mix(in srgb, var(--warning) 12%, transparent); font-size: 13px; }
+.mesh-log-filter { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-secondary); padding: 6px 8px; min-height: 24px; }
+.mesh-log-filter input { width: 24px; height: 24px; margin: 0; }
+.mr-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 8px; font-size: 12px; }

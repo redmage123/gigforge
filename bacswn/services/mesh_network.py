@@ -54,6 +54,7 @@ RADIO_RANGE_DEG = 2.5          # max link distance (~150 nm, VHF + relays)
 TICK_SECONDS = 1.0             # wall-clock seconds per simulation tick
 SIM_MINUTES_PER_TICK = 5       # simulated minutes per tick
 MAX_CATCHUP_TICKS = 10
+STORY_HOLD_MAX = 600.0           # a guided story releases the mesh after 10 min untouched
 PRESENT_HOLD_TICKS = 90          # presenter scenarios hold ~90 s (7.5 sim-hours)
 SHOWERS_MIN, SHOWERS_MAX = 10, 14  # background trade-wind showers kept alive
 NOWCAST_TICKS = 6              # VISTA look-ahead (30 sim-minutes)
@@ -61,6 +62,8 @@ EVAL_TICKS = 8                 # minority reports scored over 40 sim-minutes
 REPORT_STREAK = 2              # a dissent must persist this many ticks to file a minority report
 QUARANTINE_DISMISSALS = 3      # dismissed (proven-wrong) reports within the window → quarantine
 QUARANTINE_WINDOW = 30         # ticks
+PROBATION_TICKS = 12           # a quarantined model whose calls match the verdict this long (1 sim-hour) is restored
+MINOR_CALLS = frozenset({"CLEAR", "SHOWERS"})   # disagreeing only about light showers is low-consequence
 HUB = "MYNN"                   # Nassau NOC gateway
 BOUNDS = {"lat": (20.0, 27.5), "lon": (-80.5, -72.0)}
 
@@ -150,7 +153,8 @@ class MeshSimulation:
         self.propagation: dict[tuple, dict] = {}
         self.events: deque = deque(maxlen=60)
         self.counters = {"alerts": 0, "confirmed": 0, "rejected": 0, "store_forward": 0,
-                         "vindicated": 0, "dismissed": 0, "quarantines": 0}
+                         "vindicated": 0, "dismissed": 0, "quarantines": 0, "restored": 0}
+        self.story: dict | None = None
         for _ in range(3):
             self._spawn_random_cell(initial=True)
         for _ in range(SHOWERS_MIN + 1):
@@ -184,7 +188,7 @@ class MeshSimulation:
             "alive": True, "sensor_faults": set(), "battery_pct": self.rng.randint(82, 100),
             "history": deque(maxlen=8), "truth_history": deque(maxlen=EVAL_TICKS + 4),
             "precogs": {pid: {"id": pid, "modality": desc, "call": "CLEAR", "confidence": 0.9,
-                              "reason": "Initialising", "corrupted": False, "quarantined": False, "forced": None,
+                              "reason": "Initialising", "corrupted": False, "quarantined": False, "forced": None, "probation": 0,
                               "dissent_streak": 0, "lexis_pending": None, "dismissals": deque(maxlen=10),
                               "reported_call": None}
                         for pid, desc in PRECOGS.items()},
@@ -202,6 +206,11 @@ class MeshSimulation:
         Uses the demo clock, which stands still while the demo is paused.
         """
         now = demo_pause.clock()
+        if self.story and now - self.story["since"] < STORY_HOLD_MAX:
+            self._last_wall = now           # a guided story holds the mesh still between its beats
+            return
+        if self.story:
+            self.story = None               # abandoned story: let the mesh run again
         due = int((now - self._last_wall) / TICK_SECONDS)
         if due <= 0:
             return
@@ -323,6 +332,7 @@ class MeshSimulation:
             n["sat_issues"] = self.satellite.cross_check(n)
             self._run_precogs(n)
             self._decide(n)
+            self._probation(n)
             self._score_minority_reports(n)
 
         for n in self.nodes.values():
@@ -533,7 +543,26 @@ class MeshSimulation:
                 r["status"] = "DISMISSED"
                 r["outcome"] = f"{r['minority_call']} did not occur within {EVAL_TICKS * SIM_MINUTES_PER_TICK} min"
                 self.counters["dismissed"] += 1
-                self._maybe_quarantine(n, n["precogs"][r["precog"]])
+                # Calling light showers that never arrived (or missing them) is not a sign of a faulty model.
+                if not {r["minority_call"], r["majority_call"]} <= MINOR_CALLS:
+                    self._maybe_quarantine(n, n["precogs"][r["precog"]])
+
+    def _probation(self, n: dict) -> None:
+        """A quarantined model keeps running in the background; once its calls have matched the
+        station's verdict for PROBATION_TICKS in a row it rejoins the ensemble. A corrupted model
+        never qualifies: it stays out until the fault is cleared and it is restored from a signed image."""
+        for pc in n["precogs"].values():
+            if not pc["quarantined"] or pc["corrupted"]:
+                pc["probation"] = 0
+                continue
+            pc["probation"] = pc["probation"] + 1 if pc["call"] == n["verdict"]["call"] else 0
+            if pc["probation"] >= PROBATION_TICKS:
+                pc.update(quarantined=False, probation=0, dissent_streak=0, reported_call=None)
+                pc["dismissals"].clear()
+                self.counters["restored"] += 1
+                self._event(n["station"], "RESTORED",
+                            f"{pc['id']} back in the ensemble: its calls matched the station's verdict for "
+                            f"{PROBATION_TICKS * SIM_MINUTES_PER_TICK} min")
 
     def _maybe_quarantine(self, n: dict, pc: dict) -> None:
         """Quarantine a model whose lone dissents keep being proven wrong.
@@ -590,8 +619,17 @@ class MeshSimulation:
             self._send_to_hub(n, "ALERT", f"UNVERIFIED {claim} at {n['station']} (isolated)")
             return
 
-        origin_field = self._field(n["lat"], n["lon"])
+        # Peers check over the same 30-minute horizon their own radar tracks, so a
+        # correct early warning (from a nowcast or an upstream hand-off) is
+        # corroborated by the storm that is on its way, not rejected because it
+        # has not arrived yet. A stuck sensor with no weather anywhere is still rejected.
+        origin_field, lead = self._field(n["lat"], n["lon"]), 0
+        for k in range(1, NOWCAST_TICKS + 1):
+            f = self._field(n["lat"], n["lon"], ahead=k)
+            if f["dbz"] > origin_field["dbz"] + 3 and f["dbz"] >= 28:
+                origin_field, lead = f, k
         foggy = origin_field["fog"] > 0.3
+        when = f"arriving over {n['station']} in ~{lead * SIM_MINUTES_PER_TICK} min" if lead else f"over {n['station']}"
         for code in peers:
             self._send(n["station"], code, "HAZARD", f"{claim} detected — requesting verification")
             peer = self.nodes[code]
@@ -605,9 +643,9 @@ class MeshSimulation:
                                  origin_field["ceiling"] if foggy else 3500,
                                  origin_field["squall"])
                 if seen != "CLEAR" and SEVERITY[seen] >= SEVERITY[claim] - 1:
-                    vote, why = "AGREE", f"Radar/satellite sees {seen} ({max(0, seen_dbz):.0f} dBZ) over {n['station']}"
+                    vote, why = "AGREE", f"Radar/satellite sees {seen} ({max(0, seen_dbz):.0f} dBZ) {when}"
                 else:
-                    vote, why = "DISAGREE", f"Radar/satellite sees {seen} ({max(0, seen_dbz):.0f} dBZ) over {n['station']}"
+                    vote, why = "DISAGREE", f"Radar/satellite sees {seen} ({max(0, seen_dbz):.0f} dBZ) {when}"
             event["votes"][code], event["reasons"][code] = vote, why
             self._send(code, n["station"], "VOTE", f"{vote} — {why}")
 
@@ -623,10 +661,13 @@ class MeshSimulation:
             self._send_to_hub(n, "ALERT", f"{claim} CONFIRMED at {n['station']} by {agree} peers")
         else:
             event["result"] = "REJECTED"
+            # Only a rejected hazard (fog/low cloud or worse) suggests a faulty sensor; light showers
+            # that the neighbours cannot confirm are simply not corroborated.
+            fault = disagree > agree and SEVERITY[claim] >= SEVERITY["IFR"]
             event["detail"] = (f"Peers outvoted ({agree} agree / {disagree} disagree) — "
-                               + ("suspected local sensor fault" if disagree > agree else "insufficient corroboration"))
+                               + ("suspected local sensor fault" if fault else "insufficient corroboration"))
             self.counters["rejected"] += 1
-            if disagree > agree:
+            if fault:
                 n["suspect"] = ("Peers' radar" + (" and satellite" if sat_vote == "DISAGREE" else "")
                                 + " contradict local sensors — maintenance ticket raised")
                 self._send_to_hub(n, "MAINT", f"{n['station']} flagged: local {claim} not corroborated by radar")
@@ -909,6 +950,132 @@ class MeshSimulation:
         cell = self._spawn_cell(kind, n["lat"], n["lon"], 0, 0, peak, radius, life)
         cell.update(age=age, presenter=n["station"])
 
+    # ── guided stories ──────────────────────────────────────────────────
+    # Each beat stages a situation with the ordinary mechanisms (real weather moved
+    # into place, a real sensor fault, real link cuts), runs the simulation the few
+    # ticks those mechanisms need, then holds the mesh still until the next beat,
+    # so the screen matches the caption however long the presenter talks.
+    STORIES = {
+        "squall": {"stations": ("MYAT", "MYAM"), "beats": ("start", "vista", "arrive", "handoff")},
+        "stuck_sensor": {"stations": ("MYEG",), "beats": ("start", "fault", "repair")},
+        "cut_off": {"stations": ("MYIG", "MYMM", "MYRD"), "beats": ("start", "cut", "storm", "restore")},
+    }
+    _SOUTH = frozenset({"MYIG", "MYMM", "MYRD"})
+
+    def _story_area_clear(self, keep: dict | None = None) -> None:
+        """Keep unrelated weather out of the story's area so only its own cell matters."""
+        sts = [self.nodes[s] for s in self.STORIES[self.story["name"]]["stations"]]
+        self.cells = [c for c in self.cells if c is keep or c.get("story")
+                      or all(_distance_deg(n["lat"], n["lon"], c["lat"], c["lon"]) > 1.6 for n in sts)]
+
+    def _story_cell(self) -> dict | None:
+        return next((c for c in self.cells if c.get("story")), None)
+
+    def _story_steps(self, ticks: int, until=None) -> int:
+        """Advance up to `ticks` ticks (stopping early once `until()` holds)."""
+        done = 0
+        for _ in range(ticks):
+            self._story_area_clear()
+            self.step()
+            done += 1
+            if until and until():
+                break
+        self._story_area_clear()
+        return done
+
+    def _place(self, c: dict, station: str, back_nm: float, heading: float) -> None:
+        """Put cell `c` `back_nm` upwind of `station`, moving along `heading`."""
+        n = self.nodes[station]
+        r = math.radians(heading)
+        c["lat"] = n["lat"] - back_nm / 60 * math.cos(r)
+        c["lon"] = n["lon"] - back_nm / 60 * math.sin(r) / math.cos(math.radians(n["lat"]))
+
+    def story_beat(self, name: str, beat: str) -> dict:
+        story = self.STORIES.get(name)
+        if not story:
+            return {"error": f"Unknown story {name}"}
+        if beat not in story["beats"]:
+            return {"error": f"Unknown beat {beat!r} for {name}; expected one of {list(story['beats'])}"}
+        if beat == "start":
+            self.reset()
+        elif not self.story or self.story["name"] != name:
+            return {"error": f"Start the {name} story first"}
+        self.story = {"name": name, "beat": beat, "since": demo_pause.clock()}
+        getattr(self, f"_story_{name}")(beat)
+        self.story["since"] = demo_pause.clock()
+        self._last_wall = self.story["since"]
+        return {"ok": True, "story": name, "beat": beat, "tick": self.tick}
+
+    def story_end(self) -> dict:
+        """Release the hold and reset the mesh for the next demo."""
+        self.reset()
+        return {"ok": True}
+
+    # Squall line over Abaco: Treasure Cay (MYAT) first, Marsh Harbour (MYAM) 22 nm downstream.
+    _SQUALL_HEADING = 130     # NW → SE, Treasure Cay → Marsh Harbour
+
+    def _story_squall(self, beat: str) -> None:
+        at = self.nodes["MYAT"]
+        if beat == "start":
+            self.cells = []
+            c = self._spawn_cell("squall", at["lat"], at["lon"], self._SQUALL_HEADING, 30, 60, 0.25, 400)
+            c.update(age=150, story=True)
+            self._place(c, "MYAT", 55, self._SQUALL_HEADING)
+            self._event("MYAT", "STORY", "Squall line approaching Abaco from the north-west")
+            self._story_steps(2)
+        elif beat == "vista":
+            # 22 nm out: inside VISTA's 30-minute look-ahead, not yet over the station.
+            self._place(self._story_cell(), "MYAT", 22, self._SQUALL_HEADING)
+            self._story_steps(3)
+        elif beat == "arrive":
+            def overhead():
+                return at["verdict"]["call"] == "SQUALL" and any(
+                    e["station"] == "MYAT" and e.get("result") for e in self.consensus_log)
+            self._story_steps(10, until=overhead)
+            # Let the slower models catch up too (LEXIS waits for the METAR to report it).
+            self._story_steps(3, until=lambda: at["verdict"]["agreement"] == "3/3")
+        elif beat == "handoff":
+            # Marsh Harbour's LEXIS acts on Treasure Cay's warning before the squall arrives.
+            am = self.nodes["MYAM"]
+            self._story_steps(4, until=lambda: am["precogs"]["LEXIS"]["call"] == "SQUALL" and any(
+                p["source"] == "MYAT" and p["target"] == "MYAM" for p in self.propagation.values()))
+
+    def _story_stuck_sensor(self, beat: str) -> None:
+        if beat == "start":
+            self.cells = []
+            self._story_steps(3)
+        elif beat == "fault":
+            self.inject_fault("sensor_fault", station="MYEG", sensor="visibility")
+            self._story_steps(3)
+        elif beat == "repair":
+            self.inject_fault("clear", station="MYEG")
+            self._story_steps(2)
+
+    def _story_cut_off(self, beat: str) -> None:
+        ig = self.nodes["MYIG"]
+        if beat == "start":
+            self.cells = []
+            self._story_steps(2)
+        elif beat == "cut":
+            for (a, b), l in self.links.items():
+                if (a in self._SOUTH) != (b in self._SOUTH):
+                    l["up"] = False
+            self._event("—", "PARTITION", "Southern stations (Inagua, Mayaguana, Ragged Island) cut off from the mesh")
+            self._story_steps(1)
+        elif beat == "storm":
+            c = self._spawn_cell("convective", ig["lat"], ig["lon"], 270, 10, 58, 0.3, 400)
+            c.update(age=150, story=True)
+            self._place(c, "MYIG", 4, 270)
+            self._event("MYIG", "STORY", "Thunderstorm building over Inagua")
+            # Thirty simulated minutes of storm while cut off, so alerts queue up.
+            self._story_steps(6)
+        elif beat == "restore":
+            for (a, b), l in self.links.items():
+                if (a in self._SOUTH) != (b in self._SOUTH):
+                    l["up"] = True
+            self._event("—", "RESTORED", "Links to the southern stations restored")
+            self._story_steps(1)
+
     # ── views ───────────────────────────────────────────────────────────
     def _cell_view(self, c: dict) -> dict:
         return {"id": c["id"], "kind": c["kind"], "lat": round(c["lat"], 3), "lon": round(c["lon"], 3),
@@ -966,6 +1133,7 @@ class MeshSimulation:
             "propagation_forecasts": sorted(self.propagation.values(), key=lambda p: p["eta_minutes"])[:12],
             "events": list(self.events)[:30],
             "counters": self.counters,
+            "story": {k: self.story[k] for k in ("name", "beat")} if self.story else None,
             "total_nodes": len(nodes), "online_nodes": len(alive),
             "healthy_nodes": sum(n["status"] == "healthy" for n in nodes),
             "degraded_nodes": sum(n["status"] in ("degraded", "caution") for n in nodes),

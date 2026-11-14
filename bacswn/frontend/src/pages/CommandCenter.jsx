@@ -13,7 +13,7 @@ import MeshTrafficPanel, { MeshHazardLayers } from '../components/command/MeshTr
 import LiveBadge from '../components/LiveBadge'
 import ResetViewControl from '../components/map/ResetViewControl'
 import { PLANE_D } from '../components/map/plane'
-import { CommsLinksLayer, CommsFilterControl, DEFAULT_COMMS_FILTER, visibleLinks } from '../components/map/CommsChannels'
+import { CommsLinksLayer, CommsFilterControl, useCommsFilter, visibleLinks } from '../components/map/CommsChannels'
 
 // ── 1. Aircraft icon — bright yellow plane ──────────────────────────
 function buildPlaneHtml(deg) {
@@ -451,6 +451,14 @@ export default function CommandCenter() {
   // Mesh → air traffic: confirmed hazards and imminent conflicts become operational alerts.
   useEffect(() => {
     if (!airspace) return
+    // Mesh alerts clear themselves once the hazard or conflict is over, so "active" means "needs attention now".
+    const liveIds = new Set([
+      ...airspace.hazards.filter(h => h.status === 'confirmed').map(h => 'mesh-hz-' + h.id),
+      ...airspace.conflicts.map(c => 'mesh-cf-' + c.icao24 + '-' + c.hazard_id),
+    ])
+    setAlerts(prev => prev.some(a => !a.dismissed && a.id.startsWith('mesh-') && !liveIds.has(a.id))
+      ? prev.map(a => (!a.dismissed && a.id.startsWith('mesh-') && !liveIds.has(a.id)) ? { ...a, dismissed: true, cleared: true } : a)
+      : prev)
     airspace.hazards.filter(h => h.status === 'confirmed').forEach(h => pushAlert({
       id: 'mesh-hz-' + h.id,
       title: `Mesh: ${h.kind} ${h.id} confirmed`,
@@ -459,7 +467,9 @@ export default function CommandCenter() {
       source: 'Mesh network',
       hazard: h,
     }))
-    airspace.conflicts.filter(c => c.minutes_to_entry <= 15).forEach(c => pushAlert({
+    // Only hazards the mesh has verified raise conflict alerts; unverified ones stay on the map and
+    // flight list. Too many alarms makes a healthy system look broken, and trains people to ignore them.
+    airspace.conflicts.filter(c => c.minutes_to_entry <= 15 && c.hazard_status === 'confirmed').forEach(c => pushAlert({
       id: 'mesh-cf-' + c.icao24 + '-' + c.hazard_id,
       title: c.inside ? `${c.callsign} is inside a ${c.hazard} area` : `${c.callsign} enters ${c.hazard} in ${c.minutes_to_entry} min`,
       detail: `${c.hazard_status === 'confirmed' ? 'Mesh-confirmed' : 'Mesh-tracked'} hazard ${c.hazard_id}. Advice: ${c.advice.text}.`,
@@ -492,13 +502,8 @@ export default function CommandCenter() {
   const [showSigmets, setShowSigmets] = useState(true)
 
   // Communication links between mesh stations, filtered from a panel on the map.
-  const [commsFilter, setCommsFilterState] = useState(() => {
-    try { return { ...DEFAULT_COMMS_FILTER, ...JSON.parse(localStorage.getItem('cc-comms-filter') || '{}') } } catch { return DEFAULT_COMMS_FILTER }
-  })
-  const setCommsFilter = (f) => {
-    setCommsFilterState(f)
-    try { localStorage.setItem('cc-comms-filter', JSON.stringify(f)) } catch { /* private mode */ }
-  }
+  // Shared with the Mesh Network map (and other tabs).
+  const [commsFilter, setCommsFilter] = useCommsFilter()
   const commsOn = commsFilter.vhf || commsFilter.cellular || commsFilter.satellite
   const { data: meshStatus } = usePolling(
     useCallback(() => (commsOn ? api.meshStatus() : Promise.resolve(null)), [commsOn]), 5000)

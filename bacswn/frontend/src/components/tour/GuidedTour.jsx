@@ -15,7 +15,7 @@ const TARGET_WAIT_MS = 6000
  * Auto-advance can be paused at any time (WCAG 2.2.1 / 2.2.2); captions can be
  * read aloud at the user's preferred speaking rate.
  */
-export default function GuidedTour({ open, onClose }) {
+export default function GuidedTour({ open, onClose, steps = TOUR_STEPS, label = 'Guided demo', onEnd }) {
   const navigate = useNavigate()
   const [prefs] = useA11yPrefs()
   const reducedMotion = usePrefersReducedMotion()
@@ -33,8 +33,8 @@ export default function GuidedTour({ open, onClose }) {
   const focusOnChange = useRef(true)
   const runId = useRef(0)
   const carry = useRef(null)
-  const step = TOUR_STEPS[index]
-  const last = index === TOUR_STEPS.length - 1
+  const step = steps[index]
+  const last = index === steps.length - 1
 
   const clearHighlight = () => {
     highlighted.current.forEach(el => el.classList.remove('tour-highlight'))
@@ -107,7 +107,7 @@ export default function GuidedTour({ open, onClose }) {
       if (left <= 0) {
         clearInterval(t)
         focusOnChange.current = false        // don't yank focus during hands-off playback
-        setIndex(i => Math.min(i + 1, TOUR_STEPS.length - 1))
+        setIndex(i => Math.min(i + 1, steps.length - 1))
       }
     }, 1000)
     return () => { clearInterval(t); carry.current = { index, left } }
@@ -123,8 +123,8 @@ export default function GuidedTour({ open, onClose }) {
   const go = useCallback((delta) => {
     focusOnChange.current = true
     carry.current = null
-    setIndex(i => Math.max(0, Math.min(TOUR_STEPS.length - 1, i + delta)))
-  }, [])
+    setIndex(i => Math.max(0, Math.min(steps.length - 1, i + delta)))
+  }, [steps.length])
 
   const exit = useCallback(() => {
     runId.current++
@@ -132,8 +132,9 @@ export default function GuidedTour({ open, onClose }) {
     if (SPEECH_OK) window.speechSynthesis.cancel()
     setAuto(false)
     setIndex(0)
+    onEnd?.()
     onClose()
-  }, [onClose])
+  }, [onClose, onEnd])
 
   useEffect(() => { if (!open) clearHighlight() }, [open])
   useEffect(() => () => { clearHighlight(); if (SPEECH_OK) window.speechSynthesis.cancel() }, [])
@@ -143,13 +144,13 @@ export default function GuidedTour({ open, onClose }) {
     <section className={`tour-panel ${side} ${minimised ? 'min' : ''}`} role="dialog" aria-modal="false" aria-labelledby="tour-h"
       onKeyDown={e => { if (e.key === 'Escape') { e.stopPropagation(); exit() } }}>
       <div className="tour-top">
-        <span className="tour-count">Guided demo · step {index + 1} of {TOUR_STEPS.length}</span>
+        <span className="tour-count">{label} · step {index + 1} of {steps.length}</span>
         <button type="button" className="tour-icon-btn" onClick={() => setMinimised(m => !m)} aria-expanded={!minimised}
           aria-label={minimised ? 'Show tour caption' : 'Minimise tour caption'}>{minimised ? '▴' : '▾'}</button>
       </div>
-      <div className="tour-progress" role="progressbar" aria-label="Tour progress" aria-valuemin={1}
-        aria-valuemax={TOUR_STEPS.length} aria-valuenow={index + 1}>
-        <span style={{ width: `${((index + 1) / TOUR_STEPS.length) * 100}%` }} />
+      <div className="tour-progress" role="progressbar" aria-label={`${label} progress`} aria-valuemin={1}
+        aria-valuemax={steps.length} aria-valuenow={index + 1}>
+        <span style={{ width: `${((index + 1) / steps.length) * 100}%` }} />
       </div>
       <h2 id="tour-h" tabIndex={-1} ref={headingRef}>{step.title}</h2>
       {!minimised && (
@@ -173,7 +174,7 @@ export default function GuidedTour({ open, onClose }) {
             {speak ? 'Stop reading' : 'Read aloud'}
           </button>
         )}
-        <button type="button" className="btn btn-sm tour-exit" onClick={exit} aria-label="Exit guided demo">Exit</button>
+        <button type="button" className="btn btn-sm tour-exit" onClick={exit} aria-label={`Exit ${label.toLowerCase()}`}>Exit</button>
       </div>
     </section>
   )

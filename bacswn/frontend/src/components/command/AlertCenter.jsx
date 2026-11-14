@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 
 const SEVERITY_LABEL = { severe: 'SEVERE', high: 'HIGH', moderate: 'MODERATE', low: 'ADVISORY' }
+// At most this many alert banners at once; the rest wait in the history.
+const MAX_BANNERS = 2
 const fmtTime = (d) => d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
 
 /** Short two-tone chime; resumes the AudioContext (browsers suspend it until a user gesture). */
@@ -92,7 +94,7 @@ export default function AlertCenter({ alerts, onDismiss, onDismissAll, onOpen, p
 
       {active.length > 0 && (
         <ul className="alert-list" aria-label="Active alerts">
-          {active.slice(0, 3).map(a => (
+          {active.slice(0, MAX_BANNERS).map(a => (
             <li key={a.id} className={`alert-banner sev-${a.severity} ${flashId === a.id ? 'alert-pulse' : ''}`}>
               <span className="alert-sev">{SEVERITY_LABEL[a.severity] || 'ALERT'}</span>
               <button type="button" className="alert-text alert-open" aria-haspopup="dialog"
@@ -105,7 +107,7 @@ export default function AlertCenter({ alerts, onDismiss, onDismissAll, onOpen, p
               <button type="button" className="alert-dismiss" aria-label={`Dismiss alert: ${a.title}`} onClick={() => onDismiss(a.id)}>✕</button>
             </li>
           ))}
-          {active.length > 3 && <li className="alert-more">+{active.length - 3} more in history</li>}
+          {active.length > MAX_BANNERS && <li className="alert-more">+{active.length - MAX_BANNERS} more in history</li>}
         </ul>
       )}
 
@@ -126,7 +128,7 @@ export default function AlertCenter({ alerts, onDismiss, onDismissAll, onOpen, p
                       </button> — {a.detail}
                     </td>
                     <td>{a.source}</td>
-                    <td>{a.dismissed ? 'Dismissed' : 'Active'}</td>
+                    <td>{a.cleared ? 'Cleared (no longer applies)' : a.dismissed ? 'Dismissed' : 'Active'}</td>
                   </tr>
                 ))}
               </tbody>

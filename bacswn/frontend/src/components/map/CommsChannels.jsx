@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { CircleMarker, Polyline, Tooltip } from 'react-leaflet'
 import MapControl from './MapControl'
 
@@ -15,6 +15,39 @@ const BY_ID = Object.fromEntries(CHANNELS.map(c => [c.id, c]))
 const DOWN_COLOR = '#ef4444'
 
 export const DEFAULT_COMMS_FILTER = { vhf: true, cellular: true, satellite: true, down: true }
+
+// One comms-link filter for every map (Command Center and Mesh Network): a
+// choice made on one map applies to the other, and to other open tabs.
+const FILTER_KEY = 'comms-filter'
+const LEGACY_KEY = 'cc-comms-filter'          // Command Center's key before the filter was shared
+const FILTER_EVENT = 'bacswn:comms-filter'
+let current = null                            // survives page changes even without localStorage
+
+function readFilter() {
+  if (current) return current
+  try {
+    const raw = localStorage.getItem(FILTER_KEY) ?? localStorage.getItem(LEGACY_KEY)
+    current = { ...DEFAULT_COMMS_FILTER, ...JSON.parse(raw || '{}') }
+  } catch { current = DEFAULT_COMMS_FILTER }
+  return current
+}
+
+export function useCommsFilter() {
+  const [filter, setFilterState] = useState(readFilter)
+  useEffect(() => {
+    const sync = () => setFilterState(readFilter())
+    const fromOtherTab = (e) => { if (e.key === FILTER_KEY) { current = null; sync() } }
+    window.addEventListener(FILTER_EVENT, sync)
+    window.addEventListener('storage', fromOtherTab)
+    return () => { window.removeEventListener(FILTER_EVENT, sync); window.removeEventListener('storage', fromOtherTab) }
+  }, [])
+  const setFilter = (next) => {
+    current = next
+    try { localStorage.setItem(FILTER_KEY, JSON.stringify(next)) } catch { /* private mode: in-memory only */ }
+    window.dispatchEvent(new Event(FILTER_EVENT))
+  }
+  return [filter, setFilter]
+}
 
 /** Links that pass the filter (used by the map and the text table alike). */
 export function visibleLinks(links, filter) {
@@ -57,9 +90,9 @@ export function CommsLinksLayer({ status, filter }) {
   )
 }
 
-export function CommsFilterControl({ status, filter, onChange, position = 'bottomleft' }) {
-  // Open on wide screens; on phones start collapsed so the small map stays visible.
-  const [open, setOpen] = useState(() => !(typeof window !== 'undefined' && window.matchMedia?.('(max-width: 768px)').matches))
+export function CommsFilterControl({ status, filter, onChange, position = 'bottomleft', defaultOpen = true }) {
+  // Open on wide screens (unless the map asks otherwise); on phones start collapsed so the small map stays visible.
+  const [open, setOpen] = useState(() => defaultOpen && !(typeof window !== 'undefined' && window.matchMedia?.('(max-width: 768px)').matches))
   const links = status?.links || []
   const count = (type) => {
     const of = links.filter(l => l.type === type)

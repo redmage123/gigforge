@@ -7,10 +7,12 @@ import { usePrefersReducedMotion } from '../hooks/useA11yPrefs'
 import PrecogChamber, { HAZARD_COLORS } from '../components/mesh/PrecogChamber'
 import StationDashboard from '../components/mesh/StationDashboard'
 import { useTourEvent } from '../tour/bus'
+import { STORIES, playStory } from '../tour/stories'
 import MeshLogs from '../components/mesh/MeshLogs'
 import '../components/mesh/mesh.css'
 import LiveBadge from '../components/LiveBadge'
 import ResetViewControl from '../components/map/ResetViewControl'
+import { CommsFilterControl, useCommsFilter, visibleLinks } from '../components/map/CommsChannels'
 
 const LINK_COLORS = { vhf: '#10b981', cellular: '#3b82f6', satellite: '#a855f7' }
 const MSG_COLORS = { ALERT: '#ef4444', HAZARD: '#f59e0b', VOTE: '#facc15', PROPAGATION: '#c084fc', MAINT: '#fb923c', HEARTBEAT: '#94a3b8' }
@@ -104,6 +106,8 @@ export default function MeshNetwork() {
   const [spawnNear, setSpawnNear] = useState('MYBS')
   const [verdictNote, setVerdictNote] = useState('')
   useTourEvent('mesh-select', ({ station }) => setSelected(station))
+  // Same comms-link filter as the Command Center map.
+  const [commsFilter, setCommsFilter] = useCommsFilter()
 
   const d = data || {}
   const nodes = d.nodes || []
@@ -160,6 +164,13 @@ export default function MeshNetwork() {
         </div>
         <LiveBadge label="LIVE SIMULATION" />
       </div>
+      <div role="status" aria-live="polite">
+        {d.story && (
+          <p className="story-held">
+            <span aria-hidden="true">❚❚ </span><b>Guided story in progress.</b> The mesh is held still between the story’s steps; finishing or exiting the story resets it.
+          </p>
+        )}
+      </div>
 
       <div className="mesh-kpis">
         <div className="mesh-kpi"><label>Stations online</label><b style={{ color: 'var(--success)' }}>{d.online_nodes}/{d.total_nodes}</b><small>{d.degraded_nodes} degraded / caution</small></div>
@@ -177,6 +188,12 @@ export default function MeshNetwork() {
             onClick={() => run(() => api.meshScenario(id), hint)}>{label}</button>
         ))}
         <button className="mesh-chip danger" disabled={busy} onClick={() => run(() => api.meshScenario('reset'), 'Simulation reset')}>Reset</button>
+        <span className="sep" />
+        <span className="label" id="stories-label">Guided stories</span>
+        {STORIES.map(st => (
+          <button key={st.id} type="button" className="mesh-chip" aria-describedby="stories-label" title={st.summary}
+            onClick={() => playStory(st.id)}><span aria-hidden="true">▶ </span>{st.title}</button>
+        ))}
         <span className="sep" />
         <span className="label" id="spawn-click-label">Click map to spawn</span>
         {['squall', 'convective', 'fog'].map(k => (
@@ -215,6 +232,7 @@ export default function MeshNetwork() {
           <MapContainer bounds={[[20.7, -79.8], [27.1, -72.8]]} style={{ height: '100%', width: '100%' }} zoomControl={false}
             zoomAnimation={!reducedMotion} fadeAnimation={!reducedMotion} markerZoomAnimation={!reducedMotion}>
             <ResetViewControl bounds={[[20.7, -79.8], [27.1, -72.8]]} />
+            <CommsFilterControl status={d} filter={commsFilter} onChange={setCommsFilter} position="bottomright" defaultOpen={false} />
             <MapA11y />
             <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" />
             <ClickToSpawn mode={spawnMode} onSpawn={(ll) => run(() => api.meshStorm({ kind: spawnMode, lat: ll.lat, lon: ll.lng }),
@@ -232,7 +250,7 @@ export default function MeshNetwork() {
               </Fragment>
             ))}
 
-            {(d.links || []).map(l => coords[l.a] && coords[l.b] && (
+            {visibleLinks(d.links, commsFilter).map(l => coords[l.a] && coords[l.b] && (
               <Polyline key={l.a + l.b} positions={[coords[l.a], coords[l.b]]} eventHandlers={decorative}
                 pathOptions={{
                   color: l.up ? LINK_COLORS[l.type] : '#ef4444',

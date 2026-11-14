@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { hz, VERDICT_EXAMPLES } from './PrecogChamber'
 import { useTourEvent } from '../../tour/bus'
 
@@ -87,9 +87,55 @@ function Links({ links }) {
   )
 }
 
-function MinorityReports({ rows, onSelect }) {
-  if (!rows.length) return <p className="dim" style={{ padding: 12 }}>No minority reports yet.</p>
+export const PINNED_REPORTS = 5
+
+/**
+ * Which minority reports to show. By default the list holds still for a walkthrough:
+ * it fills up to the newest PINNED_REPORTS, then keeps those same reports (their
+ * outcomes still update) until the presenter asks for the latest. `live` shows the
+ * full, constantly updating list instead.
+ */
+export function usePinnedReports(rows) {
+  const [pins, setPins] = useState([])
+  const [live, setLive] = useState(false)
+  const known = useRef({})
+  rows.forEach(r => { known.current[r.id] = r })
+  const ids = new Set(rows.map(r => r.id))
+  // After a reset the old reports are gone (not merely aged out of the 40 the server sends): start again.
+  const stale = pins.length > 0 && rows.length < 40 && pins.some(id => !ids.has(id))
+  const base = stale ? [] : pins
+  // Only ever add (newest first) until full; never drop a report already being shown.
+  const want = base.length < PINNED_REPORTS
+    ? [...base, ...rows.map(r => r.id).filter(id => !base.includes(id)).slice(0, PINNED_REPORTS - base.length)]
+    : base
+  useEffect(() => {
+    if (want.join() !== pins.join()) setPins(want)
+  }) // eslint-disable-line react-hooks/exhaustive-deps
+  const shownIds = live ? rows.map(r => r.id) : want
+  const shown = shownIds.map(id => known.current[id]).filter(Boolean)
+    .sort((a, b) => (b.tick ?? 0) - (a.tick ?? 0))
+  const newer = live ? 0 : rows.filter(r => !want.includes(r.id) && (r.tick ?? 0) > Math.max(...shown.map(x => x.tick ?? 0), -1)).length
+  const showLatest = () => setPins(rows.slice(0, PINNED_REPORTS).map(r => r.id))
+  return { shown, newer, live, setLive, showLatest }
+}
+
+function MinorityReports({ pinned, onSelect }) {
+  const { shown: rows, newer, live, setLive, showLatest } = pinned
+  const controls = (
+    <div className="mr-controls">
+      <span className="dim">
+        {live ? 'Live list: updates as reports arrive.'
+          : `Holding ${rows.length} report${rows.length === 1 ? '' : 's'} still for the walkthrough; outcomes still update.`}
+        {!live && newer > 0 && <b> {newer} newer report{newer === 1 ? '' : 's'}.</b>}
+      </span>
+      {!live && <button type="button" className="mesh-chip" onClick={showLatest}>Show latest {PINNED_REPORTS}</button>}
+      <label className="mesh-log-filter"><input type="checkbox" checked={live} onChange={e => setLive(e.target.checked)} /> Live list</label>
+    </div>
+  )
+  if (!rows.length) return <>{controls}<p className="dim" style={{ padding: 12 }}>No minority reports yet.</p></>
   return (
+    <>
+    {controls}
     <table>
       <Caption>Minority reports: a lone model disagreeing with the other two, later scored against what happened</Caption>
       <thead><tr><th scope="col">Time</th><th scope="col">Report</th><th scope="col">Station</th><th scope="col">Model</th><th scope="col">Minority</th><th scope="col">Majority</th><th scope="col">Reasoning</th><th scope="col">Outcome</th></tr></thead>
@@ -108,6 +154,7 @@ function MinorityReports({ rows, onSelect }) {
         ))}
       </tbody>
     </table>
+    </>
   )
 }
 
@@ -140,12 +187,20 @@ function Consensus({ rows, onSelect }) {
 }
 
 function Traffic({ rows }) {
+  // Heartbeats (keepalives) arrive constantly; hiding them leaves alerts, votes and tickets.
+  const [beats, setBeats] = useState(true)
+  useTourEvent('mesh-heartbeats', ({ show }) => setBeats(!!show))
+  const shown = beats ? rows : rows.filter(m => m.type !== 'HEARTBEAT')
   return (
+    <>
+    <label className="mesh-log-filter">
+      <input type="checkbox" checked={beats} onChange={e => setBeats(e.target.checked)} /> Include heartbeats
+    </label>
     <table>
       <Caption>Recent messages on the mesh, newest first</Caption>
       <thead><tr><th scope="col">Time</th><th scope="col">Type</th><th scope="col">Path</th><th scope="col">Via</th><th scope="col">Payload</th></tr></thead>
       <tbody>
-        {rows.map(m => (
+        {shown.map(m => (
           <tr key={m.id}>
             <td className="mono dim">{simClock(m.time)}</td>
             <td><span className={`mbadge msg-${m.type}`}>{m.type}</span></td>
@@ -156,6 +211,7 @@ function Traffic({ rows }) {
         ))}
       </tbody>
     </table>
+    </>
   )
 }
 
@@ -203,6 +259,8 @@ function Events({ rows, onSelect }) {
 /** Tabbed logs (ARIA tabs pattern). The first three tabs are the text equivalent of the map. */
 export default function MeshLogs({ data, onSelect }) {
   const [tab, setTab] = useState('stations')
+  // Kept here so switching tabs does not reshuffle the reports being walked through.
+  const pinned = usePinnedReports(data.minority_reports || [])
   const refs = useRef({})
   useTourEvent('mesh-tab', ({ tab: t }) => setTab(t))
   const tabs = [
@@ -240,7 +298,7 @@ export default function MeshLogs({ data, onSelect }) {
         {tab === 'stations' && <Stations nodes={data.nodes || []} onSelect={onSelect} />}
         {tab === 'cells' && <Cells cells={data.cells || []} />}
         {tab === 'links' && <Links links={data.links || []} />}
-        {tab === 'minority' && <MinorityReports rows={data.minority_reports || []} onSelect={onSelect} />}
+        {tab === 'minority' && <MinorityReports pinned={pinned} onSelect={onSelect} />}
         {tab === 'consensus' && <Consensus rows={data.consensus_events || []} onSelect={onSelect} />}
         {tab === 'traffic' && <Traffic rows={[...(data.messages || []), ...(data.heartbeats || [])].sort((a, b) => b.id - a.id)} />}
         {tab === 'propagation' && <Propagation rows={data.propagation_forecasts || []} onSelect={onSelect} />}

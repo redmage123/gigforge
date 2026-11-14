@@ -1,7 +1,8 @@
-import { createContext, useState, useContext, useEffect, lazy, Suspense } from 'react'
+import { createContext, useState, useContext, useEffect, useCallback, lazy, Suspense } from 'react'
 import { Routes, Route, Navigate, NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { api } from './api/client'
 import { useDemoPause, useDemoPauseSync, setDemoPaused } from './hooks/useDemoPause'
+import { storyById, STORY_EVENT } from './tour/stories'
 
 // Auth context
 export const AuthContext = createContext(null)
@@ -54,6 +55,14 @@ function Layout() {
   const { theme, toggleTheme } = useTheme()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [tourOpen, setTourOpen] = useState(() => new URLSearchParams(window.location.search).has('tour'))
+  // A guided story (tour/stories.js): started from a "Play story" button or a ?story=<id> link.
+  const [story, setStory] = useState(() => storyById(new URLSearchParams(window.location.search).get('story') || ''))
+  useEffect(() => {
+    const play = (e) => { const s = storyById(e.detail?.id); if (s) { setTourOpen(false); setStory(s) } }
+    window.addEventListener(STORY_EVENT, play)
+    return () => window.removeEventListener(STORY_EVENT, play)
+  }, [])
+  const endStory = useCallback(() => { api.meshStoryEnd().catch(() => {}) }, [])
   const pause = useDemoPause()
   const [pauseError, setPauseError] = useState('')
   useDemoPauseSync(true)
@@ -77,7 +86,7 @@ function Layout() {
           <h1>SKYWATCH</h1>
           <p>Bahamas Aviation & Weather</p>
           <button type="button" className="btn btn-sm btn-primary tour-start" aria-pressed={tourOpen}
-            onClick={() => { setTourOpen(true); setSidebarOpen(false) }}>
+            onClick={() => { setStory(null); setTourOpen(true); setSidebarOpen(false) }}>
             <span aria-hidden="true">▶ </span>{tourOpen ? 'Demo running' : 'Guided demo'}
           </button>
           <button type="button" className={`btn btn-sm demo-pause-btn ${pause.paused ? 'is-paused' : ''}`}
@@ -127,6 +136,12 @@ function Layout() {
       {tourOpen && (
         <Suspense fallback={null}>
           <GuidedTour key="tour" open={tourOpen} onClose={() => setTourOpen(false)} />
+        </Suspense>
+      )}
+      {story && !tourOpen && (
+        <Suspense fallback={null}>
+          <GuidedTour key={`story-${story.id}`} open steps={story.steps} label={`Story: ${story.title}`}
+            onEnd={endStory} onClose={() => setStory(null)} />
         </Suspense>
       )}
     </div>

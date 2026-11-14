@@ -53,7 +53,7 @@ export const TOUR_STEPS = [
     target: '.mesh-traffic',
     body: [
       'The storms the mesh is tracking become hazard areas on the controllers’ map — solid once peer stations and the satellite confirm them.',
-      'Every aircraft is projected 30 minutes ahead; anything that will fly into a hazard is flagged with the smallest turn that keeps it clear, and imminent conflicts arrive as alerts.',
+      'Every aircraft is projected 30 minutes ahead; anything that will fly into a hazard is flagged with the smallest turn that keeps it clear, and imminent conflicts with hazards the mesh has confirmed arrive as alerts.',
     ],
   },
   {

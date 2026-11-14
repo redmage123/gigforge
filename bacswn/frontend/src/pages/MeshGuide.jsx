@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 import HoverTip from '../components/a11y/HoverTip'
 import { HAZARD_COLORS } from '../components/mesh/PrecogChamber'
 import StateGallery from '../components/mesh/StateGallery'
+import StoryLauncher from '../components/tour/StoryLauncher'
 import '../components/mesh/mesh.css'
 
 /**
@@ -183,9 +184,11 @@ export default function MeshGuide() {
         </div>
       </div>
       <nav className="mg-toc" aria-label="Guide sections">
+        <a href="#mg-stories">Guided stories</a>
         <a href="#mg-glance">Every state at a glance</a>
         {SECTIONS.map(s => <a key={s.id} href={`#mg-${s.id}`}>{s.title}</a>)}
       </nav>
+      <StoryLauncher />
       <StateGallery />
       {SECTIONS.map(s => (
         <section key={s.id} className="card mg-section" aria-labelledby={`mg-${s.id}`}>

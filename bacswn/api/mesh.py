@@ -116,3 +116,21 @@ async def present(req: PresentRequest):
     """Presenter control: make a station show a chosen verdict and voting outcome now."""
     mesh.advance()
     return _result(mesh.present(req.station, req.call, req.outcome, req.model))
+
+
+class StoryRequest(BaseModel):
+    story: str                    # squall|stuck_sensor|cut_off
+    beat: str                     # see MeshSimulation.STORIES
+
+
+@router.post("/story")
+async def story_beat(req: StoryRequest):
+    """Guided story: stage one beat, then hold the mesh still until the next."""
+    mesh.advance()
+    return _result(mesh.story_beat(req.story, req.beat))
+
+
+@router.post("/story/end")
+async def story_end():
+    """End a guided story: release the hold and reset the mesh."""
+    return mesh.story_end()

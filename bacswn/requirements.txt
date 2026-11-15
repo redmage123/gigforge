@@ -14,3 +14,6 @@ apscheduler==3.10.4
 metpy==1.7.1
 # Forecast bias correction (MOS) — linear + gradient-boosted regressors
 scikit-learn==1.8.0
+
+# Claude-powered assistance (fuel-certificate reading, guided-story Q&A); needs ANTHROPIC_API_KEY
+anthropic==2.3.0

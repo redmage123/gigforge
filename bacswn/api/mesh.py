@@ -2,7 +2,7 @@
 
 import logging
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -134,3 +134,24 @@ async def story_beat(req: StoryRequest):
 async def story_end():
     """End a guided story: release the hold and reset the mesh."""
     return mesh.story_end()
+
+
+class AskRequest(BaseModel):
+    question: str
+    story: str | None = None
+    station: str | None = None
+    step_title: str | None = None
+    step_caption: str | None = None
+
+
+@router.post("/ask")
+async def ask(req: AskRequest, request: Request):
+    """AI-assisted: answer a question about the current story step from the live mesh state."""
+    from services import ai_assist
+    user = (getattr(request.state, "user", None) or {}).get("sub", "?")
+    ctx = ai_assist.story_context(mesh, req.story, req.station and req.station.upper())
+    try:
+        return await ai_assist.ask_about_story(user, req.question, ctx, (req.step_title or "")[:200],
+                                               (req.step_caption or "")[:1500])
+    except ai_assist.AIUnavailable as e:
+        return JSONResponse(status_code=e.status, content={"error": str(e)})

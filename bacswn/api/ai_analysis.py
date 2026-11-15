@@ -57,3 +57,10 @@ async def ai_analyze(req: AnalysisRequest):
         "context_type": req.context_type,
         "analysis": analysis,
     }
+
+
+@router.get("/assist-status")
+async def assist_status():
+    """Whether Claude-powered assistance (certificate reading, story Q&A) is configured."""
+    from services import ai_assist
+    return ai_assist.status()

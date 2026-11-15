@@ -1428,3 +1428,22 @@ button.stat-card:hover { border-color: var(--text-muted); }
 .mesh-log-filter { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-secondary); padding: 6px 8px; min-height: 24px; }
 .mesh-log-filter input { width: 24px; height: 24px; margin: 0; }
 .mr-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 8px; font-size: 12px; }
+
+/* AI certificate reading (components/oversight/CertificateReader) */
+.cert-reader { border: 1px dashed var(--accent); border-radius: 8px; padding: 10px 12px; margin: 8px 0 10px; }
+.cert-reader-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.cert-reader-row input[type=file] { min-height: 32px; max-width: 100%; }
+.cert-result { margin-top: 8px; font-size: 13px; }
+.cert-warnings { margin: 6px 0; padding-left: 18px; color: var(--warning-text, var(--text-primary)); }
+.cert-warnings li::marker { content: '⚠ '; }
+.cert-notes { margin: 6px 0; padding-left: 18px; color: var(--text-secondary); }
+.ai-filled { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* "Ask about this step" in the tour / story panel */
+.tour-ask { margin: 4px 0 8px; font-size: 13px; }
+.tour-ask summary { cursor: pointer; color: var(--accent-text, var(--accent)); min-height: 24px; }
+.tour-ask-form { display: flex; gap: 6px; margin-top: 6px; }
+.tour-ask-form input { flex: 1; min-width: 0; min-height: 32px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--bg-primary); color: var(--text-primary); }
+.tour-ask-out { max-height: 180px; overflow: auto; }
+.tour-answer { margin: 6px 0 0; line-height: 1.45; }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { TOUR_STEPS } from '../../tour/steps'
+import { api } from '../../api/client'
 import { useA11yPrefs, usePrefersReducedMotion } from '../../hooks/useA11yPrefs'
 import { useDemoPaused } from '../../hooks/useDemoPause'
 
@@ -15,7 +16,7 @@ const TARGET_WAIT_MS = 6000
  * Auto-advance can be paused at any time (WCAG 2.2.1 / 2.2.2); captions can be
  * read aloud at the user's preferred speaking rate.
  */
-export default function GuidedTour({ open, onClose, steps = TOUR_STEPS, label = 'Guided demo', onEnd }) {
+export default function GuidedTour({ open, onClose, steps = TOUR_STEPS, label = 'Guided demo', onEnd, storyId }) {
   const navigate = useNavigate()
   const [prefs] = useA11yPrefs()
   const reducedMotion = usePrefersReducedMotion()
@@ -33,6 +34,23 @@ export default function GuidedTour({ open, onClose, steps = TOUR_STEPS, label = 
   const focusOnChange = useRef(true)
   const runId = useRef(0)
   const carry = useRef(null)
+  // "Ask about this step": AI answers from the live mesh state (offered only when configured).
+  const [aiReady, setAiReady] = useState(false)
+  const [question, setQuestion] = useState('')
+  const [answer, setAnswer] = useState(null)
+  const [asking, setAsking] = useState(false)
+  const [askError, setAskError] = useState('')
+  useEffect(() => { if (open) api.aiStatus().then(r => setAiReady(!!r.configured)).catch(() => {}) }, [open])
+  useEffect(() => { setAnswer(null); setAskError(''); setQuestion('') }, [index])
+  const ask = async (e) => {
+    e.preventDefault()
+    if (!question.trim() || asking) return
+    setAsking(true); setAskError(''); setAnswer(null)
+    try {
+      const r = await api.meshAsk({ question, story: storyId || null, step_title: step.title, step_caption: step.body.join(' ') })
+      setAnswer(r.answer)
+    } catch (err) { setAskError(err.message) } finally { setAsking(false) }
+  }
   const step = steps[index]
   const last = index === steps.length - 1
 
@@ -159,6 +177,23 @@ export default function GuidedTour({ open, onClose, steps = TOUR_STEPS, label = 
           {busy && <p className="tour-dim" role="status">Setting up this step…</p>}
           {note && <p className="tour-warn" role="alert">{note}</p>}
         </div>
+      )}
+      {!minimised && aiReady && step.path === '/mesh' && (
+        <details className="tour-ask" onToggle={e => { if (e.currentTarget.open) setAuto(false) }}>
+          <summary>Ask about this step (AI)</summary>
+          <form onSubmit={ask} className="tour-ask-form">
+            <label htmlFor="tour-ask-q" className="sr-only">Your question about this step</label>
+            <input id="tour-ask-q" type="text" value={question} maxLength={500} placeholder="e.g. Why did VISTA disagree?"
+              onChange={e => setQuestion(e.target.value)} onKeyDown={e => e.stopPropagation()} />
+            <button type="submit" className="btn btn-sm btn-primary" disabled={asking || !question.trim()}>{asking ? 'Asking…' : 'Ask'}</button>
+          </form>
+          <div aria-live="polite" className="tour-ask-out" tabIndex={answer ? 0 : undefined}
+            role={answer ? 'region' : undefined} aria-label={answer ? 'AI answer' : undefined}>
+            {asking && <p className="tour-dim">Looking at the live mesh…</p>}
+            {answer && <p className="tour-answer"><span className="tour-dim">AI answer, from the live simulation: </span>{answer}</p>}
+            {askError && <p className="tour-warn">{askError}</p>}
+          </div>
+        </details>
       )}
       <div className="tour-controls">
         <button type="button" className="btn btn-sm" onClick={() => go(-1)} disabled={index === 0}>Back</button>

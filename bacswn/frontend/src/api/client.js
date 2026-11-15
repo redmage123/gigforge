@@ -136,6 +136,8 @@ export const api = {
   meshScenario: (name) => request('/api/mesh/scenario/' + name, { method: 'POST' }),
   meshStory: (story, beat) => request('/api/mesh/story', { method: 'POST', body: JSON.stringify({ story, beat }) }),
   meshStoryEnd: () => request('/api/mesh/story/end', { method: 'POST' }),
+  meshAsk: (body) => request('/api/mesh/ask', { method: 'POST', body: JSON.stringify(body) }),
+  aiStatus: () => request('/api/ai/assist-status'),
 
 
   // CORSIA oversight register (state-side verification of aircraft operators)
@@ -149,6 +151,7 @@ export const api = {
   oversightCsv: (period) => fetchBlob('/api/carbon-oversight/register.csv?period=' + encodeURIComponent(period)),
   oversightAddFuelClaim: (id, data) => request('/api/carbon-oversight/operators/' + id + '/fuel-claims', { method: 'POST', body: JSON.stringify(data) }),
   oversightReviewFuel: (claimId, data) => request('/api/carbon-oversight/fuel-claims/' + claimId + '/review', { method: 'POST', body: JSON.stringify(data) }),
+  oversightReadCertificate: (id, body) => request('/api/carbon-oversight/operators/' + id + '/fuel-certificate', { method: 'POST', body: JSON.stringify(body) }),
   oversightFuelCsv: (period) => fetchBlob('/api/carbon-oversight/fuel-claims.csv?period=' + encodeURIComponent(period)),
 
   // Weather-benefit ledger (fuel / CO2 saved by early storm warnings)

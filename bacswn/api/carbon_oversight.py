@@ -109,3 +109,30 @@ async def fuel_claims_csv(period: str):
         return result
     return Response(content=result, media_type="text/csv",
                     headers={"Content-Disposition": f'attachment; filename="corsia-fuel-claims-{period}.csv"'})
+
+
+@router.post("/operators/{operator_id}/fuel-certificate")
+async def read_fuel_certificate(operator_id: int, request: Request):
+    """AI-assisted: pre-fill a fuel claim from an uploaded certificate. Nothing is recorded."""
+    if denied := _forbidden(request):
+        return denied
+    from services import ai_assist
+    from services.database import get_db
+    body = await _body(request)
+    try:
+        async with get_db() as db:
+            op = await co._require_operator(db, operator_id)
+            rows = await (await db.execute(
+                "SELECT f.id, f.batch_id, o.icao_designator, COALESCE((SELECT decision FROM carbon_fuel_reviews v"
+                " WHERE v.claim_id = f.id ORDER BY v.id DESC LIMIT 1), 'PENDING') AS status"
+                " FROM carbon_fuel_claims f JOIN carbon_operators o ON o.id = f.operator_id")).fetchall()
+    except co.OversightError as e:
+        return JSONResponse(status_code=e.status, content={"error": str(e)})
+    batches = {r["batch_id"].strip().lower(): f"claim F{r['id']} by {r['icao_designator']}, {r['status'].lower()}"
+               for r in rows if r["status"] != "REJECTED"}
+    try:
+        return await ai_assist.read_fuel_certificate(
+            _user(request).get("sub", "?"), str(body.get("filename") or "certificate")[:120],
+            str(body.get("media_type") or ""), str(body.get("data") or ""), op, batches, co.periods())
+    except ai_assist.AIUnavailable as e:
+        return JSONResponse(status_code=e.status, content={"error": str(e)})

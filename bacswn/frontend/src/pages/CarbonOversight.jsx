@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { api, saveBlob } from '../api/client'
 import { useSearchParams } from 'react-router-dom'
 import { useUrlState } from '../components/share/useUrlState'
+import CertificateReader from '../components/oversight/CertificateReader'
 import { useAuth } from '../App'
 import './CarbonOversight.css'
 
@@ -54,7 +55,7 @@ function Field({ label, name, hint, required, error, as = 'input', children, ...
 }
 
 /** Form shell: native validation, server error announced, focus kept sensible. */
-function ApiForm({ title, submitLabel, onSubmit, onDone, children, className = '' }) {
+function ApiForm({ title, submitLabel, onSubmit, onDone, children, className = '', id }) {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const errRef = useRef(null)
@@ -67,6 +68,7 @@ function ApiForm({ title, submitLabel, onSubmit, onDone, children, className = '
     try {
       const result = await onSubmit(data)
       form.reset()
+      form.querySelectorAll('.ai-filled').forEach(el => el.classList.remove('ai-filled'))
       onDone?.(result)
     } catch (err) {
       setError(err.message)
@@ -74,7 +76,7 @@ function ApiForm({ title, submitLabel, onSubmit, onDone, children, className = '
     } finally { setBusy(false) }
   }
   return (
-    <form className={`co-form ${className}`} onSubmit={submit} aria-label={title} noValidate={false}>
+    <form id={id} className={`co-form ${className}`} onSubmit={submit} aria-label={title} noValidate={false}>
       <div className="co-form-grid">{children}</div>
       <div ref={errRef} tabIndex={-1} role="alert" className="co-form-error">{error}</div>
       <button type="submit" className="btn btn-primary btn-sm" disabled={busy}>{busy ? 'Saving…' : submitLabel}</button>
@@ -128,7 +130,7 @@ function ReviewDialog({ claim, onClose, onReviewed }) {
   )
 }
 
-function OperatorDetail({ operatorId, period, periodYears, row, isAdmin, onChanged, onReview, announce }) {
+function OperatorDetail({ operatorId, period, periodYears, row, isAdmin, onChanged, onReview, announce, aiReady }) {
   const [detail, setDetail] = useState(null)
   const headingRef = useRef(null)
   const focused = useRef(false)
@@ -294,7 +296,8 @@ function OperatorDetail({ operatorId, period, periodYears, row, isAdmin, onChang
           </details>
           <details>
             <summary>Record an eligible-fuel claim (SAF / LCAF)</summary>
-            <ApiForm title="Record eligible-fuel claim" submitLabel="Record fuel claim"
+            {aiReady && <CertificateReader operatorId={op.id} formId={`co-fuel-form-${op.id}`} onFilled={announce} />}
+            <ApiForm id={`co-fuel-form-${op.id}`} title="Record eligible-fuel claim" submitLabel="Record fuel claim"
               onSubmit={(d) => api.oversightAddFuelClaim(op.id, d)}
               onDone={(r) => refresh(`Fuel claim F${r.id} recorded as pending review; it would reduce the requirement by ${n(r.emissions_reduction_t)} t CO₂.`)}>
               <Field label="Year used" name="year" type="number" required min={periodYears[0]} max={Math.min(periodYears[1], new Date().getFullYear())} inputMode="numeric" />
@@ -317,6 +320,7 @@ function OperatorDetail({ operatorId, period, periodYears, row, isAdmin, onChang
               <div className="co-field co-check">
                 <label><input type="checkbox" name="not_claimed_elsewhere" defaultChecked /> Operator declares the batch is not claimed under any other scheme</label>
               </div>
+              <input type="hidden" name="notes" />
             </ApiForm>
           </details>
         </div>
@@ -338,6 +342,9 @@ export default function CarbonOversight() {
   const [reviewing, setReviewing] = useState(null)
   const [message, setMessage] = useState('')
   const reviewReturn = useRef(null)
+  // AI certificate reading is offered only when the server has it configured.
+  const [aiReady, setAiReady] = useState(false)
+  useEffect(() => { if (isAdmin) api.aiStatus().then(s => setAiReady(!!s.configured)).catch(() => {}) }, [isAdmin])
 
   useEffect(() => {
     api.oversightPeriods().then(d => {
@@ -497,7 +504,7 @@ export default function CarbonOversight() {
             )}
           </section>
 
-          {selected && <OperatorDetail key={`${selected}-${period}`} operatorId={selected} period={period} periodYears={periodYears} row={selRow}
+          {selected && <OperatorDetail key={`${selected}-${period}`} operatorId={selected} period={period} periodYears={periodYears} row={selRow} aiReady={aiReady}
             isAdmin={isAdmin} onChanged={load} onReview={openReview} announce={announce} />}
         </>
       )}

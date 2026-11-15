@@ -141,7 +141,7 @@ function Layout() {
       {story && !tourOpen && (
         <Suspense fallback={null}>
           <GuidedTour key={`story-${story.id}`} open steps={story.steps} label={`Story: ${story.title}`}
-            onEnd={endStory} onClose={() => setStory(null)} />
+            onEnd={endStory} storyId={story.id} onClose={() => setStory(null)} />
         </Suspense>
       )}
     </div>

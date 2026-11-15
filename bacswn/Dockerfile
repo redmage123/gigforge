@@ -8,6 +8,11 @@ RUN apt-get update && apt-get install -y curl && \
     apt-get install -y nodejs && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
+# Claude Code CLI — AI assistance (fuel-certificate reading, guided-story Q&A) runs
+# `claude -p` (services/ai_assist.py, AI_BACKEND=cli), authenticated by
+# CLAUDE_CODE_OAUTH_TOKEN from .env. Without credentials the AI features stay hidden.
+RUN npm install -g @anthropic-ai/claude-code@2.1.316 && claude --version
+
 # Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

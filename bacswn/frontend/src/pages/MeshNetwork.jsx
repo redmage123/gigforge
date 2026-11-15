@@ -12,9 +12,8 @@ import MeshLogs from '../components/mesh/MeshLogs'
 import '../components/mesh/mesh.css'
 import LiveBadge from '../components/LiveBadge'
 import ResetViewControl from '../components/map/ResetViewControl'
-import { CommsFilterControl, useCommsFilter, visibleLinks } from '../components/map/CommsChannels'
+import { CommsFilterControl, useCommsFilter, visibleLinks, CHANNEL_BY_ID, linkState } from '../components/map/CommsChannels'
 
-const LINK_COLORS = { vhf: '#10b981', cellular: '#3b82f6', satellite: '#a855f7' }
 const MSG_COLORS = { ALERT: '#ef4444', HAZARD: '#f59e0b', VOTE: '#facc15', PROPAGATION: '#c084fc', MAINT: '#fb923c', HEARTBEAT: '#94a3b8' }
 const SCENARIOS = [
   ['squall_line', 'Squall line from Florida', 'Three squall cells sweep SE across Grand Bahama, Abaco and Nassau'],
@@ -253,12 +252,12 @@ export default function MeshNetwork() {
             {visibleLinks(d.links, commsFilter).map(l => coords[l.a] && coords[l.b] && (
               <Polyline key={l.a + l.b} positions={[coords[l.a], coords[l.b]]} eventHandlers={decorative}
                 pathOptions={{
-                  color: l.up ? LINK_COLORS[l.type] : '#ef4444',
+                  color: l.up ? CHANNEL_BY_ID[l.type]?.color : '#ef4444',
                   weight: l.up ? 1.5 + Math.min(4, l.traffic / 2) : 1.5,
                   opacity: l.up ? 0.55 : 0.7,
-                  dashArray: !l.up ? '4 6' : l.type === 'satellite' ? '2 5' : l.type === 'cellular' ? '8 4' : null,
+                  dashArray: !l.up ? '4 6' : CHANNEL_BY_ID[l.type]?.dash,
                 }}>
-                <Tooltip sticky>{l.a}–{l.b} · {l.type} · {l.distance_nm} nm · {l.latency_ms} ms · {l.up ? `${l.traffic} msgs/10 ticks` : 'DOWN'}</Tooltip>
+                <Tooltip sticky>{l.a}–{l.b} · {CHANNEL_BY_ID[l.type]?.label} · {linkState(l)} · {l.distance_nm} nm · {l.latency_ms} ms{l.up ? ` · ${l.traffic} msgs/10 ticks` : ''}</Tooltip>
               </Polyline>
             ))}
 
@@ -288,9 +287,10 @@ export default function MeshNetwork() {
           </div>
           <div className="mesh-legend" aria-hidden="true">
             {Object.entries(HAZARD_COLORS).map(([h, col]) => <span key={h}><i style={{ background: col }} />{h}</span>)}
-            <span><s style={{ borderColor: LINK_COLORS.vhf }} />VHF</span>
-            <span><s style={{ borderColor: LINK_COLORS.cellular, borderTopStyle: 'dashed' }} />Cellular</span>
-            <span><s style={{ borderColor: LINK_COLORS.satellite, borderTopStyle: 'dotted' }} />Satellite</span>
+            <span><s className="dashdot" style={{ color: CHANNEL_BY_ID.wired.color }} />Wired</span>
+            <span><s style={{ borderColor: CHANNEL_BY_ID.vhf.color }} />VHF</span>
+            <span><s style={{ borderColor: CHANNEL_BY_ID.cellular.color, borderTopStyle: 'dashed' }} />Cellular</span>
+            <span><s style={{ borderColor: CHANNEL_BY_ID.satellite.color, borderTopStyle: 'dotted' }} />Satellite</span>
             <span><s style={{ borderColor: '#22d3ee', borderTopWidth: 4 }} />Route to BACSWN hub</span>
           </div>
         </div>

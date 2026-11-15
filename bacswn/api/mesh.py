@@ -13,11 +13,12 @@ logger = logging.getLogger("bacswn.mesh")
 
 
 class FaultRequest(BaseModel):
-    kind: str                     # node_down|node_up|link_down|link_up|sensor_fault|corrupt_precog|clear
+    kind: str                     # node_down|node_up|link_down|link_up|sensor_fault|corrupt_precog|comms_down|comms_up|clear
     station: str | None = None
     peer: str | None = None
     precog: str | None = None     # TEMPO|VISTA|LEXIS
     sensor: str | None = None     # visibility|wind|pressure|rain
+    channel: str | None = None    # wired|vhf|cellular|satellite (comms_down / comms_up)
 
 
 class PresentRequest(BaseModel):
@@ -94,7 +95,8 @@ async def inject_fault(req: FaultRequest):
     mesh.advance()
     return _result(mesh.inject_fault(req.kind, station=req.station and req.station.upper(),
                                      peer=req.peer and req.peer.upper(),
-                                     precog=req.precog and req.precog.upper(), sensor=req.sensor))
+                                     precog=req.precog and req.precog.upper(), sensor=req.sensor,
+                                     channel=req.channel))
 
 
 @router.post("/storm")

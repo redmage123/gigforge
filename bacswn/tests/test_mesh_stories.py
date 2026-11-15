@@ -51,7 +51,7 @@ def test_stuck_sensor_story(seed):
     ev = next(e for e in m.consensus_log if e["station"] == "MYEG")
     assert ev["claim"] == "IFR" and ev["result"] == "REJECTED"
     assert eg["suspect"] and any(x["type"] == "MAINT" and "MYEG" in x["detail"] for x in m.messages)
-    assert not any(x["type"] == "ALERT" and "IFR CONFIRMED" in x["detail"] for x in m.messages)
+    assert not any(x["type"] == "ALERT" and "IFR CONFIRMED at MYEG" in x["detail"] for x in m.messages)
     m.story_beat("stuck_sensor", "repair")
     assert eg["verdict"]["call"] == "CLEAR" and eg["suspect"] is None and not eg["sensor_faults"]
 

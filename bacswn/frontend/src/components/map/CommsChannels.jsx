@@ -7,6 +7,7 @@ import MapControl from './MapControl'
  * filtered by channel type from a panel on the map itself.
  */
 export const CHANNELS = [
+  { id: 'wired', label: 'Wired line', color: '#f472b6', dash: '12 4 2 4', swatch: 'dashdot', about: 'Fibre or copper line to the BACSWN hub, at the main airport sites' },
   { id: 'vhf', label: 'VHF radio', color: '#10b981', dash: null, swatch: 'solid', about: 'Short range (under ~60 nm), lowest latency' },
   { id: 'cellular', label: 'Cellular', color: '#3b82f6', dash: '8 4', swatch: 'dashed', about: 'Medium range via mobile network' },
   { id: 'satellite', label: 'Satellite', color: '#a855f7', dash: '2 5', swatch: 'dotted', about: 'Long range, highest latency' },
@@ -14,7 +15,24 @@ export const CHANNELS = [
 const BY_ID = Object.fromEntries(CHANNELS.map(c => [c.id, c]))
 const DOWN_COLOR = '#ef4444'
 
-export const DEFAULT_COMMS_FILTER = { vhf: true, cellular: true, satellite: true, down: true }
+export const DEFAULT_COMMS_FILTER = { wired: true, vhf: true, cellular: true, satellite: true, down: true }
+export const CHANNEL_BY_ID = BY_ID
+
+/** One line describing a link's channel state, for tooltips and tables. */
+export function linkState(l) {
+  const name = (id) => BY_ID[id]?.label || id
+  if (l.cut) return 'Cut'
+  if (!l.up) {
+    const why = (l.channels || []).map(c => c.why).find(Boolean)
+    return `Down: no working channel${why ? ` (${why})` : ''}`
+  }
+  if (l.on_backup) {
+    const lost = (l.channels || []).find(c => c.type === l.preferred)
+    const back = l.switch_back ? `; ${name(l.switch_back.channel)} is back, switching in ${l.switch_back.minutes_left} min` : ''
+    return `On backup: ${name(l.active)}${lost?.why ? ` (${name(l.preferred)} lost: ${lost.why})` : ''}${back}`
+  }
+  return 'Up'
+}
 
 // One comms-link filter for every map (Command Center and Mesh Network): a
 // choice made on one map applies to the other, and to other open tabs.
@@ -71,8 +89,8 @@ export function CommsLinksLayer({ status, filter }) {
               opacity: l.up ? 0.85 : 0.9, dashArray: l.up ? c.dash : '4 6',
             }}>
             <Tooltip sticky>
-              <b>{c.label}</b> {l.a}–{l.b} · {l.up ? 'up' : 'DOWN'}<br />
-              {l.distance_nm} nm · {l.latency_ms} ms · quality {l.quality}%
+              <b>{c.label}</b> {l.a}–{l.b} · {linkState(l)}<br />
+              {l.distance_nm} nm · {l.latency_ms} ms · channels: {(l.channels || []).map(x => BY_ID[x.type]?.label).join(', ')}
             </Tooltip>
           </Polyline>
         )
@@ -100,7 +118,7 @@ export function CommsFilterControl({ status, filter, onChange, position = 'botto
   }
   const shown = CHANNELS.filter(c => filter[c.id]).length
   const set = (key, value) => onChange({ ...filter, [key]: value })
-  const all = (value) => onChange({ ...filter, vhf: value, cellular: value, satellite: value })
+  const all = (value) => onChange({ ...filter, wired: value, vhf: value, cellular: value, satellite: value })
   const shownLinks = visibleLinks(links, filter)
   const shownDown = shownLinks.filter(l => !l.up).length
 
@@ -123,7 +141,7 @@ export function CommsFilterControl({ status, filter, onChange, position = 'botto
                 return (
                   <label key={c.id} className="comms-row" title={c.about}>
                     <input type="checkbox" checked={!!filter[c.id]} onChange={e => set(c.id, e.target.checked)} />
-                    <span className={`comms-swatch ${c.swatch}`} style={{ borderColor: c.color }} aria-hidden="true" />
+                    <span className={`comms-swatch ${c.swatch}`} style={{ borderColor: c.color, color: c.color }} aria-hidden="true" />
                     <span className="comms-name">{c.label}</span>
                     <span className="comms-count">{n.total}{n.down ? <em> · {n.down} down</em> : null}</span>
                   </label>

@@ -5,7 +5,7 @@
  */
 const CATEGORY_TEXT = { VFR: 'VFR', MVFR: 'Marginal VFR', IFR: 'IFR', LIFR: 'Low IFR' }
 
-const LINK_TYPE = { vhf: 'VHF radio', cellular: 'Cellular', satellite: 'Satellite' }
+const LINK_TYPE = { wired: 'Wired line', vhf: 'VHF radio', cellular: 'Cellular', satellite: 'Satellite' }
 
 export default function SituationTables({ stations, flights, sigmets, hurricanes, links = [] }) {
   const sortedFlights = [...flights].sort((a, b) => (a.callsign || a.icao24).localeCompare(b.callsign || b.icao24))

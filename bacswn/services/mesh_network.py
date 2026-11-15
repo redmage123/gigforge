@@ -44,6 +44,8 @@ from datetime import datetime, timedelta, timezone
 
 from config import STATION_COORDS, BAHAMAS_STATIONS
 from services import demo_pause
+from services import mesh_comms as comms
+from services import mesh_health as health
 from services.mesh_satellite import SatelliteFeed
 from services.mesh_sensor_network import SensorNetwork, METRICS as SENSOR_METRICS
 
@@ -130,6 +132,10 @@ class MeshSimulation:
         # Satellite and sensor-network noise use their own stream, so adding them
         # leaves the weather and model behaviour of a seeded run unchanged.
         self.aux_rng = random.Random(None if seed is None else seed + 7919)
+        # Communications damage has its own stream too.
+        self.comms_rng = random.Random(None if seed is None else seed + 104729)
+        # Channel-health monitoring (telemetry noise, heartbeat loss) has its own stream as well.
+        self.health_rng = random.Random(None if seed is None else seed + 130363)
         self.satellite = SatelliteFeed(self, self.aux_rng)
         self.sensor_net = SensorNetwork(self, self.aux_rng)
         self._ids = itertools.count(1)
@@ -163,22 +169,23 @@ class MeshSimulation:
             self.step()
 
     def _build_links(self) -> dict[tuple, dict]:
+        """Every station pair with at least one usable channel (see services/mesh_comms.py)."""
         links = {}
         codes = list(STATION_COORDS)
         for i, a in enumerate(codes):
             for b in codes[i + 1:]:
                 ia, ib = STATION_COORDS[a], STATION_COORDS[b]
                 d = _distance_deg(ia["lat"], ia["lon"], ib["lat"], ib["lon"])
-                if d > RADIO_RANGE_DEG:
+                channels = comms.link_channels(a, b, d, HUB, RADIO_RANGE_DEG)
+                if not channels:
                     continue
-                kind = "vhf" if d < 1.0 else "cellular" if d < 1.8 else "satellite"
-                base_latency = {"vhf": 8, "cellular": 35, "satellite": 600}[kind]
-                links[(a, b)] = {
-                    "a": a, "b": b, "type": kind, "distance_nm": round(d * 60, 1),
-                    "latency_ms": int(base_latency + d * 12),
-                    "quality": max(35, int(100 - d / RADIO_RANGE_DEG * 55)),
+                link = {
+                    "a": a, "b": b, "channels": channels, "distance_nm": round(d * 60, 1),
+                    "quality": max(35, int(100 - min(d, RADIO_RANGE_DEG) / RADIO_RANGE_DEG * 55)),
                     "up": True, "traffic": deque(maxlen=30),
                 }
+                comms.init_link(self, link)
+                links[(a, b)] = link
         return links
 
     def _new_node(self, code: str) -> dict:
@@ -186,6 +193,7 @@ class MeshSimulation:
         return {
             "station": code, "name": info["name"], "lat": info["lat"], "lon": info["lon"],
             "alive": True, "sensor_faults": set(), "battery_pct": self.rng.randint(82, 100),
+            "comms": comms.new_equipment(code),
             "history": deque(maxlen=8), "truth_history": deque(maxlen=EVAL_TICKS + 4),
             "precogs": {pid: {"id": pid, "modality": desc, "call": "CLEAR", "confidence": 0.9,
                               "reason": "Initialising", "corrupted": False, "quarantined": False, "forced": None, "probation": 0,
@@ -321,6 +329,11 @@ class MeshSimulation:
         # around dawn, so station verdicts show a realistic mix, not just CLEAR.
         if self.background_weather:
             self._background_weather()
+
+        # Communications: weather damage, repairs, and each link's channel (failover / failback).
+        comms.update(self, self.comms_rng)
+        # What the network can observe about it: telemetry, heartbeats, failure classification (§5.5).
+        health.update(self, self.health_rng)
 
         for n in self.nodes.values():
             n["warnings"] = [w for w in n["warnings"] if w["expires"] > self.tick]
@@ -584,7 +597,7 @@ class MeshSimulation:
     def _peers(self, code: str) -> list[str]:
         out = []
         for (a, b), l in self.links.items():
-            if not l["up"] or code not in (a, b):
+            if not l["up"] or not l["active"] or code not in (a, b):
                 continue
             other = b if a == code else a
             if self.nodes[other]["alive"]:
@@ -791,9 +804,9 @@ class MeshSimulation:
 
     # ── fault injection & scenarios ─────────────────────────────────────
     def inject_fault(self, kind: str, station: str | None = None, peer: str | None = None,
-                     precog: str | None = None, sensor: str | None = None) -> dict:
+                     precog: str | None = None, sensor: str | None = None, channel: str | None = None) -> dict:
         n = self.nodes.get(station or "")
-        if kind in ("node_down", "node_up", "sensor_fault", "corrupt_precog", "clear") and not n:
+        if kind in ("node_down", "node_up", "sensor_fault", "corrupt_precog", "clear", "comms_down", "comms_up") and not n:
             return {"error": f"Unknown station {station}"}
         if kind == "node_down":
             n["alive"] = False
@@ -817,8 +830,23 @@ class MeshSimulation:
                 return {"error": f"precog must be one of {sorted(PRECOGS)}"}
             n["precogs"][precog]["corrupted"] = True
             self._event(station, "MODEL_CORRUPT", f"{precog} model corrupted (simulated bad OTA / bit-flip)")
+        elif kind in ("comms_down", "comms_up"):
+            if channel not in n["comms"]:
+                return {"error": f"{station} has no {channel} equipment; it has {', '.join(n['comms'])}"}
+            if kind == "comms_down":
+                comms.damage(self, station, channel, "knocked out by the presenter", None)
+            else:
+                comms.repair(self, station, channel, "restored by the presenter")
+            comms._select(self)
+        elif kind in health.KINDS:
+            r = health.inject(self, kind, station)
+            if "error" in r:
+                return r
         elif kind == "clear":
+            health.clear(self, station)
             n["alive"] = True
+            for ch in list(n["comms"]):
+                comms.repair(self, station, ch, "faults cleared")
             n["sensor_faults"].clear()
             n["suspect"] = None
             for pc in n["precogs"].values():
@@ -959,6 +987,7 @@ class MeshSimulation:
         "squall": {"stations": ("MYAT", "MYAM"), "beats": ("start", "vista", "arrive", "handoff")},
         "stuck_sensor": {"stations": ("MYEG",), "beats": ("start", "fault", "repair")},
         "cut_off": {"stations": ("MYIG", "MYMM", "MYRD"), "beats": ("start", "cut", "storm", "restore")},
+        "radio": {"stations": ("MYBC",), "beats": ("start", "storm", "repair", "failback")},
     }
     _SOUTH = frozenset({"MYIG", "MYMM", "MYRD"})
 
@@ -1076,6 +1105,27 @@ class MeshSimulation:
             self._event("—", "RESTORED", "Links to the southern stations restored")
             self._story_steps(1)
 
+    def _story_radio(self, beat: str) -> None:
+        """Chub Cay (VHF + satellite only) loses its VHF mast in a squall, then gets it back."""
+        bc = self.nodes["MYBC"]
+        if beat == "start":
+            self.cells = []
+            self._story_steps(2)
+        elif beat == "storm":
+            c = self._spawn_cell("squall", bc["lat"], bc["lon"], 0, 0, 60, 0.3, 400)
+            c.update(age=150, story=True)
+            gust = self._field(bc["lat"], bc["lon"])["gust"]
+            self.satellite.task_pass(bc)        # the satellite sees the squall at once
+            comms.damage(self, "MYBC", "vhf", f"Squall gusts of {gust:.0f} kt brought down the VHF mast", None)
+            self._story_steps(2)
+        elif beat == "repair":
+            self.cells = [c for c in self.cells if not c.get("story")]
+            comms.repair(self, "MYBC", "vhf", "mast re-erected by the field team")
+            self._story_steps(2)
+        elif beat == "failback":
+            self._story_steps(comms.HYSTERESIS_TICKS + 2, until=lambda: not any(
+                l["active"] != l["channels"][0] for l in self.links.values() if "MYBC" in (l["a"], l["b"])))
+
     # ── views ───────────────────────────────────────────────────────────
     def _cell_view(self, c: dict) -> dict:
         return {"id": c["id"], "kind": c["kind"], "lat": round(c["lat"], 3), "lon": round(c["lon"], 3),
@@ -1111,14 +1161,16 @@ class MeshSimulation:
             "queue": len(n["queue"]), "battery_pct": n["battery_pct"],
             "msgs_sent": n["msgs_sent"], "msgs_recv": n["msgs_recv"], "alerts_issued": n["alerts_issued"],
             "peers": self._peers(n["station"]) if n["alive"] else [],
+            "comms": comms.station_view(n),
         }
 
     def status(self) -> dict:
         nodes = [self._node_view(n) for n in self.nodes.values()]
         links = [{"a": l["a"], "b": l["b"], "type": l["type"], "distance_nm": l["distance_nm"],
                   "latency_ms": l["latency_ms"], "quality": l["quality"],
-                  "up": l["up"] and self.nodes[l["a"]]["alive"] and self.nodes[l["b"]]["alive"],
-                  "traffic": sum(1 for t in l["traffic"] if self.tick - t < 10)}
+                  "up": bool(l["up"] and l["active"] and self.nodes[l["a"]]["alive"] and self.nodes[l["b"]]["alive"]),
+                  "cut": not l["up"],
+                  "traffic": sum(1 for t in l["traffic"] if self.tick - t < 10), **comms.link_view(self, l)}
                  for l in self.links.values()]
         alive = [n for n in nodes if n["alive"]]
         return {
@@ -1133,6 +1185,7 @@ class MeshSimulation:
             "propagation_forecasts": sorted(self.propagation.values(), key=lambda p: p["eta_minutes"])[:12],
             "events": list(self.events)[:30],
             "counters": self.counters,
+            "comms_health": health.view(self),
             "story": {k: self.story[k] for k in ("name", "beat")} if self.story else None,
             "total_nodes": len(nodes), "online_nodes": len(alive),
             "healthy_nodes": sum(n["status"] == "healthy" for n in nodes),
@@ -1145,8 +1198,13 @@ class MeshSimulation:
 
     def node_detail(self, n: dict) -> dict:
         """Node view plus its full sensor network and satellite products (for the station dashboard)."""
+        code = n["station"]
+        links = [{"peer": l["b"] if l["a"] == code else l["a"], "distance_nm": l["distance_nm"],
+                  "latency_ms": l["latency_ms"], "cut": not l["up"], **comms.link_view(self, l)}
+                 for l in self.links.values() if code in (l["a"], l["b"])]
         return {**self._node_view(n), "sensor_net": self.sensor_net.view(n),
-                "satellite_detail": self.satellite.view(n), "metrics": SENSOR_METRICS}
+                "satellite_detail": self.satellite.view(n), "metrics": SENSOR_METRICS,
+                "links": sorted(links, key=lambda x: x["distance_nm"])}
 
 
 mesh = MeshSimulation()

@@ -161,11 +161,58 @@ const CUT_OFF = [
   },
 ]
 
+const RADIO = [
+  {
+    id: 'ra-1', path: '/mesh', title: 'Chub Cay on a normal day', seconds: 16, settleMs: 1200,
+    target: '.station-dashboard',
+    action: async () => { await beat('radio', 'start'); station('MYBC'); tab('links') },
+    body: [
+      'Chub Cay (MYBC) has two ways to talk: VHF radio and a satellite terminal. It has no cellular or wired line. Its VHF link to the BACSWN hub in Nassau, 32 nautical miles away, takes about 14 milliseconds.',
+      'The Communications panel shows its equipment, and the Links log shows the channel every link is using.',
+    ],
+  },
+  {
+    id: 'ra-2', path: '/mesh', title: 'A squall brings the mast down', seconds: 20, settleMs: 1500,
+    target: '.station-dashboard',
+    action: async () => { await beat('radio', 'storm'); station('MYBC'); tab('links') },
+    body: [
+      'A squall parks over Chub Cay and its gusts bring down the VHF mast. Within one cycle every Chub Cay link is on satellite.',
+      'Messages to Nassau now take about 600 milliseconds instead of 14, but Chub Cay never loses contact: its votes, alerts and heartbeats still get through.',
+    ],
+  },
+  {
+    id: 'ra-3', path: '/mesh', title: 'The event log records it', seconds: 14,
+    target: LOG,
+    action: async () => { station('MYBC'); tab('events') },
+    body: [
+      'The Event log shows the cause (the mast, and the gust speed that brought it down) and the link’s switch to satellite, so engineers know what to repair before anyone reaches the island.',
+    ],
+  },
+  {
+    id: 'ra-4', path: '/mesh', title: 'Repaired, but not trusted yet', seconds: 18, settleMs: 1500,
+    target: '.station-dashboard',
+    action: async () => { await beat('radio', 'repair'); station('MYBC'); tab('links') },
+    body: [
+      'The field team puts the mast back up and VHF works again. The link to Nassau does not switch straight back: it waits for 30 minutes of stable signal, so a radio that is still flickering cannot make it flip back and forth.',
+    ],
+  },
+  {
+    id: 'ra-5', path: '/mesh', title: 'Back on VHF', seconds: 0, settleMs: 1500,
+    target: '.station-dashboard',
+    action: async () => { await beat('radio', 'failback'); station('MYBC'); tab('events') },
+    body: [
+      'After 30 stable minutes the link switches back to VHF and messages are fast again. Every step, from the damage to the switch back, is in the Event log. Finishing the story resets the mesh for the next demo.',
+    ],
+  },
+]
+
 export const STORIES = [
   { id: 'squall', title: 'How a squall line is caught', minutes: 2, steps: SQUALL,
     summary: 'VISTA sees the storm first, the other models catch up, neighbours confirm, the hub is alerted and the next station is warned.' },
   { id: 'stuck_sensor', title: 'A stuck sensor is rejected', minutes: 2, steps: STUCK,
     summary: 'A faulty sensor fools two models, but the neighbours’ radar disagrees: no false alarm, and a maintenance ticket instead.' },
+  { id: 'radio', title: 'A storm takes out the radio', minutes: 2, steps: RADIO,
+    summary: 'A squall brings down Chub Cay’s VHF mast: its links switch to satellite, stay connected, and switch back once the repaired radio is stable.' },
   { id: 'cut_off', title: 'Cut off from the hub', minutes: 2, steps: CUT_OFF,
     summary: 'The southern islands lose every link, keep working through a storm, queue their alerts and deliver them when links return.' },
 ]

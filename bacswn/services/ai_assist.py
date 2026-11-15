@@ -385,6 +385,11 @@ If all three differ, a satellite pass breaks the tie. A hazard call is checked b
 stations with their own radar plus the satellite; if confirmed, an alert goes to the BACSWN hub in Nassau, \
 and if rejected the station gets a maintenance ticket. Stations pass storm warnings (PROPAGATION) with an \
 arrival time to stations downstream. With no route to the hub, alerts queue and are delivered when links return.
+Each link between stations carries every channel both ends have (a wired line to the hub at the main airport \
+sites, VHF radio, cellular, satellite) and uses the fastest one that works; if it fails, the link switches at \
+once to the next and switches back only after the better channel has been stable for 30 minutes. Squall gusts \
+can bring down VHF masts, take cellular towers off the air or cut power to telephone exchanges; lightning \
+causes short outages; the satellite terminal is not affected by weather.
 
 Answer using the mesh state supplied with the question; quote the actual votes, calls and reasons from it. \
 If the state does not show something, say so plainly rather than guess, and never invent numbers. It is a \
@@ -394,6 +399,7 @@ most 120 words. Write plain text only: no Markdown, bullet points, bold or headi
 
 def story_context(sim, story: str | None, station: str | None) -> dict:
     """The parts of the live mesh state a question about this step can be answered from."""
+    from services import mesh_comms as comms
     from services.mesh_network import HUB
     stations = list(sim.STORIES[story]["stations"]) if story in sim.STORIES else []
     if station and station in sim.nodes and station not in stations:
@@ -412,6 +418,7 @@ def story_context(sim, story: str | None, station: str | None) -> dict:
             "suspect": v.get("suspect"), "queued_messages": v.get("queue"),
             "route_to_hub": v.get("route_to_hub"), "sensor_faults": v.get("sensor_faults"),
             "upstream_warnings": v.get("warnings"), "satellite": v.get("satellite"),
+            "comms_equipment": v.get("comms"),
         }
 
     msgs = [m for m in sim.messages if m["type"] != "HEARTBEAT" and involved & set(m["path"])]
@@ -424,6 +431,8 @@ def story_context(sim, story: str | None, station: str | None) -> dict:
         "storm_handoffs": [p for p in sim.propagation.values() if p["source"] in involved or p["target"] in involved][:6],
         "recent_messages": [{k: m[k] for k in ("type", "path", "via", "detail")} for m in msgs[:8]],
         "events": [e for e in sim.events if e["station"] in involved or e["station"] == "—"][:8],
+        "links": [{"between": [l["a"], l["b"]], "latency_ms": l["latency_ms"], **comms.link_view(sim, l)}
+                  for l in sim.links.values() if involved & {l["a"], l["b"]}][:12],
     }
 
 

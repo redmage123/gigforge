@@ -11,7 +11,7 @@ import '../components/mesh/mesh.css'
  * including how a presenter can make it appear on the Mesh page.
  */
 
-const LINK = { vhf: '#10b981', cellular: '#3b82f6', satellite: '#a855f7', down: '#ef4444' }
+const LINK = { wired: '#f472b6', vhf: '#10b981', cellular: '#3b82f6', satellite: '#a855f7', down: '#ef4444' }
 
 const SECTIONS = [
   {
@@ -128,12 +128,16 @@ const SECTIONS = [
   },
   {
     id: 'links', title: 'Communication links',
-    intro: 'How stations talk to each other and to the BACSWN hub. Also shown on the Command Center map ("Comms links").',
+    intro: 'How stations talk to each other and to the BACSWN hub. Every link carries all the channels both ends can use and runs on the fastest one that works; the others are its backups. Also shown on the Command Center map ("Comms links").',
     items: [
+      { term: 'Wired line', line: LINK.wired, dash: 'dashdot', short: 'Fibre or copper to the hub', means: 'A telephone-company line from a main airport site (Freeport, Marsh Harbour, Exuma, Governor’s Harbour, Long Island) to the BACSWN hub. Fastest (around 5 ms) and highest capacity, but it depends on the telephone exchange having power, so storms take it out early.', when: 'Normal weather.', show: 'Inject fault ▸ Comms ▸ Wired at one of those stations.' },
       { term: 'VHF radio', line: LINK.vhf, dash: 'solid', short: 'Short range', means: 'Neighbours under about 60 nm apart. Fastest (around 10 ms).', when: 'Always on unless failed.', show: 'Command Center: Comms links ▸ VHF radio.' },
       { term: 'Cellular', line: LINK.cellular, dash: 'dashed', short: 'Medium range', means: 'About 60–108 nm, via the mobile network (around 35–50 ms).', when: 'Always on unless failed.', show: 'Command Center: Comms links ▸ Cellular.' },
       { term: 'Satellite', line: LINK.satellite, dash: 'dotted', short: 'Long range', means: 'Up to about 150 nm. Slowest (around 600 ms) but independent of the ground.', when: 'Always on unless failed.', show: 'Command Center: Comms links ▸ Satellite.' },
-      { term: 'Failed link', line: LINK.down, dash: 'dashed', short: 'Link down', means: 'The link or a station at either end is down. Messages route around it.', when: 'Outages, partitions.', show: '"Take offline" or "Partition the south".' },
+      { term: 'Failover', short: 'Switch to a backup', means: 'When the channel a link is using fails (a mast down, a tower off the air, an exchange without power), the link switches at once to its next working channel: wired, VHF, cellular, then satellite. Slower, but still connected.', when: 'Storm damage, lightning, faults.', show: 'Story "A storm takes out the radio", or Inject fault ▸ Comms.' },
+      { term: 'Switching back', short: 'Wait for a stable signal', means: 'A link returns to its better channel only after that channel has worked for 30 simulated minutes in a row, so a flickering radio does not make it flip back and forth.', when: 'After repairs.', show: 'Story "A storm takes out the radio", last step.' },
+      { term: 'Storm damage', short: 'Weather knocks out equipment', means: 'Squall-force gusts (50 kt and more) can bring down a VHF mast, take a cellular tower off the air or cut power at the telephone exchange; lightning causes short outages. The satellite terminal is built to survive and is not affected. Repairs take from minutes (lightning) to hours (a mast).', when: 'Squalls and thunderstorms over a station.', show: 'Spawn a squall over a station, or the radio story.' },
+      { term: 'Failed link', line: LINK.down, dash: 'dashed', short: 'Link down', means: 'No channel works: every channel on the link has failed, the link was cut, or a station at either end is down. Messages route around it.', when: 'Outages, partitions.', show: '"Take offline" or "Partition the south".' },
       { term: 'Store-and-forward', short: 'Held messages', means: 'With no route to the BACSWN hub, a station queues messages and sends them when a path reopens.', when: 'Network splits.', show: '"Partition the south" scenario.' },
       { term: 'Audit trail', short: 'Advance storm warnings', means: 'The record of each station warning the next station in a storm\'s path, with an ETA, before it arrives. Shown in the "Audit trail" log on the Mesh page.', when: 'Moving thunderstorms and squalls.', show: '"Squall line from Florida" scenario.' },
     ],
@@ -154,7 +158,7 @@ function Term({ item }) {
   const label = (
     <>
       {item.color && <i className="mg-dot" style={{ background: item.color }} aria-hidden="true" />}
-      {item.line && <i className={`mg-line ${item.dash}`} style={{ borderColor: item.line }} aria-hidden="true" />}
+      {item.line && <i className={`mg-line ${item.dash}`} style={{ borderColor: item.line, color: item.line }} aria-hidden="true" />}
       {item.badge ? <span className={`mbadge ${item.badge}`}>{item.term}</span> : <b>{item.term}</b>}
       <span className="mg-short">{item.short}</span>
     </>

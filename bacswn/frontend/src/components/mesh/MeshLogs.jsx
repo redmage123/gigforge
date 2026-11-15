@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { hz, VERDICT_EXAMPLES } from './PrecogChamber'
 import { useTourEvent } from '../../tour/bus'
+import { CHANNEL_BY_ID, linkState } from '../map/CommsChannels'
+import CommsHealth from './CommsHealth'
 
 const simClock = (iso) => new Date(iso).toISOString().slice(11, 16) + 'Z'
 const Hz = ({ h }) => <b style={{ color: hz(h) }}>{h}</b>
@@ -67,16 +69,21 @@ function Cells({ cells }) {
 }
 
 function Links({ links }) {
+  const name = (id) => CHANNEL_BY_ID[id]?.label || id
   return (
     <table>
-      <Caption>Radio links between stations</Caption>
-      <thead><tr><th scope="col">Link</th><th scope="col">Type</th><th scope="col">State</th><th scope="col">Distance</th><th scope="col">Latency</th><th scope="col">Traffic (last 10 ticks)</th></tr></thead>
+      <Caption>Links between stations: the channel each one is using, its backups, and its state</Caption>
+      <thead><tr><th scope="col">Link</th><th scope="col">Channel in use</th><th scope="col">Backups</th><th scope="col">State</th>
+        <th scope="col">Distance</th><th scope="col">Latency</th><th scope="col">Traffic (last 10 ticks)</th></tr></thead>
       <tbody>
         {links.map(l => (
           <tr key={l.a + l.b}>
             <th scope="row" className="mono">{l.a}–{l.b}</th>
-            <td>{l.type}</td>
-            <td>{l.up ? 'Up' : <b style={{ color: 'var(--danger)' }}>Down</b>}</td>
+            <td>{l.up ? name(l.active) : '—'}</td>
+            <td className="dim">{(l.channels || []).filter(c => c.type !== l.active)
+              .map(c => `${name(c.type)}${c.ok ? '' : ' (down)'}`).join(', ') || 'none'}</td>
+            <td>{l.up && !l.on_backup ? 'Up'
+              : <b style={{ color: l.up ? 'var(--warning-text, var(--warning))' : 'var(--danger)' }}>{linkState(l)}</b>}</td>
             <td className="mono">{l.distance_nm} nm</td>
             <td className="mono">{l.latency_ms} ms</td>
             <td className="mono">{l.traffic} messages</td>
@@ -267,13 +274,14 @@ export default function MeshLogs({ data, onSelect }) {
     ['stations', 'Stations', 0],
     ['cells', 'Storm cells', (data.cells || []).length],
     ['links', 'Links', (data.links || []).filter(l => !l.up).length],
+    ['health', 'Comms health', (data.comms_health?.diagnoses || []).length],
     ['minority', 'Minority Reports', (data.minority_reports || []).filter(r => r.status === 'OPEN').length],
     ['consensus', 'Consensus Votes', 0],
     ['traffic', 'Mesh Traffic', 0],
     ['propagation', 'Audit trail', (data.propagation_forecasts || []).length],
     ['events', 'Event Log', 0],
   ]
-  const countLabel = { cells: 'cells', links: 'links down', minority: 'open', propagation: 'active' }
+  const countLabel = { health: 'problems', cells: 'cells', links: 'links down', minority: 'open', propagation: 'active' }
   const onKeyDown = (e) => {
     const i = tabs.findIndex(t => t[0] === tab)
     const next = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: tabs.length - 1 }[e.key]
@@ -298,6 +306,7 @@ export default function MeshLogs({ data, onSelect }) {
         {tab === 'stations' && <Stations nodes={data.nodes || []} onSelect={onSelect} />}
         {tab === 'cells' && <Cells cells={data.cells || []} />}
         {tab === 'links' && <Links links={data.links || []} />}
+        {tab === 'health' && <CommsHealth health={data.comms_health} nodes={data.nodes} onSelect={onSelect} />}
         {tab === 'minority' && <MinorityReports pinned={pinned} onSelect={onSelect} />}
         {tab === 'consensus' && <Consensus rows={data.consensus_events || []} onSelect={onSelect} />}
         {tab === 'traffic' && <Traffic rows={[...(data.messages || []), ...(data.heartbeats || [])].sort((a, b) => b.id - a.id)} />}

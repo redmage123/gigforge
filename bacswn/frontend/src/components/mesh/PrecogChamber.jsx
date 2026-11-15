@@ -1,4 +1,5 @@
 import PresenterPanel from './PresenterPanel'
+const COMMS_NAME = { wired: 'Wired', vhf: 'VHF', cellular: 'Cellular', satellite: 'Satellite' }
 /** Bright hazard colours for map symbols drawn over satellite imagery. */
 export const HAZARD_COLORS = {
   CLEAR: '#10b981', SHOWERS: '#3b82f6', IFR: '#a855f7', TSRA: '#f59e0b', SQUALL: '#ef4444',
@@ -179,6 +180,18 @@ export default function PrecogChamber({ node, hub, onFault, onVerify, onPresent,
               </button>
             ))}
           </div>
+          {node.alive && node.comms && (
+            <div className="fault-line" role="group" aria-label="Knock out or restore communications">
+              <span className="fault-line-label" aria-hidden="true">Comms</span>
+              {node.comms.map(c => (
+                <button key={c.type} className={`mesh-chip ${c.up ? 'danger' : ''}`} disabled={busy} aria-pressed={!c.up}
+                  aria-label={`${c.up ? 'Knock out' : 'Restore'} ${COMMS_NAME[c.type]}`} title={c.up ? undefined : c.cause}
+                  onClick={() => act({ kind: c.up ? 'comms_down' : 'comms_up', channel: c.type })}>
+                  {c.up ? COMMS_NAME[c.type] : `Restore ${COMMS_NAME[c.type]}`}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="fault-line">
             <span className="fault-line-label" aria-hidden="true" />
             <button className="mesh-chip" disabled={busy} onClick={() => act({ kind: 'clear' })}>Clear faults</button>

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { api } from '../../api/client'
 import { usePolling } from '../../hooks/usePolling'
 import { hz } from './PrecogChamber'
+import { CHANNEL_BY_ID } from '../map/CommsChannels'
 
 /**
  * Per-station dashboard: the station's ground sensor network, the (simulated)
@@ -121,6 +122,41 @@ function SatelliteIcon() {
   )
 }
 
+/** The station's communications equipment and the channel each of its links is using. */
+function Comms({ node, station }) {
+  const name = (id) => CHANNEL_BY_ID[id]?.label || id
+  const links = node.links || []
+  const onBackup = links.filter(l => l.on_backup || !l.active)
+  return (
+    <section className="sd-panel" aria-labelledby="sd-comms-h">
+      <div className="sd-panel-head">
+        <h4 id="sd-comms-h"><span aria-hidden="true">📡</span> Communications</h4>
+        <p>Each link uses its fastest working channel and falls back to the next if it fails.</p>
+      </div>
+      <ul className="sd-comms">
+        {(node.comms || []).map(c => (
+          <li key={c.type} className={c.up ? '' : 'down'}>
+            <span className="comms-swatch-inline" style={{ background: CHANNEL_BY_ID[c.type]?.color }} aria-hidden="true" />
+            <b>{name(c.type)}</b> {c.up ? <span className="sd-dim">working</span> : <span className="sd-warn">out of service: {c.cause}</span>}
+          </li>
+        ))}
+      </ul>
+      <p className="sd-dim">
+        {links.length} links: {links.length - onBackup.length} on their best channel
+        {onBackup.length ? `, ${onBackup.length} on a backup or down` : ''}.
+      </p>
+      {onBackup.length > 0 && (
+        <ul className="sd-comms-links">
+          {onBackup.map(l => (
+            <li key={l.peer}>{station}–{l.peer}: {l.active ? <>on {name(l.active)} instead of {name(l.preferred)}
+              {l.switch_back && <> (switching back to {name(l.switch_back.channel)} in {l.switch_back.minutes_left} min)</>}</> : 'no working channel'}</li>
+          ))}
+        </ul>
+      )}
+    </section>
+  )
+}
+
 function Satellite({ sat, node, station }) {
   const r = sat.radar, s = sat.sounder
   return (
@@ -228,6 +264,7 @@ export default function StationDashboard({ station }) {
         <div className="sd-grid">
           <SensorNetwork sensors={d.sensor_net} metrics={d.metrics} station={station} />
           <div className="sd-side">
+            <Comms node={d} station={station} />
             <Satellite sat={d.satellite_detail} node={d} station={station} />
           </div>
         </div>

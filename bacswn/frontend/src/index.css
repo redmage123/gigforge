@@ -1307,6 +1307,7 @@ button.stat-card:hover { border-color: var(--text-muted); }
 .comms-swatch { width: 22px; height: 0; border-top: 3px solid; flex: none; }
 .comms-swatch.dashed { border-top-style: dashed; }
 .comms-swatch.dotted { border-top-style: dotted; }
+.comms-swatch.dashdot, .mg-line.dashdot, .mesh-legend s.dashdot { border-top: 0 !important; height: 3px; background: repeating-linear-gradient(90deg, currentColor 0 9px, transparent 9px 12px, currentColor 12px 14px, transparent 14px 17px); }
 .comms-name { flex: 1; }
 .comms-count { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 .comms-count em { color: var(--danger-text); font-style: normal; }

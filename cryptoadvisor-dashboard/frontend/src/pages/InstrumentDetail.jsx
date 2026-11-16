@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import { api } from '../api/client'
 import Card from '../components/Card'
 import LoadingSpinner from '../components/LoadingSpinner'
+import SurgeXPanel from '../components/SurgeXPanel'
 import { ClassBadge, pct, price, quotePrice, tone, usd } from '../components/assetClass'
 
 const Plot = lazy(() => import('react-plotly.js'))
@@ -108,6 +109,8 @@ export default function InstrumentDetail() {
           </Suspense>
         )}
       </Card>
+
+      <SurgeXPanel instrumentId={instrumentId} timeframe={view.timeframe} bars={view.bars} />
 
       <div className="grid grid-2 mt-1">
         <Card title="Your position">

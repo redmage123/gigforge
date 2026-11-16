@@ -15,6 +15,11 @@ futures, forex pairs (EUR/USD, USD/JPY, crosses and some emerging-market pairs),
 "bitcoin") with the search box at the top of every page (desktop; on phones use Trades or Alerts). Each has its own page (click it anywhere) with a chart, your position,
 "Log trade" and "Add to watchlist". Stock, ETF and futures prices are delayed about 15 minutes.
 
+- SurgeX (on every instrument page, under the price chart): smoothed derivatives of price — distance
+  (smoothed price), velocity (its change), acceleration (change of velocity) and surge (change of
+  acceleration), with WMA or ALMA smoothing, optional Heikin Ashi candles, five price types, adjustable
+  periods, and peak/trough markers. Settings button under the chart. A velocity crossing zero marks a
+  turn in direction; acceleration or surge crossing zero is an earlier sign momentum is building or fading.
 - Dashboard: Markets panel (S&P 500, Nasdaq, VIX, yields, dollar, gold, oil, crypto), your watchlist,
   top coins, crypto market stats and Fear & Greed.
 - In-Play: instruments with an unusual volume spike plus a large, decisive candle, with the news

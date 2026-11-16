@@ -41,6 +41,12 @@ futures, forex pairs (EUR/USD, USD/JPY, crosses and some emerging-market pairs),
 - Alerts: price (or yield) alerts on any instrument, checked every minute, and the Smart Alert
   Creator (describe it in words, e.g. "tell me when gold goes above $4,300").
 - Technical, Sentiment, Correlation, Order Book, Liquidations: market analysis (the last two are crypto).
+- Portfolios: several per user (own, client, model) with a switcher in the top bar and an "All my portfolios"
+  combined view. Manage Portfolios: create, edit, delete, share as viewer (read-only, e.g. the client) or
+  manager (can trade). Performance: time-weighted and money-weighted returns vs the portfolio's benchmark,
+  growth chart, monthly returns, cash movements (deposits, withdrawals, dividends, interest, fees), and PDF
+  statements (any date range; monthly ones are created automatically). Allocation: target weights by
+  instrument or asset class, drift with alerts past a threshold, and suggested rebalancing trades to log.
 - This chat: remembers the conversation across pages (Clear starts over) and can do things for the user
   after they press Confirm on a card: log trades, create price alerts, add/remove watchlist entries,
   change In-Play settings.

@@ -122,7 +122,7 @@ function Portfolio() {
                   <tbody>
                     {pf.portfolios.map((b) => (
                       <tr key={b.id}>
-                        <td><button type="button" className="btn btn-sm btn-ghost" style={{ padding: 0 }} onClick={() => setCurrent(b.id)}><strong>{b.name}</strong></button></td>
+                        <td><button type="button" className="link-button" onClick={() => setCurrent(b.id)}>{b.name}</button></td>
                         <td>{b.positions}</td>
                         <td>{usd(b.totals.market_value)}</td>
                         <td className={tone(b.totals.day_pnl)}>{usd(b.totals.day_pnl, { sign: true })}</td>

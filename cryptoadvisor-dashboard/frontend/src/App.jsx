@@ -50,6 +50,8 @@ const Memory = lazy(() => import('./pages/Memory'))
 const Search = lazy(() => import('./pages/Search'))
 const CarbonDesk = lazy(() => import('./pages/CarbonDesk'))
 const Portfolios = lazy(() => import('./pages/Portfolios'))
+const Performance = lazy(() => import('./pages/Performance'))
+const Allocation = lazy(() => import('./pages/Allocation'))
 
 export const AuthContext = createContext(null)
 
@@ -121,6 +123,8 @@ function App() {
               <Route path="technical" element={<Technical />} />
               <Route path="portfolio" element={<Portfolio />} />
               <Route path="portfolios" element={<Portfolios />} />
+              <Route path="performance" element={<Performance />} />
+              <Route path="allocation" element={<Allocation />} />
               <Route path="wallet" element={<Wallet />} />
               <Route path="alerts" element={<Alerts />} />
               <Route path="notifications" element={<Notifications />} />

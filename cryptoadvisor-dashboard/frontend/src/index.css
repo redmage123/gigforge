@@ -2987,3 +2987,9 @@ th {
 /* Top-bar portfolio switcher */
 .portfolio-switcher select { min-width: 0; max-width: 220px; padding: 0.35rem 0.5rem; font-size: 0.85rem; }
 @media (max-width: 700px) { .portfolio-switcher select { max-width: 130px; } }
+
+/* Links inside tables (instrument symbols) and link-styled buttons: readable on the dark theme */
+.data-table a:not(.btn) { color: var(--text); text-decoration: none; }
+.data-table a:not(.btn):hover, .data-table a:not(.btn):focus-visible { color: var(--primary); text-decoration: underline; }
+.link-button { background: none; border: 0; padding: 0; color: var(--primary); font: inherit; font-weight: 600; cursor: pointer; text-align: left; }
+.link-button:hover, .link-button:focus-visible { text-decoration: underline; }

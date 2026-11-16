@@ -138,6 +138,10 @@ async def lifespan(app: FastAPI):
     # Register background tasks
     register_task(check_all_alerts, interval_seconds=60, name="alert_checker")
     register_task(_snapshot_all_users, interval_seconds=3600, name="portfolio_snapshots")
+    from services.allocation import check_drift_all
+    from services.statements import generate_monthly
+    register_task(check_drift_all, interval_seconds=6 * 3600, name="allocation_drift")  # alerts at most daily
+    register_task(generate_monthly, interval_seconds=6 * 3600, name="monthly_statements")  # idempotent
     register_task(check_and_execute_dcas, interval_seconds=3600, name="dca_executor")
 
     # Sentiment analysis background tasks

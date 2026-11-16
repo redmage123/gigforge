@@ -71,7 +71,7 @@ async def delete_account(username: str) -> dict:
         for f in settings.glob(f"{user}_*.json"):
             f.unlink()
             removed["files"] += 1
-    for d in (DATA_DIR / "memory" / user, DATA_DIR / "users" / user):
+    for d in (DATA_DIR / "memory" / user, DATA_DIR / "users" / user, DATA_DIR / "statements" / user):
         if d.is_dir():
             shutil.rmtree(d)
             removed["files"] += 1

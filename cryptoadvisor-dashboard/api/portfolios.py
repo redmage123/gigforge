@@ -4,6 +4,8 @@ The app sends the selected portfolio in the X-Portfolio header ("all" = the user
 combined); `scope_of` turns it into a services.portfolios.Scope for any endpoint.
 """
 
+import re
+
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
@@ -177,3 +179,130 @@ async def remove_cash(request: Request, entry_id: str):
     if not cash.remove_entry(scope.owner, entry_id, scope.portfolio_ids):
         raise HTTPException(404, "Entry not found")
     return {"status": "removed"}
+
+
+# ── Performance, allocation, statements (one portfolio, or own combined for performance) ──
+
+def _single(request: Request) -> Scope:
+    scope = scope_of(request)
+    if scope.combined:
+        raise HTTPException(400, "Pick one portfolio in the switcher for this")
+    return scope
+
+
+@router.get("/performance")
+async def get_performance(request: Request, period: str = "all", benchmark: str | None = None):
+    from services.performance import performance
+
+    if period not in ("1m", "3m", "ytd", "1y", "all"):
+        raise HTTPException(400, "period must be 1m, 3m, ytd, 1y or all")
+    scope = scope_of(request)
+    rec = portfolios.get_own(scope.owner, scope.single or portfolios.default_id(scope.owner)) or {}
+    return await performance(scope.owner, scope.portfolio_ids, benchmark or rec.get("benchmark") or "index:SPX", period)
+
+
+class TargetsBody(BaseModel):
+    targets: list[dict]
+    drift_threshold: float | None = None
+
+
+@router.get("/allocation")
+async def get_allocation(request: Request):
+    from services.allocation import analyze
+
+    scope = _single(request)
+    return await analyze(scope.owner, scope.single)
+
+
+@router.put("/allocation")
+async def put_targets(request: Request, body: TargetsBody):
+    from services.allocation import analyze, set_targets
+
+    scope = _single(request)
+    writable(scope)
+    try:
+        await set_targets(scope.owner, scope.single, body.targets, body.drift_threshold)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    return await analyze(scope.owner, scope.single)
+
+
+class OrdersBody(BaseModel):
+    orders: list[dict]
+
+
+@router.post("/allocation/log-orders")
+async def log_rebalance(request: Request, body: OrdersBody):
+    from services.allocation import log_orders
+
+    scope = _single(request)
+    writable(scope)
+    clean = []
+    for o in body.orders[:100]:
+        try:
+            clean.append({"instrument_id": str(o["instrument_id"]), "side": "buy" if o["side"] == "buy" else "sell",
+                          "quantity": float(o["quantity"])})
+        except (KeyError, TypeError, ValueError):
+            raise HTTPException(400, "Each order needs instrument_id, side and quantity")
+        if clean[-1]["quantity"] <= 0:
+            raise HTTPException(400, "Quantities must be positive")
+    try:
+        done = await log_orders(scope.owner, scope.single, clean, get_username(request))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    return {"logged": len(done), "trades": done}
+
+
+@router.get("/statements")
+async def list_statements(request: Request):
+    from services import statements
+
+    scope = _single(request)
+    return {"statements": statements.list_stored(scope.owner, scope.single)}
+
+
+def _pdf(data: bytes, name: str):
+    from fastapi.responses import Response
+
+    safe = re.sub(r"[^A-Za-z0-9._-]+", "-", name)[:80]
+    return Response(data, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{safe}"',
+                                                                 "Cache-Control": "private, no-store"})
+
+
+@router.get("/statements/{month}.pdf")
+async def stored_statement(request: Request, month: str):
+    from services import statements
+
+    scope = _single(request)
+    data = statements.read_stored(scope.owner, scope.single, month)
+    if not data:
+        raise HTTPException(404, "No statement for that month")
+    rec = portfolios.get_own(scope.owner, scope.single)
+    return _pdf(data, f"{rec['name']}-{month}.pdf")
+
+
+@router.get("/statement.pdf")
+async def statement_on_demand(request: Request, start: str, end: str):
+    from datetime import date as _date, timedelta as _td
+
+    from services import statements
+    from services.auth import load_users
+
+    scope = _single(request)
+    try:
+        s, e = _date.fromisoformat(start), _date.fromisoformat(end)
+    except ValueError:
+        raise HTTPException(400, "Dates must be YYYY-MM-DD")
+    if s > e:
+        raise HTTPException(400, "Start must be before end")
+    if (e - s).days > 3700:
+        raise HTTPException(400, "Pick a period of up to 10 years")
+    names = {u["username"]: " ".join(filter(None, [u.get("first_name"), u.get("last_name")])) for u in load_users()}
+    # "start" is the first day covered: measure from the previous day's close
+    data = await statements.build_pdf(scope.owner, scope.single, s - _td(days=1), e, names.get(scope.owner) or scope.owner)
+    rec = portfolios.get_own(scope.owner, scope.single)
+    return _pdf(data, f"{rec['name']}-{start}-to-{end}.pdf")
+
+
+# Static paths (/allocation, /cash, /statements…) must win over /{pid}: FastAPI matches in order
+router.routes.sort(key=lambda r: "{pid}" in getattr(r, "path", ""))

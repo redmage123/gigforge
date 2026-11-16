@@ -283,7 +283,7 @@ async def stored_statement(request: Request, month: str):
 
 @router.get("/statement.pdf")
 async def statement_on_demand(request: Request, start: str, end: str):
-    from datetime import date as _date, timedelta as _td
+    from datetime import date as _date
 
     from services import statements
     from services.auth import load_users
@@ -298,8 +298,7 @@ async def statement_on_demand(request: Request, start: str, end: str):
     if (e - s).days > 3700:
         raise HTTPException(400, "Pick a period of up to 10 years")
     names = {u["username"]: " ".join(filter(None, [u.get("first_name"), u.get("last_name")])) for u in load_users()}
-    # "start" is the first day covered: measure from the previous day's close
-    data = await statements.build_pdf(scope.owner, scope.single, s - _td(days=1), e, names.get(scope.owner) or scope.owner)
+    data = await statements.build_pdf(scope.owner, scope.single, s, e, names.get(scope.owner) or scope.owner)
     rec = portfolios.get_own(scope.owner, scope.single)
     return _pdf(data, f"{rec['name']}-{start}-to-{end}.pdf")
 

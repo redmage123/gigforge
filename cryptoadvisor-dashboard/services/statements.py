@@ -7,6 +7,7 @@ owner and anyone the portfolio is shared with.
 
 import calendar
 import re
+from xml.sax.saxutils import escape
 from datetime import date, datetime, timedelta, timezone
 from io import BytesIO
 
@@ -65,8 +66,11 @@ def _tone(table, rows, col, start=1):
             table.setStyle(TableStyle([("TEXTCOLOR", (col, i), (col, i), NEG)]))
 
 
-async def build_pdf(owner: str, pid: str, start: date, end: date, prepared_by: str = "") -> bytes:
+async def build_pdf(owner: str, pid: str, first_day: date, end: date, prepared_by: str = "") -> bytes:
+    """Statement covering first_day..end; returns are measured from the close of the day before."""
     from services.allocation import analyze
+
+    start = first_day - timedelta(days=1)
 
     rec = portfolios.get_own(owner, pid)
     if not rec:
@@ -74,13 +78,13 @@ async def build_pdf(owner: str, pid: str, start: date, end: date, prepared_by: s
     perf = await performance(owner, [pid], rec.get("benchmark") or "index:SPX", today=end, start=start)
     buf = BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=16 * mm, rightMargin=16 * mm, topMargin=14 * mm, bottomMargin=16 * mm,
-                            title=f"{rec['name']} statement {start} to {end}", author="AssetAdvisor")
+                            title=f"{rec['name']} statement {first_day} to {end}", author="AssetAdvisor")
     W = A4[0] - 32 * mm
     story = [Paragraph("Portfolio statement", H1),
-             Paragraph(f"<b>{rec['name']}</b>" + (f" · {rec['client_name']}" if rec.get("client_name") else "")
-                       + f" · {start:%d %b %Y} to {end:%d %b %Y}", BODY),
+             Paragraph(f"<b>{escape(rec['name'])}</b>" + (f" · {escape(rec['client_name'])}" if rec.get("client_name") else "")
+                       + f" · {first_day:%d %b %Y} to {end:%d %b %Y}", BODY),
              Paragraph(f"Generated {datetime.now(timezone.utc):%d %b %Y %H:%M} UTC"
-                       + (f" · prepared by {prepared_by}" if prepared_by else "") + " · amounts in USD", SMALL),
+                       + (f" · prepared by {escape(prepared_by)}" if prepared_by else "") + " · amounts in USD", SMALL),
              Spacer(1, 8)]
     if perf.get("empty"):
         story.append(Paragraph("No activity in this portfolio yet.", BODY))
@@ -88,7 +92,7 @@ async def build_pdf(owner: str, pid: str, start: date, end: date, prepared_by: s
         return buf.getvalue()
 
     gain = perf["nav"] - perf["start_nav"] - perf["net_deposits"]
-    summary = [["Value at start", _usd(perf["start_nav"])], ["Deposits less withdrawals", _usd(perf["net_deposits"], sign=True)],
+    summary = [[f"Value at {start:%d %b %Y} close", _usd(perf["start_nav"])], ["Deposits less withdrawals", _usd(perf["net_deposits"], sign=True)],
                ["Investment gain or loss", _usd(gain, sign=True)], ["  of which dividends and interest less fees", _usd(perf["income_in_period"], sign=True)],
                ["Value at end", _usd(perf["nav"])], ["  of which cash", _usd(perf["cash"])]]
     ret = [["Time-weighted return", _pct(perf["twr_pct"])],
@@ -104,7 +108,7 @@ async def build_pdf(owner: str, pid: str, start: date, end: date, prepared_by: s
     story += [Paragraph("Summary", H2), Table([[t1, t2]], colWidths=[W * 0.5, W * 0.5], style=[("VALIGN", (0, 0), (-1, -1), "TOP"),
                                                                                               ("LEFTPADDING", (0, 0), (-1, -1), 0)])]
 
-    months = [m for m in perf["monthly"] if f"{start:%Y-%m}" <= m["month"] <= f"{end:%Y-%m}"]
+    months = [m for m in perf["monthly"] if f"{first_day:%Y-%m}" <= m["month"] <= f"{end:%Y-%m}"]
     if len(months) > 1:
         rows = [["Month", "Portfolio", "Benchmark"]] + [[m["month"], _pct(m["return_pct"]), _pct(m["benchmark_pct"])] for m in reversed(months)]
         t = _table(rows, [W * 0.2, W * 0.15, W * 0.15], (1, 2))
@@ -115,7 +119,7 @@ async def build_pdf(owner: str, pid: str, start: date, end: date, prepared_by: s
     rows = [["Instrument", "Class", "Quantity", "Price", "Value", "Weight"]]
     for h in perf["holdings"]:
         val = h["open_pnl"] if h["kind"] == "futures" else h["value"]
-        rows.append([Paragraph(f"<b>{h['symbol']}</b> <font color='#5b6472'>{h['name'][:40]}</font>", BODY), h["asset_class"],
+        rows.append([Paragraph(f"<b>{escape(h['symbol'])}</b> <font color='#5b6472'>{escape(h['name'][:40])}</font>", BODY), h["asset_class"],
                      f"{h['quantity']:,.6g}", f"{h['price']:,.6g}" if h["price"] is not None else "–",
                      _usd(val) + (" P&L" if h["kind"] == "futures" else ""),
                      f"{(h['value'] or 0) / nav * 100:.1f}%" + (" notional" if h["kind"] == "futures" else "")])
@@ -155,7 +159,7 @@ async def build_pdf(owner: str, pid: str, start: date, end: date, prepared_by: s
         canvas.saveState()
         canvas.setFont("Helvetica", 7)
         canvas.setFillColor(MUTED)
-        canvas.drawString(16 * mm, 9 * mm, f"AssetAdvisor · {rec['name']} · {start} to {end}")
+        canvas.drawString(16 * mm, 9 * mm, f"AssetAdvisor · {rec['name']} · {first_day} to {end}")
         canvas.drawRightString(A4[0] - 16 * mm, 9 * mm, f"Page {d.page}")
         canvas.restoreState()
 
@@ -192,7 +196,7 @@ async def generate_monthly(today: date | None = None) -> None:
     first_this = today.replace(day=1)
     last_month_end = first_this - timedelta(days=1)
     month = f"{last_month_end:%Y-%m}"
-    start = last_month_end.replace(day=1) - timedelta(days=1)  # previous month's last close
+    first_day = last_month_end.replace(day=1)
     names = {u["username"]: " ".join(filter(None, [u.get("first_name"), u.get("last_name")])) for u in load_users()}
     folder = user_data.DATA_DIR / portfolios.NAMESPACE
     if not folder.exists():
@@ -208,7 +212,7 @@ async def generate_monthly(today: date | None = None) -> None:
                     not any(date.fromisoformat(e["date"]) <= last_month_end for e in cash_ledger.get_entries(owner, [rec["id"]])):
                 continue
             try:
-                pdf = await build_pdf(owner, rec["id"], start, last_month_end, names.get(owner) or owner)
+                pdf = await build_pdf(owner, rec["id"], first_day, last_month_end, names.get(owner) or owner)
             except Exception as exc:  # noqa: BLE001
                 print(f"[statements] {owner}/{rec['id']} {month}: {exc}")
                 continue

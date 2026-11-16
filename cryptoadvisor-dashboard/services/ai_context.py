@@ -101,3 +101,19 @@ async def quote_context(instrument_or_coin: str) -> tuple[str, dict]:
     q = (await market.quotes([inst.id])).get(inst.id)
     data = {"usd": q.price, "usd_24h_change": q.change_pct or 0.0, "usd_24h_vol": q.volume or 0.0} if q else {}
     return f"{inst.name} ({inst.symbol}, {inst.asset_class})", data
+
+
+async def surgex_reading(instrument_or_coin: str) -> dict | None:
+    """SurgeX state at the last daily candle (default settings), for AI prompts."""
+    from services.indicators.surgex import SurgeSettings, compute
+    from services.market import registry
+
+    await registry.ensure_loaded()
+    iid = instrument_or_coin if ":" in instrument_or_coin else registry.from_coingecko_id(instrument_or_coin.lower())
+    if not iid:
+        return None
+    try:
+        rows = await market.candles(iid, "1d", 90)
+    except Exception:  # noqa: BLE001 — the analysis still works without it
+        return None
+    return compute(rows, SurgeSettings())["reading"] or None

@@ -144,7 +144,7 @@ const RULE_FIELDS = [
   { key: 'min_body_pct', label: 'Body at least', suffix: '% of candle', step: 5, help: 'Open-to-close vs high-to-low; filters spiky candles that went nowhere' },
 ]
 
-const SETTING_KEYS = ['timeframe', 'volume_lookback', 'price_lookback', 'retention_days']
+const SETTING_KEYS = ['timeframe', 'volume_lookback', 'price_lookback', 'retention_days', 'surgex_filter']
 const sameSet = (a = [], b = []) => a.length === b.length && a.every((x) => b.includes(x))
 
 function RulesEditor({ data, onSaved }) {
@@ -183,6 +183,7 @@ function RulesEditor({ data, onSaved }) {
       body.price_lookback = Math.round(Number(rules.price_lookback))
       body.retention_days = Math.round(Number(rules.retention_days))
       body.universes = rules.universes && rules.universes.length ? rules.universes : ['crypto']
+      body.surgex_filter = rules.surgex_filter || 'off'
       const res = await api.put('/api/in-play/rules', body)
       onSaved(res)
       toast.success(res.profile_ready
@@ -273,6 +274,18 @@ function RulesEditor({ data, onSaved }) {
           <span className="muted" style={{ fontSize: '0.75rem' }}>A coin drops off this many days after it last triggered ({minDays}-{maxDays})</span>
         </label>
       </div>
+      <h4 style={{ color: '#e2e8f0', margin: '0 0 0.5rem', fontSize: '0.9rem' }}>SurgeX confirmation</h4>
+      <label style={{ ...labelStyle, maxWidth: 520, marginBottom: '1rem' }} htmlFor="ip-surgex">
+        Only list moves that SurgeX agrees with
+        <select id="ip-surgex" className="input" value={draft.surgex_filter || 'off'} onChange={(e) => setDraft({ ...draft, surgex_filter: e.target.value })}>
+          <option value="off">Off</option>
+          <option value="velocity">Velocity points the same way as the move</option>
+          <option value="acceleration">Velocity and acceleration both agree (move still building)</option>
+        </select>
+        <span className="muted" style={{ fontSize: '0.75rem' }}>
+          SurgeX with default settings (WMA 5/5/5/5 on close) at the trigger candle. Helps skip spikes that are already fading.
+        </span>
+      </label>
       <h4 style={{ color: '#e2e8f0', margin: '0 0 0.5rem', fontSize: '0.9rem' }}>Candle rules</h4>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '0.75rem' }}>
         {RULE_FIELDS.map((f) => (
@@ -414,6 +427,7 @@ export default function Notifications() {
             previous {rules.volume_lookback} candles and size &gt;{rules.range_mult}x the average of the previous {rules.price_lookback},
             body ≥ {rules.min_body_pct}% and opposing wick ≤ {rules.max_wick_pct}% of the candle. Kept {rules.retention_days} days, newest first.
             {(rules.universes || []).includes('fx') && <> Forex has no volume data, so the volume rule is skipped for pairs.</>}
+            {rules.surgex_filter && rules.surgex_filter !== 'off' && <> SurgeX {rules.surgex_filter === 'velocity' ? 'velocity' : 'velocity and acceleration'} must agree with the move.</>}
             {inPlay.last_scan && <> Last scan {timeAgo(inPlay.last_scan)}; watching {
               (inPlay.universes || []).filter((u) => (rules.universes || ['crypto']).includes(u.value)).map((u) => `${u.count} ${({ crypto: 'crypto perpetuals', stocks: 'US stocks', etfs: 'ETFs', futures: 'futures', fx: 'forex pairs' })[u.value] || u.value}`).join(', ')
             }.</>}

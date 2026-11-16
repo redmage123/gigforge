@@ -16,10 +16,13 @@ export function useFetch(path, interval = 0) {
 
   useEffect(() => {
     refetch();
-    if (interval > 0) {
-      const id = setInterval(refetch, interval);
-      return () => clearInterval(id);
-    }
+    // Something changed through the chat assistant (a trade, alert, watchlist entry): reload
+    window.addEventListener('assetadvisor:data-changed', refetch);
+    const id = interval > 0 ? setInterval(refetch, interval) : null;
+    return () => {
+      window.removeEventListener('assetadvisor:data-changed', refetch);
+      if (id) clearInterval(id);
+    };
   }, [refetch, interval]);
 
   return { data, loading, error, refetch };

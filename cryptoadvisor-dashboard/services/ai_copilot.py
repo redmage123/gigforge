@@ -11,11 +11,19 @@ async def analyze_technical(coin: str, price_data: dict) -> str:
     change = price_data.get("usd_24h_change", 0)
     volume = price_data.get("usd_24h_vol", 0)
     market_cap = price_data.get("usd_market_cap", 0)
+    sx = price_data.get("surgex")  # {"velocity": {...}, "acceleration": {...}, "surge": {...}} on daily candles
 
+    sx_text = ""
+    if sx:
+        parts = [f"{k} {v['value']:+.6g} ({'rising' if v['rising'] else 'falling'}"
+                 f"{', just crossed zero ' + v['crossed_zero'] if v.get('crossed_zero') else ''})"
+                 for k, v in sx.items() if k != "distance"]
+        sx_text = ("SurgeX on daily candles (smoothed derivatives of price; velocity = trend direction, "
+                   "acceleration = whether it is strengthening, surge = change in acceleration): " + "; ".join(parts) + ". ")
     prompt = (
         f"You are a technical analyst. {PERSONA} Analyze {coin}: "
         f"current price ${price:,.2f}, 24h change {change:+.2f}%, "
-        f"volume ${volume:,.0f}, market cap ${market_cap:,.0f}. "
+        f"volume ${volume:,.0f}, market cap ${market_cap:,.0f}. {sx_text}"
         f"Provide: 1) Short-term outlook (24-48h) 2) Key support/resistance levels "
         f"3) Trading signal (buy/sell/hold) 4) Confidence level. Be concise."
     )

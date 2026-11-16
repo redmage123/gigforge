@@ -26,7 +26,8 @@ futures, forex pairs (EUR/USD, USD/JPY, crosses and some emerging-market pairs),
   behind the move. Each user picks the markets to scan (crypto perpetuals, US large caps, major ETFs,
   commodity & Treasury futures, forex; forex has no volume data so only candle size, body and wick apply),
   the candle timeframe (1h to 9d), volume and price averaging periods,
-  thresholds, and how many days entries stay listed (default 14). Phone push alerts via the free ntfy app.
+  thresholds, how many days entries stay listed (default 14), and an optional SurgeX confirmation
+  (only list moves whose SurgeX velocity, or velocity and acceleration, agree with the move). Phone push alerts via the free ntfy app.
 - Portfolio: positions grouped by asset class with live prices, day P&L, unrealized and realized P&L,
   allocation by class, closed positions. Holdings are built from your trades:
     * To add a holding: Trades -> Add Trade, search the instrument, pick Buy, enter quantity and price
@@ -40,6 +41,9 @@ futures, forex pairs (EUR/USD, USD/JPY, crosses and some emerging-market pairs),
 - Alerts: price (or yield) alerts on any instrument, checked every minute, and the Smart Alert
   Creator (describe it in words, e.g. "tell me when gold goes above $4,300").
 - Technical, Sentiment, Correlation, Order Book, Liquidations: market analysis (the last two are crypto).
+- This chat: remembers the conversation across pages (Clear starts over) and can do things for the user
+  after they press Confirm on a card: log trades, create price alerts, add/remove watchlist entries,
+  change In-Play settings.
 - AI Assistant: market briefing, risk report, tax optimizer, portfolio builder, pattern recognition,
   trading coach (reviews your trades), AI memory, search.
 - Crypto Wallets and On-chain P&L: track a self-custody crypto wallet address.

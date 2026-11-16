@@ -11,7 +11,7 @@ from services import trades as trades_service
 from services import user_data
 from services import coingecko
 from services import news as news_service
-from services.ai_context import holdings_for_ai, market_headlines, market_snapshot, quote_context
+from services.ai_context import holdings_for_ai, market_headlines, market_snapshot, quote_context, surgex_reading
 from services.ai_copilot import (
     analyze_page_data, analyze_technical, analyze_portfolio,
     analyze_whale_activity, analyze_defi_positions,
@@ -72,6 +72,7 @@ async def copilot(request: Request, body: CopilotRequest):
 async def copilot_technical(request: Request, body: TechnicalRequest):
     # body.coin may be an instrument id ("stock:AAPL") or a legacy CoinGecko id ("bitcoin")
     name, price_data = await quote_context(body.coin)
+    price_data = {**price_data, "surgex": await surgex_reading(body.coin)}
     analysis = await analyze_technical(name, price_data)
     return {"analysis": analysis}
 

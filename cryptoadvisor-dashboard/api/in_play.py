@@ -34,6 +34,7 @@ class RulesBody(BaseModel):
     price_lookback: int = in_play.DEFAULT_RULES.price_lookback
     retention_days: int = in_play.DEFAULT_RULES.retention_days
     universes: list[str] = list(in_play.DEFAULT_RULES.universes)
+    surgex_filter: str = "off"
 
 
 def _rules_payload(username: str) -> dict:

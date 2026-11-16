@@ -93,6 +93,7 @@ from api.memory import router as memory_router
 from api.search import router as search_router
 from api.in_play import router as in_play_router
 from api.instruments import router as instruments_router
+from api.assistant import router as assistant_router
 from api.carbon_desk import router as carbon_desk_router, ws_router as carbon_desk_ws_router
 
 # Auth router (JSON API)
@@ -243,6 +244,7 @@ app.include_router(memory_router, prefix="/api/memory", tags=["memory"])
 app.include_router(search_router, prefix="/api/search", tags=["search"])
 app.include_router(in_play_router, prefix="/api/in-play", tags=["in-play"])
 app.include_router(instruments_router, prefix="/api/instruments", tags=["instruments"])
+app.include_router(assistant_router, prefix="/api/assistant", tags=["assistant"])
 app.include_router(carbon_desk_router, prefix="/api/carbon-desk", tags=["carbon-desk"])
 app.include_router(carbon_desk_ws_router, tags=["carbon-desk"])
 
@@ -251,25 +253,15 @@ app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 
 
 # --- Chat endpoint ---
-@app.post("/api/chat")
-async def chat(req: ChatRequest, request: Request):
-    """RAG-enhanced chat — retrieves user memories, injects context, extracts new facts."""
-    from services.user_memory import (
-        build_memory_context, extract_facts_from_conversation, add_facts_bulk,
-    )
-
-    username = ""
-    try:
-        user = getattr(request.state, "user", {})
-        username = user.get("sub", "")
-    except Exception:
-        pass
+async def build_chat_prompt(username: str, message: str, history: list[dict] | None = None) -> str:
+    """Prompt for the chat assistant: user memories, open positions, recent turns, the message."""
+    from services.user_memory import build_memory_context
 
     # Build RAG context from user memories
     memory_context = ""
     if username:
         try:
-            memory_context = await build_memory_context(username, req.message)
+            memory_context = await build_memory_context(username, message)
         except Exception as e:
             print(f"[chat] memory context error: {e}")
 
@@ -300,10 +292,28 @@ async def chat(req: ChatRequest, request: Request):
             prompt_parts.append("The user's open positions (from their trade journal):\n" + "\n".join(lines))
         else:
             prompt_parts.append("The user has no open positions in their trade journal.")
-    if req.history:
-        prompt_parts.append(history_block(req.history))
-    prompt_parts.append(req.message)
-    augmented_prompt = "\n\n---\n\n".join(prompt_parts)
+    if history:
+        prompt_parts.append(history_block(history))
+    prompt_parts.append(message)
+    return "\n\n---\n\n".join(prompt_parts)
+
+
+@app.post("/api/chat")
+async def chat(req: ChatRequest, request: Request):
+    """RAG-enhanced chat — retrieves user memories, injects context, extracts new facts."""
+    from services.user_memory import (
+        build_memory_context, extract_facts_from_conversation, add_facts_bulk,
+    )
+
+    username = ""
+    try:
+        user = getattr(request.state, "user", {})
+        username = user.get("sub", "")
+    except Exception:
+        pass
+
+    augmented_prompt = await build_chat_prompt(username, req.message, req.history)
+
 
     from services.claude_cli import run_claude
     try:

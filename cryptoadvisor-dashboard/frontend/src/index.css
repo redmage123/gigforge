@@ -2973,3 +2973,13 @@ th {
 
 /* Top-bar search: hide on narrow phones (the menu's Search page is still there) */
 @media (max-width: 640px) { .topbar-search { display: none; } }
+
+/* Chat: proposed-action cards (confirm before anything changes) */
+.chat-action { margin-top: 0.6rem; padding: 0.6rem 0.7rem; border-radius: 8px; border: 1px solid var(--border, #2a2a3d);
+  background: rgba(100, 108, 255, 0.08); white-space: normal; }
+.chat-action[data-status="done"] { background: rgba(0, 212, 170, 0.08); }
+.chat-action[data-status="invalid"], .chat-action[data-status="failed"] { background: rgba(255, 107, 107, 0.08); }
+.chat-action-kind { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.chat-action-summary { margin: 2px 0 6px; font-weight: 600; }
+.chat-action-buttons { display: flex; gap: 6px; }
+.chat-action-status { font-size: 0.8rem; }

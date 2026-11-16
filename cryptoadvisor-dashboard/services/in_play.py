@@ -29,6 +29,7 @@ from typing import Callable, Literal
 import httpx
 
 from services import in_play_news, in_play_push
+from services.indicators import surgex
 from services.market import registry, universes
 from services.market.models import Candle  # noqa: F401  (re-exported: tests and callers import it from here)
 from services.market.providers import BINANCE_PERP, YAHOO
@@ -55,7 +56,8 @@ BASE_VOLUME_MULT = 2.0
 BASE_RANGE_MULT = 2.0
 # Forming candles keep changing; refresh their news at most this often
 CATALYST_REFRESH_S = 3 * 3600
-MIN_SAME_SLOT = 3  # same-hour volume samples needed before using them instead of the plain average
+MIN_SAME_SLOT = 3
+SURGEX_FILTERS = ("off", "velocity", "acceleration")  # same-hour volume samples needed before using them instead of the plain average
 
 CANDIDATES_NAME = "in_play_candidates"
 STATE_NAME = "in_play_state"
@@ -91,6 +93,10 @@ class Rules:
     price_lookback: int = DEFAULT_LOOKBACK  # candles of `timeframe`
     retention_days: int = DEFAULT_RETENTION_DAYS
     universes: tuple = universes.DEFAULT_UNIVERSES
+    # Optional SurgeX confirmation (WMA 5/5/5/5 on close at the trigger candle):
+    #   "velocity": SurgeX velocity points the same way as the move
+    #   "acceleration": velocity and acceleration both do (the move is still building)
+    surgex_filter: str = "off"
 
     @classmethod
     def from_dict(cls, d: dict | None) -> "Rules":
@@ -129,6 +135,8 @@ class Rules:
             return f"Days on list must be {RETENTION_MIN_DAYS}-{RETENTION_MAX_DAYS}"
         if not self.universes or any(u not in universes.UNIVERSES for u in self.universes):
             return f"Pick at least one market to scan: {', '.join(universes.UNIVERSES)}"
+        if self.surgex_filter not in SURGEX_FILTERS:
+            return f"SurgeX confirmation must be one of {', '.join(SURGEX_FILTERS)}"
         return None
 
 
@@ -182,6 +190,17 @@ def measure(candle: Candle, history: list[Candle], volume_lookback: int = DEFAUL
     )
 
 
+def surgex_confirms(m: dict, mode: str) -> bool:
+    """SurgeX agrees with the move's direction (see Rules.surgex_filter). Unknown values never confirm."""
+    if mode == "off":
+        return True
+    sign = 1 if m.get("direction") == "bullish" else -1
+    v, a = m.get("sx_velocity"), m.get("sx_acceleration")
+    if v is None or v * sign <= 0:
+        return False
+    return mode == "velocity" or (a is not None and a * sign > 0)
+
+
 def matches(m: Metrics | dict, rules: Rules) -> bool:
     if isinstance(m, Metrics):
         m = asdict(m)
@@ -190,6 +209,7 @@ def matches(m: Metrics | dict, rules: Rules) -> bool:
         and m["range_ratio"] > rules.range_mult
         and m["opposing_wick_pct"] <= rules.max_wick_pct
         and m["body_pct"] >= rules.min_body_pct
+        and surgex_confirms(m, rules.surgex_filter)
     )
 
 
@@ -542,6 +562,8 @@ async def _scan(notify: bool, only_profiles: set[str] | None = None) -> dict:
                         errors += 1
                         group_errors += 1
                         return
+                sx = surgex.compute(candles, surgex.SurgeSettings())["series"]
+                sx_at = {c.open_time: i for i, c in enumerate(candles)}
                 slot_of = None
                 if inst.sessions not in ("24/7", "fx") and bar_s < 86400:
                     slots = session_slots(candles, bar_s)
@@ -552,6 +574,9 @@ async def _scan(notify: bool, only_profiles: set[str] | None = None) -> dict:
                     for candle, m in measure_recent(candles, count, r.volume_lookback, r.price_lookback, slot_of,
                                                     use_volume=inst.has_volume):
                         fresh = _candidate(inst, universe, candle, m, now, r)
+                        i = sx_at.get(candle.open_time)
+                        fresh["sx_velocity"] = sx["velocity"][i] if i is not None else None
+                        fresh["sx_acceleration"] = sx["acceleration"][i] if i is not None else None
                         key = _key(fresh)
                         if not is_new:
                             seen_keys.add(key)

@@ -1,5 +1,7 @@
 """CSV trade import API: parse an exchange trade-history export into the user's trade journal."""
 
+import json
+
 from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import JSONResponse
 
@@ -40,3 +42,70 @@ async def import_csv(
                      "with its original column headers."})
     result = await import_trades(username, trades, exchange.strip().lower())
     return {**result, "exchange": exchange, "filename": file.filename}
+
+
+# ---------------------------------------------------------------------------
+# Column-mapped import (BTCC and any exchange without a built-in parser)
+# ---------------------------------------------------------------------------
+
+async def _read(file: UploadFile) -> bytes:
+    contents = await file.read()
+    if len(contents) > MAX_BYTES:
+        raise ValueError("File is larger than 5 MB.")
+    return contents
+
+
+@router.post("/inspect")
+async def inspect_csv(request: Request, file: UploadFile = File(...)):
+    """Headers, a sample, and a suggested (or previously used) column mapping."""
+    from services import csv_mapping as cm
+
+    username = request.state.user.get("sub", "")
+    try:
+        headers, rows = cm.read_table(await _read(file))
+    except UnicodeDecodeError:
+        return JSONResponse(status_code=400, content={"error": "The file is not a UTF-8 text CSV."})
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content={"error": str(exc)})
+    sig = cm.signature(headers)
+    saved = cm.saved_mapping(username, sig)
+    return {"headers": headers, "sample": rows[:8], "rows": len(rows), "signature": sig,
+            "mapping": saved or cm.suggest_mapping(headers), "saved": bool(saved), "fields": list(cm.FIELDS),
+            "required": list(cm.REQUIRED)}
+
+
+@router.post("/mapped")
+async def import_mapped(request: Request, file: UploadFile = File(...), mapping: str = Form(...),
+                        commit: bool = Form(False), source: str = Form("custom")):
+    """Parse with the user's mapping. commit=false previews; commit=true imports and remembers the mapping."""
+    from services import csv_mapping as cm
+    from services.market import registry
+
+    username = request.state.user.get("sub", "")
+    source = "".join(ch for ch in source.lower() if ch.isalnum())[:20] or "custom"
+    try:
+        m = json.loads(mapping)
+        if not isinstance(m, dict):
+            raise ValueError("bad mapping")
+        headers, rows = cm.read_table(await _read(file))
+        await registry.ensure_loaded()
+        trades, warnings = cm.apply_mapping(headers, rows, m)
+    except UnicodeDecodeError:
+        return JSONResponse(status_code=400, content={"error": "The file is not a UTF-8 text CSV."})
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content={"error": str(exc)})
+    if not commit:
+        by_inst = {}
+        for t in trades:
+            b = by_inst.setdefault(t["instrument_id"], {"instrument_id": t["instrument_id"], "trades": 0, "net_quantity": 0.0})
+            b["trades"] += 1
+            b["net_quantity"] += t["quantity"] if t["side"] == "buy" else -t["quantity"]
+        return {"preview": [{**t, "notional": round(t["quantity"] * t["price"], 2)} for t in trades[:25]],
+                "count": len(trades), "rows": len(rows), "warnings": warnings[:50], "warning_count": len(warnings),
+                "instruments": sorted(by_inst.values(), key=lambda b: -b["trades"])[:20]}
+    if not trades:
+        return JSONResponse(status_code=400, content={"error": "No trades to import. " + "; ".join(warnings[:3])})
+    trades[0]["_warnings"] = warnings
+    result = await import_trades(username, trades, source)
+    cm.remember_mapping(username, cm.signature(headers), m)
+    return {**result, "exchange": source, "filename": file.filename}

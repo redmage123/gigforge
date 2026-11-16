@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { api } from '../api/client';
 import Card from '../components/Card';
 import LoadingSpinner from '../components/LoadingSpinner';
+import MappedImport from '../components/MappedImport';
 
 const selectStyle = {
   padding: '0.6rem 1rem',
@@ -25,7 +26,9 @@ const btnStyle = {
 const cellStyle = { padding: '0.75rem', borderBottom: '1px solid #1a1a2e' };
 const headStyle = { ...cellStyle, color: '#888', textAlign: 'left', fontSize: '0.85rem', borderBottom: '1px solid #2a2a3d' };
 
-const EXCHANGES = ['Binance', 'Coinbase', 'Kraken', 'Generic'];
+const EXCHANGES = ['Binance', 'BTCC', 'Coinbase', 'Kraken', 'Generic', 'Other exchange or broker'];
+// No fixed parser: the user matches columns and previews before importing
+const MAPPED = { BTCC: 'btcc', 'Other exchange or broker': 'custom' };
 
 export default function CsvImport() {
   const [exchange, setExchange] = useState('Binance');
@@ -93,7 +96,15 @@ export default function CsvImport() {
       {error && <div style={{ color: '#f87171', marginBottom: '1rem', padding: '0.75rem', background: '#3a1e1e', borderRadius: 8 }}>{error}</div>}
 
       <Card title="Import Trades">
-        {exchange === 'Generic' ? (
+        {MAPPED[exchange] ? (
+          <p className="muted" style={{ fontSize: '0.85rem', marginTop: 0 }}>
+            {exchange === 'BTCC'
+              ? <>Export your trade history (spot or futures) from BTCC and upload the file as-is; </>
+              : <>Upload your trade-history export as-is (CSV, comma, semicolon or tab separated); </>}
+            you'll match its columns, see every trade as we read it, and only then import. Futures fills such as
+            "Open Long" / "Close Short" are understood.
+          </p>
+        ) : exchange === 'Generic' ? (
           <p className="muted" style={{ fontSize: '0.85rem', marginTop: 0 }}>
             Any broker or asset class. One row per trade with the columns <code>date, symbol, side, quantity, price</code>,
             optionally <code>fee</code> and <code>asset_class</code> (stock, etf, crypto, commodity, bond). Without an
@@ -115,7 +126,7 @@ export default function CsvImport() {
             <input
               id="csv-file"
               type="file"
-              accept=".csv"
+              accept=".csv,.txt,.tsv"
               onChange={handleFileChange}
               style={{
                 padding: '0.4rem',
@@ -127,16 +138,20 @@ export default function CsvImport() {
               }}
             />
           </div>
-          <button onClick={importCsv} disabled={loading || !file} style={btnStyle}>
-            {loading ? 'Importing...' : 'Import'}
-          </button>
+          {!MAPPED[exchange] && (
+            <button onClick={importCsv} disabled={loading || !file} style={btnStyle}>
+              {loading ? 'Importing...' : 'Import'}
+            </button>
+          )}
         </div>
       </Card>
+
+      {MAPPED[exchange] && <MappedImport file={file} source={MAPPED[exchange]} label={exchange} />}
 
       {loading && <LoadingSpinner />}
 
       {/* CSV Preview */}
-      {preview && !result && (
+      {preview && !result && !MAPPED[exchange] && (
         <Card title="Preview (First 5 Rows)" style={{ marginTop: '1rem' }}>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>

@@ -24,6 +24,7 @@ const navSections = [
     label: 'Portfolio',
     items: [
       { path: '/portfolio', label: 'Portfolio', icon: '\uD83D\uDCBC' },
+      { path: '/portfolios', label: 'Manage Portfolios', icon: '\uD83D\uDDC2' },
       { path: '/trades', label: 'Trades', icon: '\u21C4' },
       { path: '/csv-import', label: 'Import Trades', icon: '\uD83D\uDCE5' },
       { path: '/backtest', label: 'Backtest', icon: '\uD83E\uDDEA' },

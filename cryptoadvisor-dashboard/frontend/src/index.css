@@ -2983,3 +2983,7 @@ th {
 .chat-action-summary { margin: 2px 0 6px; font-weight: 600; }
 .chat-action-buttons { display: flex; gap: 6px; }
 .chat-action-status { font-size: 0.8rem; }
+
+/* Top-bar portfolio switcher */
+.portfolio-switcher select { min-width: 0; max-width: 220px; padding: 0.35rem 0.5rem; font-size: 0.85rem; }
+@media (max-width: 700px) { .portfolio-switcher select { max-width: 130px; } }

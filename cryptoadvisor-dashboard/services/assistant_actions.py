@@ -37,7 +37,8 @@ fenced block:
 
 Available types (fields; instrument = ticker, name or id like "AAPL", "gold", "EUR/USD", "stock:AAPL"):
 - add_trade: instrument, side ("buy"|"sell"), quantity (number; shares, coins, contracts, or base-currency
-  units for forex), price (number or "market"), optional date (YYYY-MM-DD, default today), optional fee
+  units for forex), price (number or "market"), optional date (YYYY-MM-DD, default today), optional fee,
+  optional portfolio (its name, when the user has several; default: their default portfolio)
 - create_alert: instrument, direction ("above"|"below"), price (number; yields in percent)
 - add_watchlist / remove_watchlist: instrument
 - set_inplay_rules: any of timeframe ("1h","2h","3h","6h","12h","1d","3d","9d"), universes (list of
@@ -128,11 +129,21 @@ async def validate(proposal: dict, username: str) -> dict:
                 price = q.price
             else:
                 price = _num(proposal.get("price"), "price")
+            from services import portfolios
+
+            own = portfolios.list_own(username)
+            wanted = str(proposal.get("portfolio") or "").strip().lower()
+            book = next((p for p in own if wanted and p["name"].lower() == wanted), None) if wanted else \
+                next(p for p in own if p.get("default"))
+            if not book:
+                raise ValueError(f"no portfolio called '{proposal.get('portfolio')}' "
+                                 f"(you have: {', '.join(p['name'] for p in own)})")
             action["params"] = {"instrument_id": inst.id, "side": side, "quantity": qty, "price": price,
-                                "at_market": at_market, "date": date, "fee": fee}
+                                "at_market": at_market, "date": date, "fee": fee, "portfolio_id": book["id"]}
             action["summary"] = (f"{side.upper()} {qty:g} {_label(inst)} at "
                                  f"{'market ≈ ' if at_market else ''}{_price_text(price, inst)} on {date}"
-                                 + (f", fee ${fee:,.2f}" if fee else ""))
+                                 + (f", fee ${fee:,.2f}" if fee else "")
+                                 + (f", in {book['name']}" if len(own) > 1 else ""))
         elif kind == "create_alert":
             inst = _resolve(proposal.get("instrument"), tradable=False)
             if not inst:
@@ -183,7 +194,7 @@ async def execute(action: dict, username: str) -> str:
             if q:
                 price = q.price
         t = trades.add_trade(username, p["instrument_id"], p["side"], price, p["quantity"], p["date"], p["fee"],
-                             notes="via chat", source="assistant")
+                             notes="via chat", source="assistant", portfolio_id=p.get("portfolio_id"))
         inst = registry.get(p["instrument_id"])
         return f"Logged {p['side']} {p['quantity']:g} {inst.symbol if inst else p['instrument_id']} at {price:,.6g} (trade {t['id']})."
     if kind == "create_alert":

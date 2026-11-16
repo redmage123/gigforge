@@ -262,17 +262,21 @@ async def parse_generic_csv(content: bytes) -> list[dict]:
     return trades
 
 
-async def import_trades(username: str, trades: list[dict], source: str) -> dict:
+async def import_trades(username: str, trades: list[dict], source: str, portfolio_id: str | None = None) -> dict:
     """Add parsed trades to the user's trade journal, skipping duplicates and non buy/sell rows.
 
     Returns {imported: N, duplicates_skipped: N, errors: [...]}.
     """
+    from services.portfolios import default_id
+
     existing = get_trades(username)
     if not isinstance(existing, list):
         existing = []
+    portfolio_id = portfolio_id or default_id(username)
 
     def key(t: dict) -> str:
-        return f"{t.get('instrument_id')}|{t.get('date')}|{float(t.get('quantity') or 0)}|{float(t.get('price') or 0)}"
+        return (f"{t.get('portfolio_id', portfolio_id)}|{t.get('instrument_id')}|{t.get('date')}|"
+                f"{float(t.get('quantity') or 0)}|{float(t.get('price') or 0)}")
 
     seen = {key(t) for t in existing}
     imported, duplicates, errors = 0, 0, list(trades[0].pop("_warnings", [])) if trades else []
@@ -280,11 +284,12 @@ async def import_trades(username: str, trades: list[dict], source: str) -> dict:
         if t.get("side") not in ("buy", "sell") or not t.get("quantity"):
             errors.append(f"Skipped {t.get('symbol', '?')} row on {t.get('date', '?')}: not a buy/sell trade")
             continue
-        k = key(t)
+        k = key({**t, "portfolio_id": portfolio_id})
         if k in seen:
             duplicates += 1
             continue
-        existing.append({**t, "id": str(uuid.uuid4())[:8], "source": source, "created_at": time.time()})
+        existing.append({**t, "id": str(uuid.uuid4())[:8], "source": source, "created_at": time.time(),
+                         "portfolio_id": portfolio_id})
         seen.add(k)
         imported += 1
 

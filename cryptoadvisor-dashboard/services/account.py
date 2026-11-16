@@ -89,6 +89,10 @@ async def delete_account(username: str) -> dict:
         return data, n
     removed["records"] += _rewrite_json("in_play_candidates", unmatch)
 
+    # Portfolio sharing: grants they gave (their portfolios are gone) and received
+    from services import portfolios
+    portfolios.forget_user(user)
+
     def anonymize(data):
         n = 0
         for e in data if isinstance(data, list) else []:

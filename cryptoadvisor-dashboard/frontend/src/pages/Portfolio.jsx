@@ -8,6 +8,7 @@ import LoadingSpinner from '../components/LoadingSpinner'
 import AiAnalysisButton from '../components/AiAnalysisButton'
 import AiInsightPanel from '../components/AiInsightPanel'
 import { ASSET_CLASSES, ClassBadge, classLabel, pct, price, tone, usd } from '../components/assetClass'
+import { usePortfolios } from '../hooks/usePortfolios'
 
 const CLASS_COLORS = { crypto: '#7b61ff', stock: '#4ecdc4', etf: '#00d4aa', commodity: '#ffd93d', bond: '#ff6b6b', fx: '#f78fb3' }
 
@@ -45,7 +46,7 @@ function PositionRow({ p }) {
       </td>
       <td><span className={`badge ${p.side === 'long' ? 'badge-green' : 'badge-red'}`}>{p.side.toUpperCase()}</span></td>
       <td>{Math.abs(p.quantity)}</td>
-      <td className="muted">{price(p.avg_price)}</td>
+      <td className="muted">{p.avg_price == null ? 'mixed' : price(p.avg_price)}</td>
       <td>
         {p.price_available ? price(p.price) : <span className="muted">unavailable</span>}
         {p.change_pct != null && <div className={tone(p.change_pct)} style={{ fontSize: '0.75rem' }}>{pct(p.change_pct)} today</div>}
@@ -63,6 +64,7 @@ function Portfolio() {
   const { data: pf, loading, refetch } = useFetch('/api/trades/portfolio')
   const [aiInsight, setAiInsight] = useState(null)
   const [aiInsightLoading, setAiInsightLoading] = useState(false)
+  const { label, selected, setCurrent, canWrite } = usePortfolios()
 
   const positions = pf?.positions || []
   const closed = pf?.closed || []
@@ -72,7 +74,11 @@ function Portfolio() {
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
-        <h1 style={{ margin: 0 }}>Portfolio</h1>
+        <h1 style={{ margin: 0 }}>{label}</h1>
+        {selected?.client_name && <span className="muted">{selected.client_name}</span>}
+        {selected && selected.role !== 'owner' && (
+          <span className="badge badge-blue">{selected.owner}'s · {selected.role === 'viewer' ? 'view only' : 'manager'}</span>
+        )}
         <AiAnalysisButton endpoint="/api/ai/copilot/portfolio" body={{}} label="AI Analysis" onResult={(text) => setAiInsight(text)} />
         <button type="button" className="btn btn-sm btn-ghost" onClick={refetch}>Refresh prices</button>
       </div>
@@ -94,10 +100,10 @@ function Portfolio() {
       {loading && !pf ? <LoadingSpinner /> : positions.length === 0 && closed.length === 0 ? (
         <Card title="Holdings">
           <p className="muted">No holdings yet. Your portfolio is built from the trades you log: stocks, ETFs, crypto, commodity and bond futures.</p>
-          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+          {canWrite && <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
             <Link className="btn" to="/trades">Add holding (log a trade)</Link>
             <Link className="btn btn-secondary" to="/csv-import">Import trades from CSV</Link>
-          </div>
+          </div>}
         </Card>
       ) : (
         <>
@@ -107,6 +113,28 @@ function Portfolio() {
             <StatCard value={usd(t.unrealized_pnl, { sign: true })} label="Unrealized P&L" />
             <StatCard value={usd(t.realized_pnl, { sign: true })} label="Realized P&L (after fees)" />
           </div>
+
+          {pf.portfolios && (
+            <Card title="By portfolio" style={{ marginBottom: "1rem" }}>
+              <div style={{ overflowX: 'auto' }}>
+                <table className="data-table">
+                  <thead><tr>{['Portfolio', 'Positions', 'Value', 'Today', 'Unrealized', 'Realized'].map((h) => <th key={h}>{h}</th>)}</tr></thead>
+                  <tbody>
+                    {pf.portfolios.map((b) => (
+                      <tr key={b.id}>
+                        <td><button type="button" className="btn btn-sm btn-ghost" style={{ padding: 0 }} onClick={() => setCurrent(b.id)}><strong>{b.name}</strong></button></td>
+                        <td>{b.positions}</td>
+                        <td>{usd(b.totals.market_value)}</td>
+                        <td className={tone(b.totals.day_pnl)}>{usd(b.totals.day_pnl, { sign: true })}</td>
+                        <td className={tone(b.totals.unrealized_pnl)}>{usd(b.totals.unrealized_pnl, { sign: true })}</td>
+                        <td className={tone(b.totals.realized_pnl)}>{usd(b.totals.realized_pnl, { sign: true })}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          )}
 
           <Card title="Allocation by asset class">
             <Allocation byClass={pf.by_class} />

@@ -8,6 +8,7 @@ import Login from './pages/Login'
 import Register from './pages/Register'
 import { ToastProvider } from './components/Toast'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
+import { PortfolioProvider } from './hooks/usePortfolios'
 
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 const Technical = lazy(() => import('./pages/Technical'))
@@ -48,6 +49,7 @@ const InstrumentDetail = lazy(() => import('./pages/InstrumentDetail'))
 const Memory = lazy(() => import('./pages/Memory'))
 const Search = lazy(() => import('./pages/Search'))
 const CarbonDesk = lazy(() => import('./pages/CarbonDesk'))
+const Portfolios = lazy(() => import('./pages/Portfolios'))
 
 export const AuthContext = createContext(null)
 
@@ -114,10 +116,11 @@ function App() {
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
-            <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
+            <Route path="/" element={<ProtectedRoute><PortfolioProvider><Layout /></PortfolioProvider></ProtectedRoute>}>
               <Route index element={<Dashboard />} />
               <Route path="technical" element={<Technical />} />
               <Route path="portfolio" element={<Portfolio />} />
+              <Route path="portfolios" element={<Portfolios />} />
               <Route path="wallet" element={<Wallet />} />
               <Route path="alerts" element={<Alerts />} />
               <Route path="notifications" element={<Notifications />} />

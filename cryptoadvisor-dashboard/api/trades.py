@@ -8,6 +8,7 @@ from services import market
 from services.market import registry
 from services.trades import add_trade, calculate_pnl, get_trades, portfolio, remove_trade
 from services.user_data import get_username
+from api.portfolios import scope_of, writable
 
 router = APIRouter()
 
@@ -21,12 +22,14 @@ class TradeCreate(BaseModel):
     date: str = ""
     fee: float = 0
     notes: str = ""
+    portfolio_id: str | None = None  # needed only when the combined view is selected
 
 
 @router.get("/")
 async def list_trades(request: Request):
     await registry.ensure_loaded()
-    rows = get_trades(get_username(request))
+    scope = scope_of(request)
+    rows = get_trades(scope.owner, scope.portfolio_ids)
     for t in rows:
         inst = registry.get(t["instrument_id"])
         t["name"] = inst.name if inst else t["instrument_id"]
@@ -47,26 +50,35 @@ async def create_trade(request: Request, trade: TradeCreate):
         return JSONResponse({"error": f"Unknown instrument '{iid or trade.coin_id}'. Pick one from the search list."}, status_code=400)
     if not inst.tradable:
         return JSONResponse({"error": f"{inst.name} is a reference series and can't be traded."}, status_code=400)
+    scope = scope_of(request)
+    pid = writable(scope, trade.portfolio_id)
     try:
-        return add_trade(get_username(request), inst.id, trade.side.lower(), trade.price, trade.quantity,
-                         trade.date, trade.fee, trade.notes)
+        return add_trade(scope.owner, inst.id, trade.side.lower(), trade.price, trade.quantity,
+                         trade.date, trade.fee, trade.notes, source="manual" if scope.owner == get_username(request)
+                         else f"by:{get_username(request)}", portfolio_id=pid)
     except ValueError as exc:
         return JSONResponse({"error": str(exc)}, status_code=400)
 
 
 @router.delete("/{trade_id}")
 async def delete_trade(request: Request, trade_id: str):
-    if not remove_trade(get_username(request), trade_id):
+    scope = scope_of(request)
+    writable(scope, None if scope.combined else scope.single)
+    if not remove_trade(scope.owner, trade_id, scope.portfolio_ids):
         return JSONResponse({"error": "Trade not found"}, status_code=404)
     return {"status": "removed"}
 
 
 @router.get("/pnl")
 async def pnl(request: Request):
-    return await calculate_pnl(get_username(request))
+    scope = scope_of(request)
+    return await calculate_pnl(scope.owner, scope.portfolio_ids)
 
 
 @router.get("/portfolio")
 async def full_portfolio(request: Request):
     """Open and closed positions, realized/unrealized/day P&L, totals per asset class."""
-    return await portfolio(get_username(request))
+    scope = scope_of(request)
+    out = await portfolio(scope.owner, scope.portfolio_ids)
+    out["scope"] = {"combined": scope.combined, "portfolio_id": scope.single, "role": scope.role, "owner": scope.owner}
+    return out

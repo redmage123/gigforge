@@ -36,9 +36,9 @@ def aligned_returns(closes: dict[str, pd.Series]) -> pd.DataFrame:
     return pd.DataFrame(closes).dropna().pct_change().dropna()
 
 
-async def calculate_risk_metrics(username: str, days: int = 90) -> dict:
-    """Calculate risk metrics for the user's portfolio."""
-    pnl = [p for p in await calculate_pnl(username) if p.get("market_value") is not None]
+async def calculate_risk_metrics(username: str, days: int = 90, portfolio_ids=None) -> dict:
+    """Calculate risk metrics for the user's portfolio (or the given portfolios combined)."""
+    pnl = [p for p in await calculate_pnl(username, portfolio_ids) if p.get("market_value") is not None]
     if not pnl:
         return {"error": "No priced positions to analyze"}
 

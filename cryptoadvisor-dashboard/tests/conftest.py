@@ -46,3 +46,13 @@ async def desk_client(desk_db, monkeypatch):
         client.cookies.set("access_token", token)
         client.cookies.set("csrf_token", "t" * 64)
         yield client, {"X-CSRF-Token": "t" * 64}
+
+
+@pytest.fixture(autouse=True)
+def _isolated_user_data(tmp_path, monkeypatch):
+    """Per-user JSON files go to a temp dir, never the app's data volume (tests also run in the
+    production container)."""
+    from services import portfolios, user_data
+
+    monkeypatch.setattr(user_data, "DATA_DIR", tmp_path / "data")
+    monkeypatch.setattr(portfolios, "GRANTS_FILE", tmp_path / "data" / "portfolio_grants.json")

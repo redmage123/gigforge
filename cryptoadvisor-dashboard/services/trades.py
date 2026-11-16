@@ -48,9 +48,20 @@ def normalize_trade(t: dict) -> dict:
     return t
 
 
-def get_trades(username: str) -> list[dict]:
+def get_trades(username: str, portfolio_ids=None) -> list[dict]:
+    """The user's trades, optionally only those in `portfolio_ids`. Trades from before portfolios
+    existed belong to the default portfolio."""
+    from services.portfolios import default_id
+
     raw = load_user_data(username, NAMESPACE)
-    return [normalize_trade(t) for t in raw] if isinstance(raw, list) else []
+    rows = [normalize_trade(t) for t in raw] if isinstance(raw, list) else []
+    if any(not t.get("portfolio_id") for t in rows):
+        default = default_id(username)
+        for t in rows:
+            t["portfolio_id"] = t.get("portfolio_id") or default
+    if portfolio_ids is not None:
+        rows = [t for t in rows if t["portfolio_id"] in portfolio_ids]
+    return rows
 
 
 def save_trades(username: str, trades: list[dict]) -> None:
@@ -58,7 +69,8 @@ def save_trades(username: str, trades: list[dict]) -> None:
 
 
 def add_trade(username: str, instrument_id: str, side: str, price: float, quantity: float,
-              date: str = "", fee: float = 0, notes: str = "", source: str = "manual") -> dict:
+              date: str = "", fee: float = 0, notes: str = "", source: str = "manual",
+              portfolio_id: str | None = None) -> dict:
     split_id(instrument_id)  # raises ValueError on a malformed id
     if side not in ("buy", "sell"):
         raise ValueError("side must be buy or sell")
@@ -70,14 +82,20 @@ def add_trade(username: str, instrument_id: str, side: str, price: float, quanti
         "quantity": quantity, "date": date or time.strftime("%Y-%m-%d"), "fee": fee, "notes": notes[:500],
         "source": source, "created_at": time.time(),
     })
+    if portfolio_id:
+        entry["portfolio_id"] = portfolio_id
+    else:
+        from services.portfolios import default_id
+
+        entry["portfolio_id"] = default_id(username)
     trades.append(entry)
     save_trades(username, trades)
     return entry
 
 
-def remove_trade(username: str, trade_id: str) -> bool:
+def remove_trade(username: str, trade_id: str, portfolio_ids=None) -> bool:
     trades = get_trades(username)
-    kept = [t for t in trades if t["id"] != trade_id]
+    kept = [t for t in trades if not (t["id"] == trade_id and (portfolio_ids is None or t["portfolio_id"] in portfolio_ids))]
     save_trades(username, kept)
     return len(kept) != len(trades)
 
@@ -196,25 +214,81 @@ def value_positions(positions: dict[str, dict], prices: dict[str, dict], instrum
             "by_class": {k: rnd(v) for k, v in sorted(by_class.items())}}
 
 
-async def portfolio(username: str) -> dict:
-    """Positions with live prices, P&L by asset class, totals."""
+def merge_valued(parts: dict[str, dict]) -> dict:
+    """Combine per-portfolio valuations into one view. Each portfolio is replayed on its own first:
+    a sale in one client's account must never close (or set the cost basis of) another's position."""
+    open_by, closed_by = {}, {}
+    num = ("quantity", "market_value", "cost_basis", "unrealized_pnl", "day_pnl", "realized_pnl", "fees", "trades",
+           "current_value")
+    for pid, out in parts.items():
+        for row in out["positions"] + out["closed"]:
+            m = open_by.setdefault(row["instrument_id"], {**row, **{k: None if row.get(k) is None else 0 for k in num},
+                                                          "holdings": [], "_cost_qty": 0.0})
+            for k in num:
+                if row.get(k) is not None:
+                    m[k] = (m[k] or 0) + row[k]
+            if row["quantity"]:
+                m["holdings"].append({"portfolio_id": pid, "quantity": row["quantity"]})
+                m["_cost_qty"] += abs(row["quantity"]) * row["avg_price"]
+            m["first_date"] = min(filter(None, [m.get("first_date"), row.get("first_date")]), default=None)
+            m["last_date"] = max(filter(None, [m.get("last_date"), row.get("last_date")]), default=None)
+    positions, closed = [], []
+    for m in open_by.values():
+        q = m["quantity"] or 0
+        sides = {h["quantity"] > 0 for h in m["holdings"]}
+        m["avg_price"] = m.pop("_cost_qty") / sum(abs(h["quantity"]) for h in m["holdings"]) if len(sides) == 1 else None
+        m["side"] = "long" if q > 1e-12 else "short" if q < -1e-12 else "flat"
+        if m["unrealized_pnl"] is not None and m.get("cost_basis"):
+            m["unrealized_pct"] = round(m["unrealized_pnl"] / m["cost_basis"] * 100, 2)
+        for k in ("market_value", "cost_basis", "unrealized_pnl", "day_pnl", "realized_pnl", "fees", "current_value"):
+            if isinstance(m.get(k), float):
+                m[k] = round(m[k], 2)
+        (positions if m["holdings"] else closed).append(m)
+    totals, by_class = {}, {}
+    for out in parts.values():
+        for k, v in out["totals"].items():
+            totals[k] = round(totals.get(k, 0) + v, 2)
+        for cls, c in out["by_class"].items():
+            b = by_class.setdefault(cls, {})
+            for k, v in c.items():
+                b[k] = round(b.get(k, 0) + v, 2)
+    positions.sort(key=lambda r: abs(r["market_value"] or r.get("cost_basis") or 0), reverse=True)
+    closed.sort(key=lambda r: r["last_date"] or "", reverse=True)
+    return {"positions": positions, "closed": closed, "totals": totals, "by_class": dict(sorted(by_class.items()))}
+
+
+async def portfolio(username: str, portfolio_ids=None) -> dict:
+    """Positions with live prices, P&L by asset class, totals. Several portfolios -> combined view
+    with a per-portfolio breakdown."""
     from services import market
+    from services.portfolios import list_own
 
     await registry.ensure_loaded()
-    trades = get_trades(username)
+    trades = get_trades(username, portfolio_ids)
     ids = sorted({t["instrument_id"] for t in trades})
     instruments = {i: (registry.get(i).to_dict() if registry.get(i) else {}) for i in ids}
-    positions = replay(trades, {i: float(d.get("multiplier") or 1.0) for i, d in instruments.items()})
-    open_ids = [i for i, p in positions.items() if p["qty"] != 0]
+    mult = {i: float(d.get("multiplier") or 1.0) for i, d in instruments.items()}
+    pids = list(portfolio_ids) if portfolio_ids is not None else sorted({t["portfolio_id"] for t in trades})
+    replays = {pid: replay([t for t in trades if t["portfolio_id"] == pid], mult) for pid in pids}
+    open_ids = sorted({i for pos in replays.values() for i, p in pos.items() if p["qty"] != 0})
     quotes = {k: q.to_dict() for k, q in (await market.quotes(open_ids)).items()} if open_ids else {}
     currencies = {d.get("currency") for d in instruments.values() if d.get("currency") not in (None, "USD")}
     fx_usd = await market.usd_per_unit(currencies) if currencies else {}
-    out = value_positions(positions, quotes, instruments, fx_usd=fx_usd)
+    parts = {pid: value_positions(pos, quotes, instruments, fx_usd=fx_usd) for pid, pos in replays.items()}
+    if len(parts) == 1:
+        out = next(iter(parts.values()))
+    elif not parts:
+        out = value_positions({}, {}, {})
+    else:
+        out = merge_valued(parts)
+        names = {r["id"]: r["name"] for r in list_own(username)}
+        out["portfolios"] = [{"id": pid, "name": names.get(pid, pid), "totals": p["totals"],
+                              "positions": len(p["positions"])} for pid, p in parts.items()]
     out["as_of"] = time.time()
     out["trade_count"] = len(trades)
     return out
 
 
-async def calculate_pnl(username: str) -> list[dict]:
+async def calculate_pnl(username: str, portfolio_ids=None) -> list[dict]:
     """Open positions only (legacy shape used by risk, net worth and history snapshots)."""
-    return (await portfolio(username))["positions"]
+    return (await portfolio(username, portfolio_ids))["positions"]

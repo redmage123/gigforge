@@ -11,6 +11,14 @@ from services.csv_import import (
 
 router = APIRouter()
 
+
+def _target(request):
+    """(owner, portfolio id) the import goes into: the selected portfolio, or the default one."""
+    from api.portfolios import scope_of, writable
+
+    scope = scope_of(request)
+    return scope.owner, writable(scope, None if scope.combined else scope.single)
+
 PARSERS = {"binance": parse_binance_csv, "coinbase": parse_coinbase_csv, "kraken": parse_kraken_csv,
            "generic": parse_generic_csv}
 MAX_BYTES = 5_000_000
@@ -22,7 +30,7 @@ async def import_csv(
     exchange: str = Form(...),
     file: UploadFile = File(...),
 ):
-    username = request.state.user.get("sub", "")
+    username, pid = _target(request)
     parser = PARSERS.get(exchange.strip().lower())
     if not parser:
         return JSONResponse(status_code=400, content={
@@ -40,7 +48,7 @@ async def import_csv(
         return JSONResponse(status_code=400, content={
             "error": f"No trades found. Check that this is a {exchange} trade-history export "
                      "with its original column headers."})
-    result = await import_trades(username, trades, exchange.strip().lower())
+    result = await import_trades(username, trades, exchange.strip().lower(), pid)
     return {**result, "exchange": exchange, "filename": file.filename}
 
 
@@ -82,6 +90,7 @@ async def import_mapped(request: Request, file: UploadFile = File(...), mapping:
     from services.market import registry
 
     username = request.state.user.get("sub", "")
+    owner, pid = _target(request) if commit else (username, None)
     source = "".join(ch for ch in source.lower() if ch.isalnum())[:20] or "custom"
     try:
         m = json.loads(mapping)
@@ -106,6 +115,6 @@ async def import_mapped(request: Request, file: UploadFile = File(...), mapping:
     if not trades:
         return JSONResponse(status_code=400, content={"error": "No trades to import. " + "; ".join(warnings[:3])})
     trades[0]["_warnings"] = warnings
-    result = await import_trades(username, trades, source)
+    result = await import_trades(owner, trades, source, pid)
     cm.remember_mapping(username, cm.signature(headers), m)
     return {**result, "exchange": source, "filename": file.filename}

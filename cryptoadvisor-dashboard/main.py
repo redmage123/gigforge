@@ -94,6 +94,7 @@ from api.search import router as search_router
 from api.in_play import router as in_play_router
 from api.instruments import router as instruments_router
 from api.assistant import router as assistant_router
+from api.portfolios import router as portfolios_router
 from api.carbon_desk import router as carbon_desk_router, ws_router as carbon_desk_ws_router
 
 # Auth router (JSON API)
@@ -245,6 +246,7 @@ app.include_router(search_router, prefix="/api/search", tags=["search"])
 app.include_router(in_play_router, prefix="/api/in-play", tags=["in-play"])
 app.include_router(instruments_router, prefix="/api/instruments", tags=["instruments"])
 app.include_router(assistant_router, prefix="/api/assistant", tags=["assistant"])
+app.include_router(portfolios_router, prefix="/api/portfolios", tags=["portfolios"])
 app.include_router(carbon_desk_router, prefix="/api/carbon-desk", tags=["carbon-desk"])
 app.include_router(carbon_desk_ws_router, tags=["carbon-desk"])
 

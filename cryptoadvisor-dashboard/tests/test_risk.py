@@ -51,7 +51,7 @@ def test_stock_portfolio_volatility_uses_trading_days():
     async def candles(iid, tf, n):
         return _candles(closes) if iid == "stock:AAPL" else []
 
-    async def pnl(user):
+    async def pnl(user, portfolio_ids=None):
         return [{"instrument_id": "stock:AAPL", "market_value": 10_000.0}]
 
     with patch.object(risk.market, "candles", candles), patch.object(risk, "calculate_pnl", pnl):
@@ -71,7 +71,7 @@ def test_var_scales_with_gross_exposure():
     async def candles(iid, tf, n):
         return _candles(a if iid == "crypto:BTC" else b if iid == "crypto:ETH" else {})
 
-    async def pnl(user):  # long 10k BTC, short 9k ETH: net 1k, gross 19k
+    async def pnl(user, portfolio_ids=None):  # long 10k BTC, short 9k ETH: net 1k, gross 19k
         return [{"instrument_id": "crypto:BTC", "market_value": 10_000.0},
                 {"instrument_id": "crypto:ETH", "market_value": -9_000.0}]
 

@@ -9,6 +9,7 @@ import AiAnalysisButton from '../components/AiAnalysisButton'
 import AiInsightPanel from '../components/AiInsightPanel'
 import InstrumentPicker from '../components/InstrumentPicker'
 import { ClassBadge, price as fmtPrice, usd, tone } from '../components/assetClass'
+import { usePortfolios } from '../hooks/usePortfolios'
 
 const today = () => new Date().toISOString().split('T')[0]
 
@@ -27,6 +28,9 @@ export default function Trades() {
   const [notice, setNotice] = useState('')
   const [aiInsight, setAiInsight] = useState(null)
   const [aiInsightLoading, setAiInsightLoading] = useState(false)
+  const { combined, own, canWrite, label, nameOf } = usePortfolios()
+  const [bookId, setBookId] = useState('')
+  const book = bookId || own.find((p) => p.default)?.id || ''
 
   // "Log trade" links from an instrument page arrive as /trades?instrument=stock:AAPL
   useEffect(() => {
@@ -58,9 +62,9 @@ export default function Trades() {
     try {
       await api.post('/api/trades/', {
         instrument_id: inst.id, side, quantity: parseFloat(quantity), price: parseFloat(tradePrice),
-        fee: fee ? parseFloat(fee) : 0, date,
+        fee: fee ? parseFloat(fee) : 0, date, ...(combined ? { portfolio_id: book } : {}),
       })
-      setNotice(`Logged: ${side} ${quantity} ${inst.symbol} @ ${tradePrice}`)
+      setNotice(`Logged: ${side} ${quantity} ${inst.symbol} @ ${tradePrice}${combined ? ` in ${nameOf(book)}` : ''}`)
       setQuantity('')
       setTradePrice('')
       setFee('')
@@ -92,7 +96,7 @@ export default function Trades() {
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
-        <h2 style={{ margin: 0 }}>Trade Journal</h2>
+        <h2 style={{ margin: 0 }}>Trade Journal <span className="muted" style={{ fontSize: '0.9rem', fontWeight: 400 }}>· {label}</span></h2>
         <AiAnalysisButton endpoint="/api/ai/trades/analyze" body={{}} label="Analyze My Trades" onResult={(text) => setAiInsight(text)} />
         <AiAnalysisButton endpoint="/api/ai/trades/suggest" body={{}} label="Get Trade Suggestions" onResult={(text) => setAiInsight(text)} />
       </div>
@@ -118,6 +122,9 @@ export default function Trades() {
         <StatCard value={String(trades.length)} label="Trades logged" />
       </div>
 
+      {!canWrite ? (
+        <Card><p className="muted" style={{ margin: 0 }}>You have view-only access to this portfolio.</p></Card>
+      ) : (
       <Card title="Add Trade">
         <form onSubmit={addTrade}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', alignItems: 'end' }}>
@@ -125,6 +132,14 @@ export default function Trades() {
               <label htmlFor="trade-instrument">Instrument</label>
               <InstrumentPicker id="trade-instrument" value={inst} onChange={setInst} />
             </div>
+            {combined && (
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label htmlFor="trade-book">Portfolio</label>
+                <select id="trade-book" className="input" value={book} onChange={(e) => setBookId(e.target.value)}>
+                  {own.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </div>
+            )}
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label htmlFor="trade-side">Side</label>
               <select id="trade-side" className="input" value={side} onChange={(e) => setSide(e.target.value)}>
@@ -171,9 +186,10 @@ export default function Trades() {
         {error && <p className="negative" style={{ marginTop: '0.75rem' }}>{error}</p>}
         {notice && <p className="positive" style={{ marginTop: '0.75rem' }}>{notice}</p>}
         <p className="muted" style={{ fontSize: '0.8rem', marginBottom: 0 }}>
-          Many trades? <Link to="/csv-import">Import a CSV</Link> from Binance, Coinbase, Kraken, or any broker in the generic format.
+          Many trades? <Link to="/csv-import">Import a CSV</Link> from Binance, BTCC, Coinbase, Kraken, or any other broker.
         </p>
       </Card>
+      )}
 
       <Card title="Trade History" className="mt-1">
         {loading ? <LoadingSpinner /> : trades.length === 0 ? (
@@ -182,12 +198,13 @@ export default function Trades() {
           <div style={{ overflowX: 'auto' }}>
             <table className="data-table">
               <thead>
-                <tr>{['Date', 'Instrument', 'Side', 'Quantity', 'Price', 'Value', 'Fee', ''].map((h) => <th key={h}>{h}</th>)}</tr>
+                <tr>{['Date', ...(combined ? ['Portfolio'] : []), 'Instrument', 'Side', 'Quantity', 'Price', 'Value', 'Fee', ''].map((h) => <th key={h}>{h}</th>)}</tr>
               </thead>
               <tbody>
                 {trades.map((t) => (
                   <tr key={t.id}>
                     <td className="muted" style={{ whiteSpace: 'nowrap' }}>{String(t.date || '').slice(0, 10)}</td>
+                    {combined && <td style={{ fontSize: '0.85rem' }}>{nameOf(t.portfolio_id)}</td>}
                     <td>
                       <Link to={`/i/${encodeURIComponent(t.instrument_id)}`} style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
                         <ClassBadge cls={t.asset_class} /> <strong>{t.symbol}</strong>
@@ -201,7 +218,7 @@ export default function Trades() {
                       ? <span className="muted">{(t.quantity * t.price).toLocaleString(undefined, { maximumFractionDigits: 0 })} {t.instrument_id.slice(-3)}</span>
                       : usd(t.quantity * t.price * (t.multiplier || 1))}</td>
                     <td className="muted">{t.fee ? usd(t.fee) : '--'}</td>
-                    <td><button type="button" className="btn btn-sm btn-ghost" onClick={() => deleteTrade(t)} aria-label={`Delete ${t.side} ${t.symbol} trade`}>Delete</button></td>
+                    <td>{canWrite && <button type="button" className="btn btn-sm btn-ghost" onClick={() => deleteTrade(t)} aria-label={`Delete ${t.side} ${t.symbol} trade`}>Delete</button>}</td>
                   </tr>
                 ))}
               </tbody>

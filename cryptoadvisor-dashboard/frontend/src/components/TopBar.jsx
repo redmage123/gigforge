@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import NotificationBell from './NotificationBell'
 import InstrumentPicker from './InstrumentPicker'
+import { PortfolioSwitcher } from '../hooks/usePortfolios'
 
 function TopBar({ onStartGuide }) {
   const { user, logout } = useAuth()
@@ -51,6 +52,7 @@ function TopBar({ onStartGuide }) {
         </div>
       </div>
       <div className="topbar-right" ref={menuRef}>
+        <PortfolioSwitcher />
         <NotificationBell />
         <button
           className="guide-help-btn"

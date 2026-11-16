@@ -5,11 +5,17 @@ function getCookie(name) {
   return match ? match[2] : '';
 }
 
+// The portfolio selected in the top bar ("all" = own portfolios combined). Sent with every request
+// so portfolio-aware endpoints (trades, P&L, risk, performance, import) follow the switcher.
+let portfolioScope = 'all';
+export const setPortfolioScope = (id) => { portfolioScope = id || 'all'; };
+export const getPortfolioScope = () => portfolioScope;
+
 async function request(path, options = {}) {
   const method = options.method || 'GET';
   // FormData sets its own multipart Content-Type (with boundary)
   const isForm = typeof FormData !== 'undefined' && options.body instanceof FormData;
-  const headers = { ...(isForm ? {} : { 'Content-Type': 'application/json' }), ...options.headers };
+  const headers = { ...(isForm ? {} : { 'Content-Type': 'application/json' }), 'X-Portfolio': portfolioScope, ...options.headers };
 
   // Attach CSRF token for state-changing requests
   if (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {

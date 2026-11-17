@@ -10,7 +10,7 @@ personal accounts. Firms are optional team accounts that own portfolios, with ro
 | Component | Detail |
 |---|---|
 | Web app | FastAPI (Python 3.12) + React SPA, one container `assetadvisor-app`, published only on 127.0.0.1:8050 |
-| Edge | Cloudflare (TLS, DDoS) → nginx on the host → app |
+| Edge | Cloudflare (TLS, DDoS, Web Analytics page-load beacon) → nginx on the host → app |
 | Database | PostgreSQL 16, container `assetadvisor-db` on a private Docker network, no published port |
 | Data at rest | Postgres volume; per-user records (JSONB), statements (bytea), audit events, firms, identities, broker connections |
 | Secrets | `/opt/ai-elevate/credentials/assetadvisor*.env` (owner-only): DB password, JWT signing key, Fernet encryption key, OAuth/Plaid/SnapTrade keys |
@@ -25,7 +25,7 @@ personal accounts. Firms are optional team accounts that own portfolios, with ro
 - No payment card data. No government IDs.
 
 ## Third parties (subservice organizations / vendors)
-Hetzner (hosting), Cloudflare (edge), Anthropic (AI), market data (Binance, Yahoo Finance, CoinGecko),
+Hetzner (hosting), Cloudflare (edge, web analytics), Anthropic (AI), market data (Binance, Yahoo Finance, CoinGecko),
 optional: Google / Microsoft (sign-in), Alpaca, Plaid, SnapTrade (broker data), customers' SAML identity providers.
 
 ## Boundaries and current limitation

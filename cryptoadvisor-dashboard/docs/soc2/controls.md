@@ -20,7 +20,7 @@ Status: **Implemented** (in production, evidence available) · **Partial** · **
 | 6.7 | Encryption in transit: TLS at Cloudflare; HSTS | Implemented | middleware/security_headers.py |
 | 6.7b | Encryption at rest of secrets (broker credentials) with Fernet; key held outside the data volume and backups | Implemented | services/crypto_utils.py, ASSETADVISOR_ENCRYPTION_KEY |
 | 6.7c | Disk/volume encryption of database and backups | **Gap** | Hetzner volume not encrypted; see hosting plan |
-| 6.8 | Browser protections: CSP (enforced), X-Frame-Options DENY, nosniff, referrer and permissions policies; output escaping of AI text | Implemented | middleware/security_headers.py, components/AiInsightPanel.jsx |
+| 6.8 | Browser protections: CSP (enforced; scripts only from self, Plaid and Cloudflare Web Analytics, never inline), X-Frame-Options DENY, nosniff, referrer and permissions policies; output escaping of AI text | Implemented | middleware/security_headers.py, tests/test_security_headers.py, components/AiInsightPanel.jsx |
 | 6.x | Infrastructure access limited to named administrators | **Gap** | Shared host with automation agents (hosting plan) |
 
 ## CC7 System operations

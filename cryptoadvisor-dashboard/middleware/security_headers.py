@@ -1,7 +1,8 @@
 """Security headers on every response (HSTS, CSP, framing, sniffing, referrer, permissions).
 
 The Content Security Policy lists every origin the app legitimately uses: the Plaid Link widget,
-blockchain RPC endpoints the wallet pages call, and HTTPS images (coin logos). CSP_MODE=report sends
+blockchain RPC endpoints the wallet pages call, HTTPS images (coin logos), and Cloudflare Web Analytics
+(Cloudflare injects its beacon script into pages; it reports page-load timings to cloudflareinsights.com). CSP_MODE=report sends
 it as Content-Security-Policy-Report-Only (violations appear in the browser console) for testing
 changes; the default enforces it.
 """
@@ -14,11 +15,11 @@ RPC = ("https://polygon-rpc.com https://mainnet.optimism.io https://mainnet.base
        "https://bsc-dataseed.binance.org https://arb1.arbitrum.io https://api.avax.network")
 CSP = "; ".join([
     "default-src 'self'",
-    "script-src 'self' https://cdn.plaid.com",
+    "script-src 'self' https://cdn.plaid.com https://static.cloudflareinsights.com",
     "style-src 'self' 'unsafe-inline'",          # React inline style attributes
     "img-src 'self' data: blob: https:",
     "font-src 'self' data:",
-    f"connect-src 'self' https://*.plaid.com https://api.telegram.org {RPC}",
+    f"connect-src 'self' https://*.plaid.com https://api.telegram.org https://cloudflareinsights.com {RPC}",
     "frame-src https://cdn.plaid.com https://*.plaid.com",
     "worker-src 'self' blob:",
     "object-src 'none'",

@@ -134,4 +134,4 @@ Not yet. The technical controls are in place and the formal audit is being prepa
 
 ### Who are your service providers?
 
-Hosting (Hetzner), network and TLS (Cloudflare), AI (Anthropic), market data (Binance, Yahoo Finance, CoinGecko), and, only if you use them, Google or Microsoft sign-in, Alpaca, Plaid and SnapTrade.
+Hosting (Hetzner), network, TLS and cookie-free page-load analytics (Cloudflare), AI (Anthropic), market data (Binance, Yahoo Finance, CoinGecko), and, only if you use them, Google or Microsoft sign-in, Alpaca, Plaid and SnapTrade.

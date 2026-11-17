@@ -158,6 +158,8 @@ def delete(username: str, firm_id: str, confirm_name: str) -> dict:
     firm = get(firm_id)
     if confirm_name.strip() != firm["name"]:
         raise FirmError("Type the firm's name exactly to confirm")
+    from services import brokers
+    brokers.forget(owner_key(firm_id))
     n = store.delete_owner(owner_key(firm_id))
     with db.conn() as c:
         c.execute("DELETE FROM identities WHERE provider = %s", (f"saml:{firm_id}",))

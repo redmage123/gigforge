@@ -84,6 +84,8 @@ async def delete_account(username: str) -> dict:
     portfolios.forget_user(user)
     # Firm memberships and SSO identities; audit events stay (the record) but lose the name
     firms.forget_user(user)
+    from services import brokers
+    brokers.forget(user)
     removed["records"] += audit_events.anonymize(user)
 
     def anonymize(data):

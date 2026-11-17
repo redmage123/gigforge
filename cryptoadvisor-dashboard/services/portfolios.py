@@ -156,6 +156,8 @@ def delete(owner: str, pid: str, move_to: str | None = None) -> dict:
         kept = [t for t in all_trades if t["portfolio_id"] != pid]
     trades.save_trades(owner, kept)
     cash.reassign(owner, pid, move_to)
+    from services import brokers
+    brokers.forget(owner, pid)
     with _lock:
         save_user_data(owner, NAMESPACE, [r for r in rows if r["id"] != pid])
     _drop_grants(pid)

@@ -55,6 +55,7 @@ const Allocation = lazy(() => import('./pages/Allocation'))
 const Firms = lazy(() => import('./pages/Firms'))
 const Firm = lazy(() => import('./pages/Firm'))
 const Join = lazy(() => import('./pages/Join'))
+const Connections = lazy(() => import('./pages/Connections'))
 
 export const AuthContext = createContext(null)
 
@@ -149,6 +150,7 @@ function App() {
               <Route path="performance" element={<Performance />} />
               <Route path="allocation" element={<Allocation />} />
               <Route path="firms" element={<Firms />} />
+              <Route path="connections" element={<Connections />} />
               <Route path="firm/:firmId" element={<Firm />} />
               <Route path="wallet" element={<Wallet />} />
               <Route path="alerts" element={<Alerts />} />

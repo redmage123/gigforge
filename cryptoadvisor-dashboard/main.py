@@ -97,6 +97,7 @@ from api.assistant import router as assistant_router
 from api.portfolios import router as portfolios_router
 from api.firms import router as firms_router
 from api.sso import router as sso_router
+from api.brokers import router as brokers_router
 from api.carbon_desk import router as carbon_desk_router, ws_router as carbon_desk_ws_router
 
 # Auth router (JSON API)
@@ -141,6 +142,8 @@ async def lifespan(app: FastAPI):
     from services.statements import generate_monthly
     register_task(check_drift_all, interval_seconds=6 * 3600, name="allocation_drift")  # alerts at most daily
     register_task(generate_monthly, interval_seconds=6 * 3600, name="monthly_statements")  # idempotent
+    from services.brokers import sync_all as sync_brokers
+    register_task(sync_brokers, interval_seconds=6 * 3600, name="broker_sync")
     register_task(check_and_execute_dcas, interval_seconds=3600, name="dca_executor")
 
     # Sentiment analysis background tasks
@@ -252,6 +255,7 @@ app.include_router(assistant_router, prefix="/api/assistant", tags=["assistant"]
 app.include_router(portfolios_router, prefix="/api/portfolios", tags=["portfolios"])
 app.include_router(firms_router, prefix="/api/firms", tags=["firms"])
 app.include_router(sso_router, prefix="/api/sso", tags=["sso"])
+app.include_router(brokers_router, prefix="/api/brokers", tags=["brokers"])
 app.include_router(carbon_desk_router, prefix="/api/carbon-desk", tags=["carbon-desk"])
 app.include_router(carbon_desk_ws_router, tags=["carbon-desk"])
 

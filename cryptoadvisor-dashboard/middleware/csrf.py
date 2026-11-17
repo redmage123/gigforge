@@ -1,5 +1,6 @@
 """CSRF protection middleware — validates tokens for state-changing API requests."""
 
+import re
 import secrets
 
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -22,6 +23,11 @@ class CSRFMiddleware(BaseHTTPMiddleware):
                 token = secrets.token_hex(32)
                 response.set_cookie("csrf_token", token, httponly=False, samesite="lax", secure=is_https(request.scope))
             return response
+
+        # SAML assertions arrive as a cross-site POST from the firm's identity provider; they are
+        # authenticated by the XML signature, one-time RelayState and InResponseTo instead
+        if re.fullmatch(r"/api/sso/saml/[a-z0-9-]+/acs", request.url.path):
+            return await call_next(request)
 
         # Skip public endpoints (login, register)
         public = ("/api/auth/login", "/api/auth/register", "/api/health")

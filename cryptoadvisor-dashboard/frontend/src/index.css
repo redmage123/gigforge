@@ -2993,3 +2993,11 @@ th {
 .data-table a:not(.btn):hover, .data-table a:not(.btn):focus-visible { color: var(--primary); text-decoration: underline; }
 .link-button { background: none; border: 0; padding: 0; color: var(--primary); font: inherit; font-weight: 600; cursor: pointer; text-align: left; }
 .link-button:hover, .link-button:focus-visible { text-decoration: underline; }
+
+/* Sign-in options under the password form */
+.sso-section { margin-top: 1.25rem; display: grid; gap: 0.6rem; }
+.sso-divider { display: flex; align-items: center; gap: 0.75rem; color: var(--muted); font-size: 0.8rem; }
+.sso-divider::before, .sso-divider::after { content: ""; flex: 1; border-top: 1px solid var(--border); }
+.sso-btn { display: block; text-align: center; text-decoration: none; }
+.sso-company label { display: block; font-size: 0.85rem; color: var(--muted); margin-bottom: 4px; }
+.sso-company .form-input { flex: 1; min-width: 0; }

@@ -29,13 +29,14 @@ async function downloadPdf(path, filename) {
   setTimeout(() => URL.revokeObjectURL(url), 5000)
 }
 
-function CashLedger({ canWrite, combined, own, onChange }) {
+function CashLedger({ canWrite, combined, own: books, onChange }) {
+  const own = books
   const { data, refetch } = useFetch('/api/portfolios/cash')
   const [f, setF] = useState({ type: 'deposit', amount: '', date: today(), notes: '' })
   const [book, setBook] = useState('')
   const [error, setError] = useState('')
   const rows = Array.isArray(data) ? [...data].reverse() : []
-  const defaultBook = own.find((p) => p.default)?.id
+  const defaultBook = (own.find((p) => p.default) || own[0])?.id
   const add = async (e) => {
     e.preventDefault(); setError('')
     try {
@@ -147,7 +148,7 @@ function Statements({ selected }) {
 }
 
 export default function Performance() {
-  const { label, combined, own, canWrite, selected, current } = usePortfolios()
+  const { label, combined, own, bookOptions, canWrite, selected, current } = usePortfolios()
   const [period, setPeriod] = useState('all')
   const [p, setP] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -234,7 +235,7 @@ export default function Performance() {
         </>
       )}
       <div style={{ marginTop: '1rem', display: 'grid', gap: '1rem' }}>
-        <CashLedger canWrite={canWrite} combined={combined} own={own} onChange={() => setTick((t) => t + 1)} />
+        <CashLedger canWrite={canWrite} combined={combined} own={bookOptions} onChange={() => setTick((t) => t + 1)} />
         {combined ? (
           <Card title="Statements"><p className="muted" style={{ margin: 0 }}>Pick one portfolio in the switcher to download its statements.</p></Card>
         ) : <Statements selected={selected || own[0]} />}

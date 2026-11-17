@@ -33,6 +33,7 @@ const navSections = [
       { path: '/share-portfolio', label: 'Share', icon: '\uD83D\uDD17' },
       { path: '/wallet', label: 'Crypto Wallets', icon: '\uD83D\uDCB0' },
       { path: '/onchain-pnl', label: 'On-chain P&L', icon: '\uD83D\uDCB9' },
+      { path: '/firms', label: 'Firm Accounts', icon: '\uD83C\uDFDB' },
     ],
   },
   {

@@ -77,7 +77,7 @@ function Portfolio() {
         <h1 style={{ margin: 0 }}>{label}</h1>
         {selected?.client_name && <span className="muted">{selected.client_name}</span>}
         {selected && selected.role !== 'owner' && (
-          <span className="badge badge-blue">{selected.owner}'s · {selected.role === 'viewer' ? 'view only' : 'manager'}</span>
+          <span className="badge badge-blue">{selected.firm_name || `${selected.owner}'s`} · {selected.role === 'viewer' ? 'view only' : 'can edit'}</span>
         )}
         <AiAnalysisButton endpoint="/api/ai/copilot/portfolio" body={{}} label="AI Analysis" onResult={(text) => setAiInsight(text)} />
         <button type="button" className="btn btn-sm btn-ghost" onClick={refetch}>Refresh prices</button>

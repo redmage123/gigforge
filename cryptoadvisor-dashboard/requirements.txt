@@ -25,3 +25,5 @@ nltk>=3.9.0
 anthropic==1.13.0
 psycopg[binary]>=3.2,<3.4
 psycopg-pool>=3.2,<3.4
+signxml>=4.0,<5
+lxml>=5

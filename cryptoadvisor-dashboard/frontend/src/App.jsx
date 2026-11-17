@@ -52,6 +52,9 @@ const CarbonDesk = lazy(() => import('./pages/CarbonDesk'))
 const Portfolios = lazy(() => import('./pages/Portfolios'))
 const Performance = lazy(() => import('./pages/Performance'))
 const Allocation = lazy(() => import('./pages/Allocation'))
+const Firms = lazy(() => import('./pages/Firms'))
+const Firm = lazy(() => import('./pages/Firm'))
+const Join = lazy(() => import('./pages/Join'))
 
 export const AuthContext = createContext(null)
 
@@ -60,7 +63,8 @@ export function useAuth() {
 }
 
 function ProtectedRoute({ children }) {
-  const { token } = useAuth()
+  const { token, checking } = useAuth()
+  if (checking) return <div className="loading-spinner"><div className="spinner" /></div>
   if (!token) {
     return <Navigate to="/login" replace />
   }
@@ -69,6 +73,8 @@ function ProtectedRoute({ children }) {
 
 function App() {
   const [token, setToken] = useState(() => localStorage.getItem('token'))
+  // Company sign-in (SSO) only sets the session cookie: ask the server before sending anyone to /login
+  const [checking, setChecking] = useState(() => !localStorage.getItem('token'))
   const [user, setUser] = useState(() => {
     try { return JSON.parse(localStorage.getItem('user')) } catch { return null }
   })
@@ -76,6 +82,22 @@ function App() {
   useKeyboardShortcuts()
 
   // Always refresh user data from server on mount to pick up profile changes
+  useEffect(() => {
+    if (!token) {
+      fetch('/api/auth/me', { credentials: 'include' })
+        .then(r => (r.ok ? r.json() : null))
+        .then(data => {
+          if (data?.username) {
+            setUser(data)
+            localStorage.setItem('user', JSON.stringify(data))
+            setToken('cookie-session')
+          }
+        })
+        .catch(() => {})
+        .finally(() => setChecking(false))
+    }
+  }, [])
+
   useEffect(() => {
     if (token) {
       fetch('/api/auth/me', { credentials: 'include' })
@@ -112,12 +134,13 @@ function App() {
   }
 
   return (
-    <AuthContext.Provider value={{ token, user, login, logout }}>
+    <AuthContext.Provider value={{ token, user, login, logout, checking }}>
       <ToastProvider>
         <Suspense fallback={<div className="loading-spinner"><div className="spinner" /></div>}>
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
+            <Route path="/join/:token" element={<Join />} />
             <Route path="/" element={<ProtectedRoute><PortfolioProvider><Layout /></PortfolioProvider></ProtectedRoute>}>
               <Route index element={<Dashboard />} />
               <Route path="technical" element={<Technical />} />
@@ -125,6 +148,8 @@ function App() {
               <Route path="portfolios" element={<Portfolios />} />
               <Route path="performance" element={<Performance />} />
               <Route path="allocation" element={<Allocation />} />
+              <Route path="firms" element={<Firms />} />
+              <Route path="firm/:firmId" element={<Firm />} />
               <Route path="wallet" element={<Wallet />} />
               <Route path="alerts" element={<Alerts />} />
               <Route path="notifications" element={<Notifications />} />

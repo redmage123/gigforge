@@ -9,6 +9,11 @@ from services.auth import decode_token
 PUBLIC_PATHS = (
     "/api/auth/login",
     "/api/auth/register",
+    "/api/sso/providers",
+    "/api/sso/firm-login",
+    "/api/sso/oidc/",
+    "/api/sso/saml/",
+    "/api/firms/invite-info",
     "/api/share/view/",
     "/health",
     "/api/health",

@@ -18,6 +18,44 @@ from services.auth import (
 router = APIRouter()
 
 
+def _audit(request: Request, action: str, actor: str, **kw) -> None:
+    from middleware.client_ip import client_ip
+    from services import audit_events
+
+    audit_events.record(actor, action, ip=client_ip(request.scope), **kw)
+
+
+def issue_session(request: Request, user: dict, status_code: int = 200, extra: dict | None = None,
+                  response=None):
+    """Signed session cookie for a verified user. Lifetime: the shortest of the user's firms' session
+    lengths (24h otherwise). Also records the sign-in time for access reviews."""
+    from services import firms
+    from services.user_data import update_shared_data
+
+    hours = firms.session_hours(user["username"])
+    token = create_token(user["username"], user.get("role", "user"), hours=hours)
+    now = datetime.now(timezone.utc).isoformat()
+
+    def touch(users):
+        for u in users or []:
+            if u.get("username") == user["username"]:
+                u["last_login_at"] = now
+        return users
+    update_shared_data("users", touch, [])
+    body = {"token": token, "username": user["username"], "first_name": user.get("first_name", ""),
+            "last_name": user.get("last_name", ""), "role": user.get("role", "user"), **(extra or {})}
+    response = response or JSONResponse(status_code=status_code, content=body)
+    response.set_cookie(
+        key="access_token",
+        value=token,
+        httponly=True,
+        samesite="lax",
+        secure=is_https(request.scope),  # HTTPS visitors only send it back over HTTPS
+        max_age=int(hours * 3600),
+    )
+    return response
+
+
 class RegisterRequest(BaseModel):
     first_name: str
     last_name: str
@@ -56,41 +94,30 @@ async def register(req: RegisterRequest, request: Request):
     if not first or not last:
         return JSONResponse(status_code=400, content={"error": "First and last name are required"})
 
-    users = load_users()
-    if any(u["username"] == req.username for u in users):
-        return JSONResponse(status_code=409, content={"error": "Username already taken"})
+    from services.user_data import update_shared_data
 
-    users.append({
+    rec = {
         "username": req.username,
         "first_name": first,
         "last_name": last,
         "password_hash": hash_password(req.password),
         "role": "user",
         "created_at": datetime.now(timezone.utc).isoformat(),
-    })
-    save_users(users)
+    }
+    taken = False
 
-    token = create_token(req.username, "user")
-    response = JSONResponse(
-        status_code=201,
-        content={
-            "token": token,
-            "username": req.username,
-            "first_name": first,
-            "last_name": last,
-            "role": "user",
-            "is_new": True,
-        },
-    )
-    response.set_cookie(
-        key="access_token",
-        value=token,
-        httponly=True,
-        samesite="lax",
-        secure=is_https(request.scope),  # HTTPS visitors only send it back over HTTPS
-        max_age=86400,
-    )
-    return response
+    def add(users):  # atomic: two sign-ups can't both take the same name
+        nonlocal taken
+        users = users or []
+        if any(u["username"] == req.username for u in users):
+            taken = True
+            return users
+        return users + [rec]
+    update_shared_data("users", add, [])
+    if taken:
+        return JSONResponse(status_code=409, content={"error": "Username already taken"})
+    _audit(request, "account.register", req.username, target=req.username)
+    return issue_session(request, rec, status_code=201, extra={"is_new": True})
 
 
 @router.post("/login")
@@ -103,28 +130,20 @@ async def login(req: LoginRequest, request: Request):
 
     user = authenticate(req.username, req.password)
     if not user:
+        _audit(request, "auth.login_failed", req.username[:64], detail={"method": "password"})
         return JSONResponse(
             status_code=401,
             content={"error": "Invalid username or password"},
         )
+    from services import firms
 
-    token = create_token(user["username"], user["role"])
-    response = JSONResponse(content={
-        "token": token,
-        "username": user["username"],
-        "first_name": user.get("first_name", ""),
-        "last_name": user.get("last_name", ""),
-        "role": user["role"],
-    })
-    response.set_cookie(
-        key="access_token",
-        value=token,
-        httponly=True,
-        samesite="lax",
-        secure=is_https(request.scope),  # HTTPS visitors only send it back over HTTPS
-        max_age=86400,  # 24 hours
-    )
-    return response
+    blocked = firms.password_blocked_by(user["username"])
+    if blocked:
+        _audit(request, "auth.login_refused", user["username"], detail={"reason": "sso_required", "firm": blocked})
+        return JSONResponse(status_code=403, content={
+            "error": f"{blocked} requires single sign-on. Use \"Sign in with your company\" instead."})
+    _audit(request, "auth.login", user["username"], detail={"method": "password"})
+    return issue_session(request, user)
 
 
 @router.get("/me")
@@ -145,7 +164,10 @@ async def me(request: Request):
 
 
 @router.post("/logout")
-async def logout():
+async def logout(request: Request):
+    user = (getattr(request.state, "user", None) or {}).get("sub")
+    if user:
+        _audit(request, "auth.logout", user)
     response = JSONResponse(content={"message": "Logged out"})
     response.delete_cookie("access_token")
     return response
@@ -168,10 +190,12 @@ async def change_password(req: ChangePasswordRequest, request: Request):
     users = load_users()
     for u in users:
         if u["username"] == username:
-            if not verify_password(req.current_password, u["password_hash"]):
+            if not u.get("sso_only") and not verify_password(req.current_password, u["password_hash"]):
                 return JSONResponse(status_code=400, content={"error": "Current password is incorrect"})
             u["password_hash"] = hash_password(req.new_password)
+            u.pop("sso_only", None)
             save_users(users)
+            _audit(request, "auth.password_change", username)
             return {"message": "Password changed successfully"}
 
     return JSONResponse(status_code=404, content={"error": "User not found"})
@@ -194,10 +218,19 @@ async def delete_account_route(req: DeleteAccountRequest, request: Request):
         return JSONResponse(status_code=400, content={"error": 'Type DELETE to confirm'})
     users = load_users()
     me = next((u for u in users if u["username"] == username), None)
-    if not me or not verify_password(req.password, me["password_hash"]):
+    # Accounts created through company sign-in have no usable password: retyping the username confirms
+    sso_ok = bool(me and me.get("sso_only") and req.password == username)
+    if not me or not (sso_ok or verify_password(req.password, me["password_hash"])):
         return JSONResponse(status_code=400, content={"error": "Password is incorrect"})
     if me.get("role") == "admin" and sum(1 for u in users if u.get("role") == "admin") <= 1:
         return JSONResponse(status_code=400, content={"error": "This is the only admin account; make another admin first."})
+    from services import firms
+
+    sole = firms.sole_admin_of(username)
+    if sole:
+        return JSONResponse(status_code=400, content={
+            "error": f"You're the only admin of {', '.join(sole)}. Make someone else admin or delete the firm first."})
+    _audit(request, "account.delete", username, target=username)
     removed = await delete_account(username)
     response = JSONResponse(content={"message": "Your account and data have been deleted.", "removed": removed})
     response.delete_cookie("access_token")

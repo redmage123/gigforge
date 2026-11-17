@@ -108,9 +108,9 @@ def authenticate(username: str, password: str) -> dict | None:
     return None
 
 
-def create_token(username: str, role: str = "user") -> str:
-    """Create a signed JWT token."""
-    expire = datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRY_HOURS)
+def create_token(username: str, role: str = "user", hours: float | None = None) -> str:
+    """Create a signed JWT token (lifetime: `hours`, default JWT_EXPIRY_HOURS)."""
+    expire = datetime.now(timezone.utc) + timedelta(hours=hours or JWT_EXPIRY_HOURS)
     payload = {"sub": username, "role": role, "exp": expire}
     return jwt.encode(payload, SECRET_KEY, algorithm=JWT_ALGORITHM)
 

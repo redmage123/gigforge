@@ -1,9 +1,12 @@
 import { useState } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useNavigate, useLocation, Link } from 'react-router-dom'
 import { useAuth } from '../App'
 import PasswordInput from '../components/PasswordInput'
 
 export default function Register() {
+  const location = useLocation()
+  const rawNext = new URLSearchParams(location.search).get('next') || ''
+  const next = /^\/(?!\/)[A-Za-z0-9/_\-?=&.%]*$/.test(rawNext) ? rawNext : ''
   const navigate = useNavigate()
   const { login } = useAuth()
   const [firstName, setFirstName] = useState('')
@@ -39,8 +42,8 @@ export default function Register() {
       }
 
       login(data.token, { username: data.username, first_name: data.first_name, last_name: data.last_name, role: data.role })
-      // New user — go straight to setup wizard
-      navigate('/setup-wizard')
+      // New user: back to where they came from (e.g. a firm invitation), otherwise the setup wizard
+      navigate(next || '/setup-wizard')
     } catch {
       setError('Connection error. Please try again.')
     } finally {

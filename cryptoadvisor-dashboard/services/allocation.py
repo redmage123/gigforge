@@ -217,9 +217,11 @@ async def check_drift_all() -> None:
                 continue
             if a["breaches"]:
                 worst = max((r for r in a["rows"] if r["breach"]), key=lambda r: abs(r["drift_pct"]))
-                add_notification(owner, f"{rec['name']} has drifted from its targets",
-                                 f"{a['breaches']} allocation(s) beyond ±{a['threshold']:g} pts; largest: {worst['symbol']} "
-                                 f"{worst['current_pct']:.1f}% vs {worst['target_pct']:.1f}% target. Open Allocation to rebalance.",
-                                 category="portfolio")
+                from services.firms import recipients
+                for person in recipients(owner):
+                    add_notification(person, f"{rec['name']} has drifted from its targets",
+                                     f"{a['breaches']} allocation(s) beyond ±{a['threshold']:g} pts; largest: {worst['symbol']} "
+                                     f"{worst['current_pct']:.1f}% vs {worst['target_pct']:.1f}% target. Open Allocation to rebalance.",
+                                     category="portfolio")
                 state[rec["id"]] = time.time()
         save_user_data(owner, "drift_alerts", state)

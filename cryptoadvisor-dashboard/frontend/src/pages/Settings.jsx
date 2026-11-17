@@ -39,7 +39,7 @@ function DeleteAccount() {
       ) : (
         <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', maxWidth: 400 }}>
           <div className="form-group" style={{ marginBottom: 0 }}>
-            <label htmlFor="del-password">Your password</label>
+            <label htmlFor="del-password">Your password <span className="muted" style={{ fontWeight: 400 }}>(if you only sign in with your company, type your username)</span></label>
             <PasswordInput id="del-password" value={password} onChange={(e) => setPassword(e.target.value)} required autoComplete="current-password" />
           </div>
           <div className="form-group" style={{ marginBottom: 0 }}>
@@ -55,6 +55,42 @@ function DeleteAccount() {
           </div>
         </form>
       )}
+    </Card>
+  )
+}
+
+const PROVIDER_LABEL = (p) => (p === 'google' ? 'Google' : p === 'microsoft' ? 'Microsoft' : p.startsWith('saml:') ? 'Company sign-in (SAML)' : p)
+
+// Google / Microsoft accounts linked to this login (company SAML links are made from the firm's sign-in)
+function ConnectedSignIns() {
+  const [data, setData] = useState(null)
+  const [error, setError] = useState('')
+  const linked = new URLSearchParams(window.location.search).get('sso_linked')
+  const ssoError = new URLSearchParams(window.location.search).get('sso_error')
+  useEffect(() => { api.get('/api/sso/identities').then(setData).catch((e) => setError(e.message)) }, [])
+  const unlink = async (provider) => {
+    setError('')
+    try { setData({ ...data, ...(await api.del(`/api/sso/identities/${encodeURIComponent(provider)}`)) }) } catch (e) { setError(e.message) }
+  }
+  if (!data || (!data.providers.length && !data.identities.length)) return null
+  const have = new Set(data.identities.map((i) => i.provider))
+  return (
+    <Card title="Connected sign-ins" className="mt-1">
+      {linked && <p className="positive" style={{ marginTop: 0 }}>{PROVIDER_LABEL(linked)} is now connected.</p>}
+      {ssoError && <p className="negative" style={{ marginTop: 0 }}>{ssoError}</p>}
+      <p className="muted" style={{ fontSize: '0.85rem', marginTop: 0 }}>Sign in with these instead of your password.</p>
+      {data.identities.map((i) => (
+        <div key={i.provider} style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '4px 0', flexWrap: 'wrap' }}>
+          <strong>{PROVIDER_LABEL(i.provider)}</strong><span className="muted">{i.email}</span>
+          <button type="button" className="btn btn-sm btn-ghost" onClick={() => unlink(i.provider)}>Disconnect</button>
+        </div>
+      ))}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
+        {data.providers.filter((p) => !have.has(p.id)).map((p) => (
+          <a key={p.id} className="btn btn-sm btn-secondary" href={`/api/sso/oidc/${p.id}/start?intent=link&next=/settings`}>Connect {p.label}</a>
+        ))}
+      </div>
+      {error && <p className="negative" role="alert">{error}</p>}
     </Card>
   )
 }
@@ -338,6 +374,8 @@ export default function Settings() {
           </div>
         </form>
       </Card>
+
+      <ConnectedSignIns />
 
       {/* Security Section */}
       <Card title="Security" className="mt-1">

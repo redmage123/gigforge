@@ -187,6 +187,13 @@ def read_stored(owner: str, pid: str, month: str) -> bytes | None:
     return store.get_blob("statements", f"{_prefix(owner, pid)}{month}.pdf")
 
 
+def _firm_name(owner: str) -> str:
+    from services import firms
+
+    fid = firms.firm_of_owner(owner)
+    return (firms.get(fid) or {}).get("name", owner) if fid else owner
+
+
 async def generate_monthly(today: date | None = None) -> None:
     """After a month ends, store last month's statement for every portfolio with activity (idempotent)."""
     from services.auth import load_users
@@ -208,13 +215,15 @@ async def generate_monthly(today: date | None = None) -> None:
                     not any(date.fromisoformat(e["date"]) <= last_month_end for e in cash_ledger.get_entries(owner, [rec["id"]])):
                 continue
             try:
-                pdf = await build_pdf(owner, rec["id"], first_day, last_month_end, names.get(owner) or owner)
+                pdf = await build_pdf(owner, rec["id"], first_day, last_month_end, names.get(owner) or _firm_name(owner))
             except Exception as exc:  # noqa: BLE001
                 print(f"[statements] {owner}/{rec['id']} {month}: {exc}")
                 continue
             store.put_blob("statements", key, pdf, "application/pdf")
             made.append(rec["name"])
         if made:
-            add_notification(owner, f"{calendar.month_name[last_month_end.month]} statements are ready",
-                             f"Statements for {', '.join(made[:5])}{' and more' if len(made) > 5 else ''} are on the Performance page.",
-                             category="portfolio")
+            from services.firms import recipients
+            for person in recipients(owner):
+                add_notification(person, f"{calendar.month_name[last_month_end.month]} statements are ready",
+                                 f"Statements for {', '.join(made[:5])}{' and more' if len(made) > 5 else ''} are on the Performance page.",
+                                 category="portfolio")

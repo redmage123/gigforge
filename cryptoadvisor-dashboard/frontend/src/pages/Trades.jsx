@@ -28,9 +28,9 @@ export default function Trades() {
   const [notice, setNotice] = useState('')
   const [aiInsight, setAiInsight] = useState(null)
   const [aiInsightLoading, setAiInsightLoading] = useState(false)
-  const { combined, own, canWrite, label, nameOf } = usePortfolios()
+  const { combined, bookOptions, canWrite, label, nameOf } = usePortfolios()
   const [bookId, setBookId] = useState('')
-  const book = bookId || own.find((p) => p.default)?.id || ''
+  const book = (bookOptions.some((p) => p.id === bookId) && bookId) || (bookOptions.find((p) => p.default) || bookOptions[0])?.id || ''
 
   // "Log trade" links from an instrument page arrive as /trades?instrument=stock:AAPL
   useEffect(() => {
@@ -136,7 +136,7 @@ export default function Trades() {
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label htmlFor="trade-book">Portfolio</label>
                 <select id="trade-book" className="input" value={book} onChange={(e) => setBookId(e.target.value)}>
-                  {own.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  {bookOptions.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
               </div>
             )}

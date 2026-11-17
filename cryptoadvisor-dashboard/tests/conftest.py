@@ -61,7 +61,15 @@ def _isolated_user_data(tmp_path, monkeypatch):
     if test_db:
         assert test_db != os.environ.get("DATABASE_URL"), "TEST_DATABASE_URL must not be the app database"
         monkeypatch.setenv("DATABASE_URL", test_db)
+        from services import db
+        # Fresh schema per test (the audit table refuses TRUNCATE by design)
         with store.pool().connection() as conn:
-            conn.execute("TRUNCATE documents, blobs")
+            conn.execute("DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
+            conn.execute(store.SCHEMA)
+        db._applied = False
     else:
         monkeypatch.delenv("DATABASE_URL", raising=False)
+
+
+requires_pg = pytest.mark.skipif(not os.environ.get("TEST_DATABASE_URL"),
+                                 reason="needs TEST_DATABASE_URL (a throwaway Postgres database)")

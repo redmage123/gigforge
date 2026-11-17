@@ -61,11 +61,11 @@ def _clean(text, limit: int) -> str:
 
 
 def list_own(username: str) -> list[dict]:
-    """The user's portfolios, creating the default one on first use."""
+    """The owner's portfolios; a person (not a firm) gets a default one on first use."""
     with _lock:
         rows = load_user_data(username, NAMESPACE)
         rows = rows if isinstance(rows, list) else []
-        if not any(r.get("default") for r in rows):
+        if not username.startswith("firm-") and not any(r.get("default") for r in rows):
             rows.insert(0, {"id": _new_id(), "name": "My portfolio", "kind": "personal", "client_name": "",
                             "benchmark": "index:SPX", "notes": "", "default": True, "created_at": time.time()})
             save_user_data(username, NAMESPACE, rows)
@@ -245,13 +245,33 @@ def forget_user(username: str) -> None:
 
 # ── Scope resolution ───────────────────────────────────────────────────────
 
+FIRM_WRITE_ROLES = ("admin", "pm")
+
+
 def resolve(username: str, ref: str | None) -> Scope:
-    """"all"/None -> every own portfolio combined; an id -> that portfolio if owned or shared."""
+    """"all"/None -> every own portfolio combined; "firm:<id>" -> that firm's portfolios combined;
+    an id -> that portfolio if owned, in one of the user's firms, or shared with them."""
+    from services import firms
+
     own = list_own(username)
     if not ref or ref == "all":
         return Scope(username, tuple(r["id"] for r in own), "owner", combined=len(own) > 1)
     if any(r["id"] == ref for r in own):
         return Scope(username, (ref,), "owner")
+    if ref.startswith("firm:"):
+        fid = ref[5:]
+        role = firms.membership(username, fid) if firms.db.available() else None
+        if not role:
+            raise AccessError("Portfolio not found", 404)
+        pids = tuple(r["id"] for r in firms.firm_portfolios(fid))
+        if not pids:
+            raise AccessError("This firm has no portfolios yet", 404)
+        return Scope(firms.owner_key(fid), pids, "manager" if role in FIRM_WRITE_ROLES else "viewer", combined=True)
+    fid = firms.portfolio_firm(ref)
+    if fid:
+        role = firms.membership(username, fid)
+        if role:
+            return Scope(firms.owner_key(fid), (ref,), "manager" if role in FIRM_WRITE_ROLES else "viewer")
     entry = _load_grants().get(ref)
     m = entry and entry.get("members", {}).get(username)
     if m and get_own(entry["owner"], ref):
@@ -271,7 +291,31 @@ def write_target(scope: Scope, requested: str | None = None) -> str:
         if requested not in scope.portfolio_ids:
             raise AccessError("Portfolio not found", 404)
         return requested
+    if scope.owner.startswith("firm-"):
+        raise ValueError("Pick which firm portfolio this goes into")
     return default_id(scope.owner)
+
+
+def manage_owner(username: str, pid: str) -> str | None:
+    """Owner key whose portfolio record the user may edit, delete or share: their own, or a firm
+    portfolio where they are admin or PM."""
+    from services import firms
+
+    if get_own(username, pid):
+        return username
+    fid = firms.portfolio_firm(pid)
+    if fid and firms.membership(username, fid) in FIRM_WRITE_ROLES:
+        return firms.owner_key(fid)
+    return None
+
+
+def rehome_grants(pid: str, new_owner: str) -> None:
+    """A portfolio moved to another owner (e.g. into a firm): keep its sharing grants pointing at it."""
+    def fix(data):
+        if isinstance(data, dict) and pid in data:
+            data[pid]["owner"] = new_owner
+        return data
+    store.update(store.SHARED, "portfolio_grants", fix, {})
 
 
 def request_scope(request, username: str) -> Scope:

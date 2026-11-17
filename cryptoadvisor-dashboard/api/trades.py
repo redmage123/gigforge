@@ -52,6 +52,10 @@ async def create_trade(request: Request, trade: TradeCreate):
         return JSONResponse({"error": f"{inst.name} is a reference series and can't be traded."}, status_code=400)
     scope = scope_of(request)
     pid = writable(scope, trade.portfolio_id)
+    from services import audit_events, firms
+    audit_events.from_request(request, "trade.add", firm_id=firms.firm_of_owner(scope.owner), target=pid,
+                              detail={"instrument_id": inst.id, "side": trade.side, "quantity": trade.quantity, "price": trade.price,
+                                      "date": trade.date})
     try:
         return add_trade(scope.owner, inst.id, trade.side.lower(), trade.price, trade.quantity,
                          trade.date, trade.fee, trade.notes, source="manual" if scope.owner == get_username(request)
@@ -64,6 +68,8 @@ async def create_trade(request: Request, trade: TradeCreate):
 async def delete_trade(request: Request, trade_id: str):
     scope = scope_of(request)
     writable(scope, None if scope.combined else scope.single)
+    from services import audit_events, firms
+    audit_events.from_request(request, "trade.delete", firm_id=firms.firm_of_owner(scope.owner), target=trade_id)
     if not remove_trade(scope.owner, trade_id, scope.portfolio_ids):
         return JSONResponse({"error": "Trade not found"}, status_code=404)
     return {"status": "removed"}

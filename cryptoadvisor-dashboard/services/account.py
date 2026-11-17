@@ -80,8 +80,11 @@ async def delete_account(username: str) -> dict:
     removed["records"] += _rewrite_json("in_play_candidates", unmatch)
 
     # Portfolio sharing: grants they gave (their portfolios are gone) and received
-    from services import portfolios
+    from services import audit_events, firms, portfolios
     portfolios.forget_user(user)
+    # Firm memberships and SSO identities; audit events stay (the record) but lose the name
+    firms.forget_user(user)
+    removed["records"] += audit_events.anonymize(user)
 
     def anonymize(data):
         n = 0

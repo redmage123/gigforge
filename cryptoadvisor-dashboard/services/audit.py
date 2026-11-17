@@ -45,6 +45,9 @@ def log_event(
 ) -> None:
     """Append an audit event."""
     entries = _load_log()
+    from services import audit_events
+    audit_events.record(username or "system", action, ip=ip_address,
+                        detail=details if isinstance(details, dict) else {"details": details})
     entries.append({
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "username": username,

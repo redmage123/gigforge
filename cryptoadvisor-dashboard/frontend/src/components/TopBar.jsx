@@ -118,6 +118,9 @@ function TopBar({ onStartGuide }) {
             <button className="dropdown-item" onClick={() => { setOpen(false); onStartGuide?.() }}>
               <span className="dropdown-icon">&#10068;</span> Interactive Guide
             </button>
+            <button className="dropdown-item" onClick={() => go('/help')}>
+              <span className="dropdown-icon">&#128214;</span> Help &amp; Docs
+            </button>
 
             <div className="dropdown-divider" />
             <button className="dropdown-item dropdown-logout" onClick={handleLogout}>

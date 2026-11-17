@@ -3001,3 +3001,41 @@ th {
 .sso-btn { display: block; text-align: center; text-decoration: none; }
 .sso-company label { display: block; font-size: 0.85rem; color: var(--muted); margin-bottom: 4px; }
 .sso-company .form-input { flex: 1; min-width: 0; }
+
+/* Help & Docs */
+.help-tabs { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 0.75rem; margin: 1rem 0 1.25rem; }
+.help-tab { display: flex; flex-direction: column; gap: 0.25rem; padding: 0.8rem 1rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); color: var(--text); text-decoration: none; }
+.help-tab:hover { border-color: var(--muted); }
+.help-tab.active { border-color: var(--primary); box-shadow: inset 0 0 0 1px var(--primary); }
+.help-tab-title { font-weight: 600; display: flex; align-items: center; gap: 0.5rem; }
+.help-tab-summary { font-size: 0.8rem; color: var(--muted); line-height: 1.35; }
+.help-badge { font-size: 0.65rem; font-weight: 600; padding: 0.1rem 0.4rem; border-radius: 999px; background: rgba(123, 97, 255, 0.18); color: var(--secondary); }
+.help-layout { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 1.25rem; align-items: start; }
+.help-toc { position: sticky; top: 5rem; display: flex; flex-direction: column; gap: 0.75rem; }
+.help-toc ul { list-style: none; display: flex; flex-direction: column; gap: 0.15rem; max-height: 60vh; overflow-y: auto; }
+.help-toc-link { background: none; border: 0; padding: 0.2rem 0; color: var(--muted); font: inherit; font-size: 0.85rem; text-align: left; cursor: pointer; }
+.help-toc-link:hover, .help-toc-link:focus-visible { color: var(--primary); }
+.help-foot .help-toc-link { color: var(--primary); font-size: inherit; padding: 0; }
+.help-downloads { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.help-downloads a { text-decoration: none; }
+.help-article { padding: 1.5rem 1.75rem; line-height: 1.6; max-width: 900px; }
+.help-article .help-title { font-size: 1.6rem; margin: 0 0 0.75rem; }
+.help-article h3.help-h2 { font-size: 1.2rem; color: var(--primary); margin: 1.75rem 0 0.5rem; scroll-margin-top: 5rem; text-transform: none; letter-spacing: normal; }
+.help-article h4.help-h3 { font-size: 1rem; margin: 1.2rem 0 0.35rem; text-transform: none; letter-spacing: normal; }
+.help-article p { margin: 0 0 0.75rem; }
+.help-article ul, .help-article ol { margin: 0 0 0.85rem 1.4rem; }
+.help-article li { margin: 0.2rem 0; }
+.help-article a { color: var(--primary); overflow-wrap: anywhere; }
+.help-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85em; padding: 0.05rem 0.3rem; border-radius: 4px; background: rgba(148, 163, 184, 0.14); overflow-wrap: anywhere; }
+.help-pre { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem 1rem; overflow-x: auto; font-size: 0.8rem; line-height: 1.45; margin: 0 0 1rem; }
+.help-table-wrap { overflow-x: auto; margin: 0 0 1rem; }
+.help-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+.help-table th, .help-table td { text-align: left; vertical-align: top; padding: 0.45rem 0.6rem; border-bottom: 1px solid var(--border); }
+.help-table th { color: var(--muted); font-weight: 600; font-size: 0.8rem; }
+.help-foot { margin-top: 2rem; font-size: 0.85rem; }
+@media (max-width: 900px) {
+    .help-layout { grid-template-columns: minmax(0, 1fr); }
+    .help-toc { position: static; }
+    .help-toc ul { display: none; }
+    .help-article { padding: 1rem; }
+}

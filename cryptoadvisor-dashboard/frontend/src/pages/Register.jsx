@@ -102,7 +102,7 @@ export default function Register() {
             <PasswordInput
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="At least 6 characters"
+              placeholder="At least 10 characters"
               required
               minLength={10}
             />

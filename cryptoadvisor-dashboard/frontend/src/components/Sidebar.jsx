@@ -46,6 +46,7 @@ const navSections = [
       { path: '/tax', label: 'Tax Report', icon: '\uD83D\uDCDD' },
       { path: '/converter', label: 'Converter', icon: '\uD83D\uDCB1' },
       { path: '/exchanges', label: 'Exchanges', icon: '\uD83C\uDFE2' },
+      { path: '/help', label: 'Help & Docs', icon: '\uD83D\uDCD6' },
     ],
   },
   {

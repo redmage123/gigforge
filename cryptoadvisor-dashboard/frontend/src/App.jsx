@@ -11,6 +11,7 @@ import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { PortfolioProvider } from './hooks/usePortfolios'
 
 const Dashboard = lazy(() => import('./pages/Dashboard'))
+const Help = lazy(() => import('./pages/Help'))
 const Technical = lazy(() => import('./pages/Technical'))
 const Portfolio = lazy(() => import('./pages/Portfolio'))
 const Wallet = lazy(() => import('./pages/Wallet'))
@@ -166,6 +167,8 @@ function App() {
               <Route path="sessions" element={<Sessions />} />
               <Route path="audit-log" element={<AuditLog />} />
               <Route path="settings" element={<Settings />} />
+              <Route path="help" element={<Help />} />
+              <Route path="help/:slug" element={<Help />} />
               <Route path="ai-briefing" element={<AiBriefing />} />
               <Route path="ai-risk" element={<AiRiskReport />} />
               <Route path="ai-tax" element={<AiTaxOptimizer />} />

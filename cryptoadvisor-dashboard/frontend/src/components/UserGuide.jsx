@@ -90,7 +90,7 @@ const TOUR_STEPS = [
   {
     id: 'finish',
     title: 'You\'re All Set!',
-    body: 'Start by logging a trade or two, setting your In-Play rules, and starring what you want to watch. Reopen this guide anytime from the "?" button in the top bar.',
+    body: 'Start by logging a trade or two, setting your In-Play rules, and starring what you want to watch. Reopen this guide anytime from the "?" button in the top bar. The Quick Start, full User Guide and FAQ are under Help & Docs in the sidebar (Tools) and the user menu, to read online or download as PDF.',
     position: 'center',
     target: null,
     route: '/',

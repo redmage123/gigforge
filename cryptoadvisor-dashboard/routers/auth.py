@@ -11,7 +11,7 @@ from middleware.client_ip import is_https
 
 from services.auth import (
     authenticate, create_token, load_users, save_users, hash_password, verify_password,
-    check_lockout, record_failed_attempt, clear_attempts,
+    check_lockout, record_failed_attempt, clear_attempts, MIN_PASSWORD,
 )
 
 
@@ -80,8 +80,8 @@ async def register(req: RegisterRequest, request: Request):
     if req.password != req.confirm_password:
         return JSONResponse(status_code=400, content={"error": "Passwords do not match"})
 
-    if len(req.password) < 6:
-        return JSONResponse(status_code=400, content={"error": "Password must be at least 6 characters"})
+    if len(req.password) < MIN_PASSWORD:
+        return JSONResponse(status_code=400, content={"error": f"Password must be at least {MIN_PASSWORD} characters"})
 
     if len(req.username) < 3:
         return JSONResponse(status_code=400, content={"error": "Username must be at least 3 characters"})
@@ -184,8 +184,8 @@ async def change_password(req: ChangePasswordRequest, request: Request):
     if req.confirm_password is not None and req.new_password != req.confirm_password:
         return JSONResponse(status_code=400, content={"error": "New passwords do not match"})
 
-    if len(req.new_password) < 6:
-        return JSONResponse(status_code=400, content={"error": "Password must be at least 6 characters"})
+    if len(req.new_password) < MIN_PASSWORD:
+        return JSONResponse(status_code=400, content={"error": f"Password must be at least {MIN_PASSWORD} characters"})
 
     users = load_users()
     for u in users:

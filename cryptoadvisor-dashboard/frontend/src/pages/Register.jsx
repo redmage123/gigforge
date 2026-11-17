@@ -104,7 +104,7 @@ export default function Register() {
               onChange={(e) => setPassword(e.target.value)}
               placeholder="At least 6 characters"
               required
-              minLength={6}
+              minLength={10}
             />
           </div>
           <div className="form-group">

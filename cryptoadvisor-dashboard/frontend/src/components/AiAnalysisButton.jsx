@@ -1,5 +1,9 @@
 import { useState } from 'react'
 import { api } from '../api/client'
+// AI text can quote outside content (news, instrument names): escape it, then add only our own <strong>
+const escapeHtml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+const bold = (s) => escapeHtml(s).replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+
 
 const styles = {
   button: {
@@ -93,7 +97,7 @@ const styles = {
 function formatAiText(text) {
   if (!text) return null
   return text.split('\n').map((line, i) => {
-    const formatted = line.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+    const formatted = bold(line)
     return (
       <p key={i} style={{ margin: '0.3rem 0' }} dangerouslySetInnerHTML={{ __html: formatted }} />
     )

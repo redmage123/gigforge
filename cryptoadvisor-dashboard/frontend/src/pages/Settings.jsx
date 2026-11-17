@@ -168,8 +168,8 @@ export default function Settings() {
       setError('Passwords do not match')
       return
     }
-    if (newPassword.length < 6) {
-      setError('Password must be at least 6 characters')
+    if (newPassword.length < 10) {
+      setError('Password must be at least 10 characters')
       return
     }
     setChangingPassword(true)
@@ -356,7 +356,7 @@ export default function Settings() {
               <PasswordInput
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
-                minLength={6}
+                minLength={10}
                 required
               />
             </div>

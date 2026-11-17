@@ -8,7 +8,13 @@ _KEY_FILE = BASE_DIR / "data" / "encryption.key"
 
 
 def _get_key() -> bytes:
-    """Load or generate encryption key."""
+    """Encryption key: ASSETADVISOR_ENCRYPTION_KEY (production keeps it with the other credentials, not in
+    the data volume or its backups), else the key file (local dev), generated on first use."""
+    import os
+
+    env = os.getenv("ASSETADVISOR_ENCRYPTION_KEY")
+    if env:
+        return env.strip().encode()
     _KEY_FILE.parent.mkdir(parents=True, exist_ok=True)
     if _KEY_FILE.exists():
         return _KEY_FILE.read_bytes()

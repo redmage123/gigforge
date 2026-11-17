@@ -18,6 +18,7 @@ SECRET_FILE = DATA_DIR / "secret.key"
 
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRY_HOURS = int(os.getenv("JWT_EXPIRY_HOURS", "24"))
+MIN_PASSWORD = 10  # new passwords; existing ones keep working until changed
 
 
 def _get_secret_key() -> str:
@@ -30,7 +31,8 @@ def _get_secret_key() -> str:
     return key
 
 
-SECRET_KEY = os.getenv("JWT_SECRET", _get_secret_key())
+# The env var wins (production keeps it with the credentials); only otherwise read/create the key file
+SECRET_KEY = os.getenv("JWT_SECRET") or _get_secret_key()
 
 # Brute force protection
 _login_attempts: dict[str, list[float]] = {}

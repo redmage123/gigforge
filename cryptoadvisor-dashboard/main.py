@@ -142,6 +142,8 @@ async def lifespan(app: FastAPI):
     from services.statements import generate_monthly
     register_task(check_drift_all, interval_seconds=6 * 3600, name="allocation_drift")  # alerts at most daily
     register_task(generate_monthly, interval_seconds=6 * 3600, name="monthly_statements")  # idempotent
+    from services.audit_events import daily_integrity_check
+    register_task(daily_integrity_check, interval_seconds=24 * 3600, name="audit_integrity")
     from services.brokers import sync_all as sync_brokers
     register_task(sync_brokers, interval_seconds=6 * 3600, name="broker_sync")
     register_task(check_and_execute_dcas, interval_seconds=3600, name="dca_executor")
@@ -176,6 +178,8 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="AssetAdvisor", lifespan=lifespan)
 
 # Middleware (outermost first — RequestLogger wraps everything)
+from middleware.security_headers import SecurityHeadersMiddleware
+app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(RequestLogger)
 app.add_middleware(CSRFMiddleware)
 app.add_middleware(AuthMiddleware)

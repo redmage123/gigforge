@@ -106,3 +106,24 @@ def anonymize(username: str) -> int:
         n = c.execute("UPDATE audit_events SET actor = %s WHERE actor = %s", (ANON, username)).rowcount
         c.commit()
     return n
+
+
+async def daily_integrity_check() -> None:
+    """Scheduler: verify the hash chain; tell platform admins at once if it is broken or writes are failing."""
+    if not db.available():
+        return
+    from services.auth import load_users
+    from services.notifications import add_notification
+
+    result = verify_chain()
+    problems = []
+    if not result["ok"]:
+        problems.append(f"audit trail integrity check failed at event {result['first_problem']['id']}: "
+                        f"{result['first_problem']['problem']}")
+    if failures:
+        problems.append(f"{failures} audit event(s) could not be recorded since the last restart")
+    print(f"[audit] integrity: {result['events']} events, ok={result['ok']}, write failures={failures}")
+    for p in problems:
+        for u in load_users():
+            if u.get("role") == "admin":
+                add_notification(u["username"], "Security: audit trail problem", p, category="security")

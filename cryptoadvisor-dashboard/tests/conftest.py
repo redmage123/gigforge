@@ -54,9 +54,10 @@ def _isolated_user_data(tmp_path, monkeypatch):
     """Tests never touch real records. They also run inside the production container, where
     DATABASE_URL points at the live database: it is removed here. By default records go to files in a
     temp dir; with TEST_DATABASE_URL (a throwaway database) they go to Postgres, emptied per test."""
-    from services import store, user_data
+    from services import sessions, store, user_data
 
     monkeypatch.setattr(user_data, "DATA_DIR", tmp_path / "data")
+    sessions._reset_for_tests()
     test_db = os.environ.get("TEST_DATABASE_URL")
     if test_db:
         assert test_db != os.environ.get("DATABASE_URL"), "TEST_DATABASE_URL must not be the app database"

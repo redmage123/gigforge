@@ -145,6 +145,8 @@ async def lifespan(app: FastAPI):
     register_task(generate_monthly, interval_seconds=6 * 3600, name="monthly_statements")  # idempotent
     from services.audit_events import daily_integrity_check
     register_task(daily_integrity_check, interval_seconds=24 * 3600, name="audit_integrity")
+    from services.sessions import cleanup as cleanup_sessions
+    register_task(cleanup_sessions, interval_seconds=24 * 3600, name="session_cleanup")
     from services.brokers import sync_all as sync_brokers
     register_task(sync_brokers, interval_seconds=6 * 3600, name="broker_sync")
     register_task(check_and_execute_dcas, interval_seconds=3600, name="dca_executor")

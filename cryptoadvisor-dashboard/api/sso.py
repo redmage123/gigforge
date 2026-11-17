@@ -11,7 +11,7 @@ from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 
 from services import audit_events, firms, sso
-from services.auth import decode_token, load_users
+from services.auth import load_users, verify_session_token
 from services.db import Unavailable
 from services.user_data import get_username
 
@@ -19,7 +19,7 @@ router = APIRouter()
 
 
 def _session_user(request: Request) -> str | None:
-    payload = decode_token(request.cookies.get("access_token") or "")
+    payload = verify_session_token(request.cookies.get("access_token") or "")
     return payload.get("sub") if payload else None
 
 
@@ -40,7 +40,8 @@ def _finish(request: Request, out: dict, method: str) -> Response:
         return _fail("Your account no longer exists.")
     audit_events.record(user["username"], "auth.login", ip=client_ip(request.scope), firm_id=out.get("firm_id"),
                         detail={"method": method})
-    return issue_session(request, user, response=RedirectResponse(out.get("next") or "/", status_code=303))
+    return issue_session(request, user, response=RedirectResponse(out.get("next") or "/", status_code=303),
+                         method=method)
 
 
 @router.get("/providers")

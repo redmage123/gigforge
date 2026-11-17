@@ -1,4 +1,4 @@
-"""Relational schema (Postgres) for firms, sign-in identities, audit events and broker connections.
+"""Relational schema (Postgres) for firms, sign-in identities and sessions, audit events and broker connections.
 
 Migrations are numbered SQL steps applied in order once each and recorded in schema_migrations.
 They run when the connection pool is first used. Features built on these tables need Postgres
@@ -144,6 +144,21 @@ CREATE TABLE broker_sync_runs (
     cash_added    integer NOT NULL DEFAULT 0,
     message       text
 );
+"""),
+    (5, "sign-in sessions", """
+CREATE TABLE sessions (
+    id              text PRIMARY KEY,       -- the token's sid claim
+    username        text NOT NULL,
+    created_at      timestamptz NOT NULL DEFAULT now(),
+    expires_at      timestamptz NOT NULL,
+    last_seen_at    timestamptz NOT NULL DEFAULT now(),
+    ip              text,
+    user_agent      text,
+    method          text,                   -- password, register, google, microsoft, saml
+    revoked_at      timestamptz,
+    revoked_reason  text
+);
+CREATE INDEX sessions_username_idx ON sessions (username);
 """),
 ]
 

@@ -16,6 +16,7 @@ Status: **Implemented** (in production, evidence available) · **Partial** · **
 | 6.3 | Leaver/mover: suspend or remove members (immediate effect); last-admin guard; account deletion removes data, memberships, identities, broker connections | Implemented | firms.set_member, services/account.py |
 | 6.3b | Periodic access review recorded with a member snapshot | Implemented | firms.mark_reviewed → audit `firm.access_review` |
 | 6.6 | Sessions: signed JWT in HttpOnly, Secure, SameSite=Lax cookie; CSRF double-submit on state changes | Implemented | routers/auth.issue_session, middleware/csrf.py |
+| 6.6b | Server-side sessions: every token names a session checked on each request (API, SSO, WebSocket); users list and end their sessions; logout, password change and account deletion end sessions; operators can end all of a user's sessions | Implemented | services/sessions.py, api/user_sessions.py, tests/test_sessions.py |
 | 6.7 | Encryption in transit: TLS at Cloudflare; HSTS | Implemented | middleware/security_headers.py |
 | 6.7b | Encryption at rest of secrets (broker credentials) with Fernet; key held outside the data volume and backups | Implemented | services/crypto_utils.py, ASSETADVISOR_ENCRYPTION_KEY |
 | 6.7c | Disk/volume encryption of database and backups | **Gap** | Hetzner volume not encrypted; see hosting plan |

@@ -13,7 +13,7 @@ from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from services.auth import decode_token
+from services.auth import verify_session_token
 from services.carbon_desk import store
 from services.carbon_desk.exchange import CONTRACT_SIZE, venue
 
@@ -203,7 +203,7 @@ async def ws_carbon_desk(websocket: WebSocket):
     The client may send {"focus": "<symbol>"} to choose which contract's full
     depth and time & sales are included (quotes always cover every contract).
     """
-    payload = decode_token(websocket.cookies.get("access_token") or "")
+    payload = verify_session_token(websocket.cookies.get("access_token") or "")
     if not payload or not payload.get("sub") or not _same_origin(websocket):
         await websocket.close(code=4401)
         return

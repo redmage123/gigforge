@@ -110,17 +110,35 @@ def authenticate(username: str, password: str) -> dict | None:
     return None
 
 
-def create_token(username: str, role: str = "user", hours: float | None = None) -> str:
-    """Create a signed JWT token (lifetime: `hours`, default JWT_EXPIRY_HOURS)."""
-    expire = datetime.now(timezone.utc) + timedelta(hours=hours or JWT_EXPIRY_HOURS)
-    payload = {"sub": username, "role": role, "exp": expire}
+def create_token(username: str, role: str = "user", hours: float | None = None, *, ip: str | None = None,
+                 user_agent: str | None = None, method: str | None = None) -> str:
+    """Start a server-side session and return a signed JWT naming it (lifetime: `hours`,
+    default JWT_EXPIRY_HOURS). The token is valid only while the session is (verify_session_token)."""
+    from services import sessions
+
+    hours = hours or JWT_EXPIRY_HOURS
+    sid = sessions.create(username, hours, ip=ip, user_agent=user_agent, method=method)
+    expire = datetime.now(timezone.utc) + timedelta(hours=hours)
+    payload = {"sub": username, "role": role, "exp": expire, "sid": sid}
     return jwt.encode(payload, SECRET_KEY, algorithm=JWT_ALGORITHM)
 
 
 def decode_token(token: str) -> dict | None:
-    """Decode and validate a JWT token. Returns payload or None."""
+    """Check the signature and expiry only. Use verify_session_token to authenticate a request."""
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[JWT_ALGORITHM])
         return payload
     except JWTError:
         return None
+
+
+def verify_session_token(token: str) -> dict | None:
+    """Payload of a valid token whose session is still live (not revoked, not expired), else None.
+    Tokens issued before sessions were tracked carry no sid and are refused."""
+    from services import sessions
+
+    payload = decode_token(token) if token else None
+    if not payload or not sessions.is_active(payload.get("sid"), payload.get("sub")):
+        return None
+    sessions.touch(payload["sid"])
+    return payload

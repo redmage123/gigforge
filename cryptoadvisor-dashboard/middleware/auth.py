@@ -3,7 +3,7 @@
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
-from services.auth import decode_token
+from services.auth import verify_session_token
 
 # API paths that don't require authentication
 PUBLIC_PATHS = (
@@ -48,11 +48,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 content={"error": "Authentication required"},
             )
 
-        payload = decode_token(token)
+        payload = verify_session_token(token)
         if not payload:
             return JSONResponse(
                 status_code=401,
-                content={"error": "Invalid or expired token"},
+                content={"error": "Your session has ended. Please sign in again."},
             )
 
         # Attach user info to request state

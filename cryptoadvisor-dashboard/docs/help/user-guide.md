@@ -41,7 +41,9 @@ You can link or unlink Google and Microsoft under **Settings → Connected sign-
 
 - After 5 wrong passwords, sign-in is paused for 5 minutes.
 - Sessions use a secure cookie. Firms can shorten how long a session lasts (1 to 24 hours).
-- **Logout** (user menu) ends your session on this device. Always log out on shared computers.
+- **Active Sessions** (user menu) lists every device and browser signed in to your account: device, sign-in method, IP address, when it signed in, was last active and expires. **Sign out** ends one of them immediately; **Sign out all other devices** ends all but the one you are using.
+- **Changing your password** signs out every other device.
+- **Logout** (user menu) ends your session on this device, including any copy of it. Always log out on shared computers.
 - To change your password, use **Change Password** in the user menu.
 
 ## 2. Finding your way around

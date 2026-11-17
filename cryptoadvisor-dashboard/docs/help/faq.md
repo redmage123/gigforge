@@ -36,6 +36,10 @@ These are switched on per site. If they are not shown, they are not available ye
 
 Firms can set a shorter session length (1 to 24 hours) for their members. Sign in again.
 
+### I think someone else is signed in to my account.
+
+Open **Active Sessions** in the user menu and check the devices and IP addresses. Use **Sign out all other devices**, then change your password (which also signs out every other device). If anything looks changed, contact support.
+
 ### Is there two-factor authentication?
 
 Not yet for sign-in. It is planned.

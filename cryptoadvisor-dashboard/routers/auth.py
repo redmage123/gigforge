@@ -26,14 +26,17 @@ def _audit(request: Request, action: str, actor: str, **kw) -> None:
 
 
 def issue_session(request: Request, user: dict, status_code: int = 200, extra: dict | None = None,
-                  response=None):
+                  response=None, method: str = "password"):
     """Signed session cookie for a verified user. Lifetime: the shortest of the user's firms' session
-    lengths (24h otherwise). Also records the sign-in time for access reviews."""
+    lengths (24h otherwise). Each call starts a server-side session (Active Sessions) that can be
+    revoked. Also records the sign-in time for access reviews."""
+    from middleware.client_ip import client_ip
     from services import firms
     from services.user_data import update_shared_data
 
     hours = firms.session_hours(user["username"])
-    token = create_token(user["username"], user.get("role", "user"), hours=hours)
+    token = create_token(user["username"], user.get("role", "user"), hours=hours, ip=client_ip(request.scope),
+                         user_agent=request.headers.get("user-agent", ""), method=method)
     now = datetime.now(timezone.utc).isoformat()
 
     def touch(users):
@@ -117,7 +120,7 @@ async def register(req: RegisterRequest, request: Request):
     if taken:
         return JSONResponse(status_code=409, content={"error": "Username already taken"})
     _audit(request, "account.register", req.username, target=req.username)
-    return issue_session(request, rec, status_code=201, extra={"is_new": True})
+    return issue_session(request, rec, status_code=201, extra={"is_new": True}, method="register")
 
 
 @router.post("/login")
@@ -165,8 +168,14 @@ async def me(request: Request):
 
 @router.post("/logout")
 async def logout(request: Request):
-    user = (getattr(request.state, "user", None) or {}).get("sub")
+    from services import sessions
+
+    state = getattr(request.state, "user", None) or {}
+    user = state.get("sub")
     if user:
+        # End the session server-side too: a copy of the token stops working at once
+        if state.get("sid"):
+            sessions.revoke(user, state["sid"], reason="logout")
         _audit(request, "auth.logout", user)
     response = JSONResponse(content={"message": "Logged out"})
     response.delete_cookie("access_token")
@@ -195,8 +204,14 @@ async def change_password(req: ChangePasswordRequest, request: Request):
             u["password_hash"] = hash_password(req.new_password)
             u.pop("sso_only", None)
             save_users(users)
-            _audit(request, "auth.password_change", username)
-            return {"message": "Password changed successfully"}
+            # Anyone else signed in as this user (e.g. with the old password) is signed out
+            from services import sessions
+
+            ended = sessions.revoke_all(username, keep=user.get("sid"), reason="password_change")
+            _audit(request, "auth.password_change", username, detail={"other_sessions_ended": ended})
+            return {"message": "Password changed successfully"
+                    + (f". Signed out {ended} other session{'s' if ended != 1 else ''}." if ended else ""),
+                    "other_sessions_ended": ended}
 
     return JSONResponse(status_code=404, content={"error": "User not found"})
 

@@ -19,7 +19,7 @@ For the people who run AssetAdvisor in production. In the app this document is s
 | Database credentials | `/opt/ai-elevate/credentials/assetadvisor-db.env` |
 | Backups | `/opt/ai-elevate/backups/assetadvisor/` (nightly, 02:15 UTC) |
 
-All user records (users, portfolios, trades, cash, statements, settings) are in Postgres. The relational tables (firms, members, invitations, sign-in identities, SAML settings, audit events, broker connections) are created by numbered migrations in `services/db.py`, which run automatically at startup.
+All user records (users, portfolios, trades, cash, statements, settings) are in Postgres. The relational tables (firms, members, invitations, sign-in identities, SAML settings, sessions, audit events, broker connections) are created by numbered migrations in `services/db.py`, which run automatically at startup.
 
 ### Environment variables (`assetadvisor.env`)
 
@@ -55,6 +55,7 @@ Expected: both containers `Up`, HTTP `200`, the last backup line ends `restore-t
 | Job | Interval | What it does |
 |---|---|---|
 | alert_checker | 1 min | Price alerts |
+| session_cleanup | 24 h | Deletes session records that ended more than 30 days ago |
 | in_play_scanner | 15 min | In-Play scan and news catalysts |
 | news_scanner | 15 min | News ingestion |
 | sentiment_alerts | 5 min | Sentiment alerts |
@@ -188,11 +189,22 @@ def fn(users):
             u["password_hash"] = auth.hash_password(tmp)
     return users
 store.update(store.SHARED, "users", fn, default=[])
+from services import sessions
+print("sessions ended:", sessions.revoke_all(USER, reason="admin_password_reset"))
 print("temporary password:", tmp)
 PY
 ```
 
 Users are stored in the shared `users` document (`services/auth.py` `load_users` / `save_users`). Send the temporary password through a different channel than the request came in on, and ask the user to change it at once.
+
+### See where a user is signed in
+
+```
+docker exec assetadvisor-db psql -U assetadvisor -d assetadvisor -c \
+  "select left(id,8) id, created_at, last_seen_at, ip, method, revoked_at, revoked_reason from sessions where username = '<username>' order by created_at desc limit 20"
+```
+
+Each sign-in creates a row in `sessions`; the token only works while its row is unrevoked and unexpired. Ended sessions stay listed for 30 days.
 
 ### Unlock a user
 
@@ -205,7 +217,13 @@ Set `"role": "admin"` on their user record (same pattern as the password reset).
 ### Remove a user's access urgently
 
 - Firm member: a firm admin suspends them on the firm page (immediate).
-- Any account: reset their password as above. Note that a session already issued stays valid until it expires (default 24 hours, or the firm's session length): there is no per-session revocation yet. To cut off every session immediately, rotate `JWT_SECRET` (signs out everyone).
+- Any account: end all their sessions at once (takes effect on their next request):
+
+```
+docker exec assetadvisor-app python -c "from services import sessions; print(sessions.revoke_all('<username>', reason='admin'))"
+```
+
+Then reset their password as above so they cannot sign in again. To sign out every user at once, rotate `JWT_SECRET`.
 
 ### Delete an account on request
 
@@ -233,7 +251,7 @@ docker exec assetadvisor-app python -c "from services import audit_events; print
 
 ### Database unavailable
 
-Symptoms: errors mentioning the database; firm pages report that the database isn't available.
+Symptoms: errors mentioning the database; everyone is sent back to the sign-in page (sessions can't be checked, so requests are refused rather than let through).
 
 1. `docker ps -a --filter name=assetadvisor-db` and `docker logs --tail 100 assetadvisor-db`.
 2. `docker start assetadvisor-db`; check disk space with `df -h /opt`.

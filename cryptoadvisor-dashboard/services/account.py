@@ -66,7 +66,11 @@ async def delete_account(username: str) -> dict:
             shutil.rmtree(d)
             removed["files"] += 1
 
-    # Shared files keyed by user
+    # Sign-in sessions: end them and delete their records
+    from services import sessions
+    removed["records"] += sessions.forget(user)
+
+    # Shared files keyed by user ("sessions" here is the pre-2026-11 session list)
     for name in ("sessions", "shared_portfolios", "push_subscriptions", "telegram_config"):
         removed["records"] += _rewrite_json(name, _drop_user_rows(user))
 

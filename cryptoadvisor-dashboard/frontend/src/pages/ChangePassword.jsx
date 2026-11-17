@@ -26,12 +26,12 @@ export default function ChangePassword() {
 
     setLoading(true);
     try {
-      await api.post('/api/auth/change-password', {
+      const res = await api.post('/api/auth/change-password', {
         current_password: currentPassword,
         new_password: newPassword,
         confirm_password: confirmPassword,
       });
-      setSuccess('Password changed successfully');
+      setSuccess(res?.message || 'Password changed successfully');
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');

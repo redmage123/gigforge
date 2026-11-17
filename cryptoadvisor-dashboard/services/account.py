@@ -15,26 +15,26 @@ import logging
 import shutil
 
 from services.sanitize import sanitize_filename
-from services.user_data import DATA_DIR
+from services import user_data
 
 logger = logging.getLogger(__name__)
 ANON = "deleted-user"
 
 
 def _rewrite_json(name: str, fn) -> int:
-    """Load data/<name>.json, apply fn(data) -> (new_data, changed_count), save if changed."""
-    path = DATA_DIR / f"{name}.json"
-    if not path.exists():
-        return 0
-    try:
-        data = json.loads(path.read_text())
-    except (OSError, ValueError):
-        return 0
-    new, changed = fn(data)
-    if changed:
-        tmp = path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(new, indent=2))
-        tmp.replace(path)
+    """Apply fn(data) -> (new_data, changed_count) to a shared record, atomically."""
+    from services import store
+
+    changed = 0
+
+    def apply(data):
+        nonlocal changed
+        if data is None or data == []:
+            return data
+        new, changed = fn(data)
+        return new
+
+    store.update(store.SHARED, name, apply, default=[])
     return changed
 
 
@@ -58,20 +58,10 @@ async def delete_account(username: str) -> dict:
         raise ValueError("invalid username")
     removed = {"files": 0, "records": 0, "memories": 0}
 
-    # Per-user files in every namespace folder, plus per-user folders
-    for ns in DATA_DIR.iterdir():
-        if not ns.is_dir():
-            continue
-        f = ns / f"{user}.json"
-        if f.is_file():
-            f.unlink()
-            removed["files"] += 1
-    settings = DATA_DIR / "settings"
-    if settings.is_dir():
-        for f in settings.glob(f"{user}_*.json"):
-            f.unlink()
-            removed["files"] += 1
-    for d in (DATA_DIR / "memory" / user, DATA_DIR / "users" / user, DATA_DIR / "statements" / user):
+    # Every per-user record (all namespaces) and stored statements
+    from services import store
+    removed["files"] += store.delete_owner(user)
+    for d in (user_data.DATA_DIR / "memory" / user, user_data.DATA_DIR / "users" / user):
         if d.is_dir():
             shutil.rmtree(d)
             removed["files"] += 1

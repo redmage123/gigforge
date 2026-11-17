@@ -6,25 +6,17 @@ from pathlib import Path
 import httpx
 
 from config import DATA_DIR
+from services import store
 
 TELEGRAM_API = "https://api.telegram.org"
-CONFIG_FILE = DATA_DIR / "telegram_config.json"
 
 
 def _load_config() -> dict:
-    """Load the full Telegram config file."""
-    if CONFIG_FILE.exists():
-        try:
-            return json.loads(CONFIG_FILE.read_text())
-        except (json.JSONDecodeError, OSError):
-            return {}
-    return {}
+    return store.get(store.SHARED, "telegram_config", {})
 
 
 def _save_config(config: dict) -> None:
-    """Persist the full Telegram config file."""
-    CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
-    CONFIG_FILE.write_text(json.dumps(config, indent=2))
+    store.put(store.SHARED, "telegram_config", config)
 
 
 def get_telegram_config(username: str) -> dict | None:

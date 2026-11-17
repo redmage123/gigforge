@@ -5,8 +5,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from config import DATA_DIR
+from services import store
 
-AUDIT_FILE = DATA_DIR / "audit_log.json"
 MAX_ENTRIES = 10_000
 
 # Recognized action constants (for documentation; not enforced at runtime)
@@ -29,22 +29,12 @@ ACTIONS = [
 
 
 def _load_log() -> list[dict]:
-    """Load the audit log from disk."""
-    if not AUDIT_FILE.exists():
-        return []
-    try:
-        return json.loads(AUDIT_FILE.read_text())
-    except (json.JSONDecodeError, OSError):
-        return []
+    return store.get(store.SHARED, "audit_log", [])
 
 
 def _save_log(entries: list[dict]) -> None:
-    """Persist the audit log to disk, trimming to MAX_ENTRIES."""
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    # Keep only the most recent entries
-    if len(entries) > MAX_ENTRIES:
-        entries = entries[-MAX_ENTRIES:]
-    AUDIT_FILE.write_text(json.dumps(entries, indent=2))
+    """Persist the audit log, trimming to MAX_ENTRIES."""
+    store.put(store.SHARED, "audit_log", entries[-MAX_ENTRIES:])
 
 
 def log_event(

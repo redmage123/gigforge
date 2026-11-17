@@ -1,5 +1,6 @@
 """Shared fixtures for the Carbon Desk tests (async tests run on anyio's pytest plugin)."""
 
+import os
 import sys
 from pathlib import Path
 
@@ -50,9 +51,17 @@ async def desk_client(desk_db, monkeypatch):
 
 @pytest.fixture(autouse=True)
 def _isolated_user_data(tmp_path, monkeypatch):
-    """Per-user JSON files go to a temp dir, never the app's data volume (tests also run in the
-    production container)."""
-    from services import portfolios, user_data
+    """Tests never touch real records. They also run inside the production container, where
+    DATABASE_URL points at the live database: it is removed here. By default records go to files in a
+    temp dir; with TEST_DATABASE_URL (a throwaway database) they go to Postgres, emptied per test."""
+    from services import store, user_data
 
     monkeypatch.setattr(user_data, "DATA_DIR", tmp_path / "data")
-    monkeypatch.setattr(portfolios, "GRANTS_FILE", tmp_path / "data" / "portfolio_grants.json")
+    test_db = os.environ.get("TEST_DATABASE_URL")
+    if test_db:
+        assert test_db != os.environ.get("DATABASE_URL"), "TEST_DATABASE_URL must not be the app database"
+        monkeypatch.setenv("DATABASE_URL", test_db)
+        with store.pool().connection() as conn:
+            conn.execute("TRUNCATE documents, blobs")
+    else:
+        monkeypatch.delenv("DATABASE_URL", raising=False)

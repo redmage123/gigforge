@@ -10,7 +10,7 @@ import uuid
 from services import market
 from services.market import registry
 from services.notifications import add_notification
-from services.user_data import DATA_DIR, load_user_data, save_user_data
+from services.user_data import load_user_data, save_user_data, users_with
 
 NAMESPACE = "alerts"
 
@@ -79,16 +79,13 @@ def crossed(alert: dict, price: float) -> bool:
 
 async def check_all_alerts():
     """Background task: check all users' active alerts against live quotes (any asset class)."""
-    alerts_dir = DATA_DIR / NAMESPACE
-    if not alerts_dir.exists():
-        return
     user_alerts = {}
     wanted = set()
-    for f in alerts_dir.glob("*.json"):
-        alerts = get_alerts(f.stem)
+    for username in users_with(NAMESPACE):
+        alerts = get_alerts(username)
         active = [a for a in alerts if a.get("active")]
         if active:
-            user_alerts[f.stem] = alerts
+            user_alerts[username] = alerts
             wanted.update(a["instrument_id"] for a in active)
     if not wanted:
         return

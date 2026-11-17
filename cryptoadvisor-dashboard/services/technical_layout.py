@@ -3,6 +3,7 @@
 import json
 from pathlib import Path
 from config import DATA_DIR
+from services import store
 
 SETTINGS_DIR = DATA_DIR / "settings"
 
@@ -26,15 +27,9 @@ def _layout_file(username: str) -> Path:
 
 
 def get_technical_layout(username: str) -> list[dict]:
-    path = _layout_file(username)
-    if not path.exists():
-        return [dict(w) for w in DEFAULT_LAYOUT]
-    try:
-        return json.loads(path.read_text())
-    except (json.JSONDecodeError, OSError):
-        return [dict(w) for w in DEFAULT_LAYOUT]
+    layout = store.get("technical_layout", username)
+    return layout if isinstance(layout, list) else [dict(w) for w in DEFAULT_LAYOUT]
 
 
 def save_technical_layout(username: str, layout: list[dict]) -> None:
-    SETTINGS_DIR.mkdir(parents=True, exist_ok=True)
-    _layout_file(username).write_text(json.dumps(layout, indent=2))
+    store.put("technical_layout", username, layout)

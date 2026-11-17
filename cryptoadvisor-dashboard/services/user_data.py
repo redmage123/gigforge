@@ -1,12 +1,11 @@
-"""Per-user JSON data storage utility."""
+"""Per-user and shared JSON records, stored through services.store (Postgres in production)."""
 
-import json
-from pathlib import Path
 from fastapi import Request
-from config import BASE_DIR
-from services.sanitize import sanitize_filename
 
-DATA_DIR = BASE_DIR / "data"
+from config import BASE_DIR
+from services import store
+
+DATA_DIR = BASE_DIR / "data"  # file backend location (local dev, tests) and file caches
 
 
 def get_username(request: Request) -> str:
@@ -15,29 +14,30 @@ def get_username(request: Request) -> str:
 
 
 def load_user_data(username: str, namespace: str) -> list | dict:
-    username = sanitize_filename(username)
-    namespace = sanitize_filename(namespace)
-    path = DATA_DIR / namespace / f"{username}.json"
-    if not path.exists():
-        return []
-    return json.loads(path.read_text())
+    return store.get(namespace, username, [])
 
 
 def save_user_data(username: str, namespace: str, data: list | dict) -> None:
-    username = sanitize_filename(username)
-    namespace = sanitize_filename(namespace)
-    dir_path = DATA_DIR / namespace
-    dir_path.mkdir(parents=True, exist_ok=True)
-    (dir_path / f"{username}.json").write_text(json.dumps(data, indent=2))
+    store.put(namespace, username, data)
+
+
+def update_user_data(username: str, namespace: str, fn, default=None):
+    """Atomic read-modify-write of one user's record."""
+    return store.update(namespace, username, fn, [] if default is None else default)
 
 
 def load_shared_data(name: str) -> list | dict:
-    path = DATA_DIR / f"{name}.json"
-    if not path.exists():
-        return []
-    return json.loads(path.read_text())
+    return store.get(store.SHARED, name, [])
 
 
 def save_shared_data(name: str, data: list | dict) -> None:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    (DATA_DIR / f"{name}.json").write_text(json.dumps(data, indent=2))
+    store.put(store.SHARED, name, data)
+
+
+def update_shared_data(name: str, fn, default=None):
+    return store.update(store.SHARED, name, fn, [] if default is None else default)
+
+
+def users_with(namespace: str) -> list[str]:
+    """Usernames that have a record in this namespace (replaces globbing the data folder)."""
+    return store.keys(namespace)

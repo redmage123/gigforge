@@ -24,12 +24,8 @@ SHIFT_THRESHOLD = 25
 
 def _get_all_usernames() -> list[str]:
     """Get all usernames with favorites configured."""
-    from pathlib import Path
-    from config import BASE_DIR
-    fav_dir = BASE_DIR / "data" / "favorites"
-    if not fav_dir.exists():
-        return []
-    return [f.stem for f in fav_dir.glob("*.json")]
+    from services.user_data import users_with
+    return users_with("favorites")
 
 
 async def check_sentiment_alerts():

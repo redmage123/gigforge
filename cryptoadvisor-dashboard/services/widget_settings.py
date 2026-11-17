@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from config import DATA_DIR
+from services import store
 
 SETTINGS_DIR = DATA_DIR / "settings"
 
@@ -31,20 +32,9 @@ def get_default_layout() -> list[dict]:
 
 
 def get_layout(username: str) -> list[dict]:
-    """Return the user's widget layout, falling back to defaults."""
-    path = _widget_file(username)
-    if not path.exists():
-        return get_default_layout()
-    try:
-        return json.loads(path.read_text())
-    except (json.JSONDecodeError, OSError):
-        return get_default_layout()
+    layout = store.get("widgets", username)
+    return layout if isinstance(layout, list) else get_default_layout()
 
 
 def save_layout(username: str, layout: list[dict]) -> None:
-    """Persist the user's widget layout.
-
-    Each widget dict should have: id, name, enabled, order, size.
-    """
-    SETTINGS_DIR.mkdir(parents=True, exist_ok=True)
-    _widget_file(username).write_text(json.dumps(layout, indent=2))
+    store.put("widgets", username, layout)

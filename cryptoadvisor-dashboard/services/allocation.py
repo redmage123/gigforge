@@ -202,13 +202,9 @@ async def log_orders(owner: str, pid: str, orders: list[dict], by: str) -> list[
 
 async def check_drift_all() -> None:
     """Daily: notify owners whose portfolios drifted past their threshold (once per day per portfolio)."""
-    from services.user_data import DATA_DIR
+    from services.user_data import users_with
 
-    folder = DATA_DIR / portfolios.NAMESPACE
-    if not folder.exists():
-        return
-    for f in folder.glob("*.json"):
-        owner = f.stem
+    for owner in users_with(portfolios.NAMESPACE):
         state = load_user_data(owner, "drift_alerts")
         state = state if isinstance(state, dict) else {}
         for rec in portfolios.list_own(owner):

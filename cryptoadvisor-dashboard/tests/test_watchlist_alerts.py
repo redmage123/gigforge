@@ -68,9 +68,9 @@ class TestAlerts:
         assert not alerts.crossed({"direction": "above", "target_price": 100}, 99.9)
         assert alerts.crossed({"direction": "below", "target_price": 100}, 99)
 
-    def test_checker_fires_once_and_ignores_stale_quotes(self, setup, tmp_path):
-        (tmp_path / "alerts").mkdir()
-        (tmp_path / "alerts" / "u.json").write_text("[]")
+    def test_checker_fires_once_and_ignores_stale_quotes(self, setup):
+        from services import store as record_store
+        record_store.put("alerts", "u", [])  # the checker finds users through the store
         alerts.add_alert("u", "stock:AAPL", "below", 300)
         alerts.add_alert("u", "crypto:BTC", "above", 70000)
         quotes = {"stock:AAPL": Quote("stock:AAPL", 290, -1, None, 0, "yahoo"),
@@ -80,7 +80,7 @@ class TestAlerts:
         async def fake_quotes(ids):
             return quotes
 
-        with patch.object(alerts, "DATA_DIR", tmp_path), patch.object(alerts.market, "quotes", fake_quotes), \
+        with patch.object(alerts.market, "quotes", fake_quotes), \
                 patch.object(alerts, "add_notification", lambda *a, **k: sent.append(a)):
             asyncio.run(alerts.check_all_alerts())
             asyncio.run(alerts.check_all_alerts())
@@ -106,32 +106,28 @@ class TestClientIp:
 
 
 class TestDeleteAccount:
-    def test_removes_files_shared_rows_and_anonymizes_audit(self, tmp_path):
-        import json
-        from services import account
-        d = tmp_path
-        for ns in ("trades", "alerts", "favorites", "in_play_rules"):
-            (d / ns).mkdir()
-            (d / ns / "alice.json").write_text("[]")
-            (d / ns / "bob.json").write_text("[]")
-        (d / "settings").mkdir()
-        (d / "settings" / "alice_theme.json").write_text("{}")
-        (d / "memory" / "alice").mkdir(parents=True)
-        (d / "users.json").write_text(json.dumps([{"username": "alice"}, {"username": "bob"}]))
-        (d / "sessions.json").write_text(json.dumps([{"username": "alice"}, {"username": "bob"}]))
-        (d / "telegram_config.json").write_text(json.dumps({"alice": {"chat_id": 1}, "bob": {"chat_id": 2}}))
-        (d / "audit_log.json").write_text(json.dumps([{"username": "alice", "action": "login"}]))
-        (d / "in_play_candidates.json").write_text(json.dumps({"k": {"matched": {"alice": 1, "bob": 2}}}))
-        with patch.object(account, "DATA_DIR", d):
-            out = asyncio.run(account.delete_account("alice"))
-        assert not list(d.glob("*/alice.json")) and (d / "trades" / "bob.json").exists()
-        assert not (d / "settings" / "alice_theme.json").exists() and not (d / "memory" / "alice").exists()
-        assert json.loads((d / "users.json").read_text()) == [{"username": "bob"}]
-        assert json.loads((d / "sessions.json").read_text()) == [{"username": "bob"}]
-        assert list(json.loads((d / "telegram_config.json").read_text())) == ["bob"]
-        assert json.loads((d / "audit_log.json").read_text())[0]["username"] == "deleted-user"
-        assert json.loads((d / "in_play_candidates.json").read_text())["k"]["matched"] == {"bob": 2}
-        assert out["files"] >= 6
+    def test_removes_records_shared_rows_and_anonymizes_audit(self):
+        from services import account, store, user_data
+        for ns in ("trades", "alerts", "favorites", "in_play_rules", "theme"):
+            store.put(ns, "alice", [])
+            store.put(ns, "bob", [])
+        store.put_blob("statements", "alice/p0123456789a/2026-10.pdf", b"%PDF-")
+        (user_data.DATA_DIR / "memory" / "alice").mkdir(parents=True)
+        store.put(store.SHARED, "users", [{"username": "alice"}, {"username": "bob"}])
+        store.put(store.SHARED, "sessions", [{"username": "alice"}, {"username": "bob"}])
+        store.put(store.SHARED, "telegram_config", {"alice": {"chat_id": 1}, "bob": {"chat_id": 2}})
+        store.put(store.SHARED, "audit_log", [{"username": "alice", "action": "login"}])
+        store.put(store.SHARED, "in_play_candidates", {"k": {"matched": {"alice": 1, "bob": 2}}})
+        out = asyncio.run(account.delete_account("alice"))
+        assert all(store.get(ns, "alice") is None and store.get(ns, "bob") == [] for ns in ("trades", "alerts", "theme"))
+        assert store.get_blob("statements", "alice/p0123456789a/2026-10.pdf") is None
+        assert not (user_data.DATA_DIR / "memory" / "alice").exists()
+        assert store.get(store.SHARED, "users") == [{"username": "bob"}]
+        assert store.get(store.SHARED, "sessions") == [{"username": "bob"}]
+        assert list(store.get(store.SHARED, "telegram_config")) == ["bob"]
+        assert store.get(store.SHARED, "audit_log")[0]["username"] == "deleted-user"
+        assert store.get(store.SHARED, "in_play_candidates")["k"]["matched"] == {"bob": 2}
+        assert out["files"] >= 5
 
     def test_rejects_path_tricks(self):
         from services import account

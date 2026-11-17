@@ -11,9 +11,9 @@ import bcrypt
 from jose import JWTError, jwt
 
 from config import BASE_DIR
+from services import store
 
 DATA_DIR = BASE_DIR / "data"
-USERS_FILE = DATA_DIR / "users.json"
 SECRET_FILE = DATA_DIR / "secret.key"
 
 JWT_ALGORITHM = "HS256"
@@ -69,14 +69,11 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 
 def load_users() -> list[dict]:
-    if not USERS_FILE.exists():
-        return []
-    return json.loads(USERS_FILE.read_text())
+    return store.get(store.SHARED, "users", [])
 
 
 def save_users(users: list[dict]) -> None:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    USERS_FILE.write_text(json.dumps(users, indent=2))
+    store.put(store.SHARED, "users", users)
 
 
 def ensure_default_admin() -> None:

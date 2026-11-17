@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from config import DATA_DIR
+from services import store
 
 DCA_DIR = DATA_DIR / "dca_plans"
 
@@ -21,20 +22,11 @@ def _user_file(username: str) -> Path:
 
 
 def _load_plans(username: str) -> list[dict]:
-    """Load a user's DCA plans from disk."""
-    path = _user_file(username)
-    if not path.exists():
-        return []
-    try:
-        return json.loads(path.read_text())
-    except (json.JSONDecodeError, OSError):
-        return []
+    return store.get("dca_plans", username, [])
 
 
 def _save_plans(username: str, plans: list[dict]) -> None:
-    """Save a user's DCA plans to disk."""
-    _ensure_dir()
-    _user_file(username).write_text(json.dumps(plans, indent=2, default=str))
+    store.put("dca_plans", username, plans)
 
 
 async def create_dca_plan(username: str, plan: dict) -> dict:
@@ -143,8 +135,7 @@ async def check_and_execute_dcas() -> None:
     """Check all users' plans and execute any that are due."""
     _ensure_dir()
 
-    for plan_file in DCA_DIR.glob("*.json"):
-        username = plan_file.stem
+    for username in store.keys("dca_plans"):
         plans = _load_plans(username)
         modified = False
 

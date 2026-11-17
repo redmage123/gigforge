@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from config import DATA_DIR
+from services import store
 
 SETTINGS_DIR = DATA_DIR / "settings"
 
@@ -36,28 +37,15 @@ def _theme_file(username: str) -> Path:
 
 
 def get_theme(username: str) -> str:
-    """Return the user's theme preference ('dark' or 'light'). Defaults to 'dark'."""
-    path = _theme_file(username)
-    if not path.exists():
-        return "dark"
-    try:
-        data = json.loads(path.read_text())
-        theme = data.get("theme", "dark")
-        return theme if theme in VALID_THEMES else "dark"
-    except (json.JSONDecodeError, OSError):
-        return "dark"
+    data = store.get("theme", username, {})
+    theme = data.get("theme", "dark") if isinstance(data, dict) else "dark"
+    return theme if theme in VALID_THEMES else "dark"
 
 
 def set_theme(username: str, theme: str) -> None:
-    """Save the user's theme preference.
-
-    Raises ValueError if *theme* is not 'dark' or 'light'.
-    """
     if theme not in VALID_THEMES:
         raise ValueError(f"Invalid theme '{theme}'. Must be one of: {', '.join(sorted(VALID_THEMES))}")
-
-    SETTINGS_DIR.mkdir(parents=True, exist_ok=True)
-    _theme_file(username).write_text(json.dumps({"theme": theme}, indent=2))
+    store.put("theme", username, {"theme": theme})
 
 
 def get_theme_colors(theme: str) -> dict[str, str]:

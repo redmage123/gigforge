@@ -1,7 +1,7 @@
 """Portfolio history — daily value snapshots for historical charts."""
 
 import time
-from services.user_data import load_user_data, save_user_data, DATA_DIR
+from services.user_data import load_user_data, save_user_data, users_with
 from services.trades import calculate_pnl
 
 
@@ -32,11 +32,7 @@ async def take_snapshot(username: str) -> dict | None:
 
 async def take_all_snapshots():
     """Background task: snapshot all users with trades."""
-    trades_dir = DATA_DIR / "trades"
-    if not trades_dir.exists():
-        return
-    for f in trades_dir.glob("*.json"):
-        username = f.stem
+    for username in users_with("trades"):
         try:
             await take_snapshot(username)
         except Exception as e:

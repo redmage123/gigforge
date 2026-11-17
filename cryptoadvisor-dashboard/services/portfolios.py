@@ -16,12 +16,12 @@ import time
 import uuid
 from dataclasses import dataclass
 
-from services.user_data import DATA_DIR, load_user_data, save_user_data
+from services.user_data import load_user_data, save_user_data
+from services import store
 
 NAMESPACE = "portfolios"
 KINDS = ("personal", "client", "model")
 ROLES = ("manager", "viewer")  # granted roles; the owner is implicit
-GRANTS_FILE = DATA_DIR / "portfolio_grants.json"
 MAX_PORTFOLIOS = 50
 _lock = threading.Lock()
 
@@ -165,17 +165,11 @@ def delete(owner: str, pid: str, move_to: str | None = None) -> dict:
 # ── Sharing ────────────────────────────────────────────────────────────────
 
 def _load_grants() -> dict:
-    try:
-        return json.loads(GRANTS_FILE.read_text())
-    except (OSError, ValueError):
-        return {}
+    return store.get(store.SHARED, "portfolio_grants", {})
 
 
 def _save_grants(data: dict) -> None:
-    GRANTS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    tmp = GRANTS_FILE.with_suffix(".tmp")
-    tmp.write_text(json.dumps(data, indent=1))
-    tmp.replace(GRANTS_FILE)
+    store.put(store.SHARED, "portfolio_grants", data)
 
 
 def grant(owner: str, pid: str, grantee: str, role: str) -> dict:

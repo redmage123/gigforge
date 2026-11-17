@@ -113,11 +113,8 @@ class ChatRequest(BaseModel):
 # --- Portfolio snapshot wrapper (scheduler needs a no-arg async fn) ---
 async def _snapshot_all_users():
     """Take portfolio snapshots for all users with wallets configured."""
-    data_dir = Path(__file__).parent / "data" / "wallets"
-    if not data_dir.exists():
-        return
-    for f in data_dir.glob("*.json"):
-        username = f.stem
+    from services.user_data import users_with
+    for username in users_with("wallets"):
         try:
             await take_snapshot(username)
         except Exception as e:

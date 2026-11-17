@@ -21,7 +21,7 @@ from services import cash as cash_ledger
 from services import portfolios
 from services.performance import performance
 from services.trades import get_trades
-from services import user_data
+from services import store, user_data
 
 INK, MUTED, RULE, ACCENT = colors.HexColor("#1f2430"), colors.HexColor("#5b6472"), colors.HexColor("#d9dde3"), colors.HexColor("#2f5bea")
 POS, NEG = colors.HexColor("#147a4b"), colors.HexColor("#b42318")
@@ -167,24 +167,24 @@ async def build_pdf(owner: str, pid: str, first_day: date, end: date, prepared_b
     return buf.getvalue()
 
 
-def _dir(owner: str, pid: str):
+def _prefix(owner: str, pid: str) -> str:
     from services.sanitize import sanitize_filename
 
     if not re.fullmatch(r"p[0-9a-f]{11}", pid):
         raise ValueError("bad portfolio id")
-    return user_data.DATA_DIR / "statements" / sanitize_filename(owner) / pid
+    return f"{sanitize_filename(owner)}/{pid}/"
 
 
 def list_stored(owner: str, pid: str) -> list[dict]:
-    d = _dir(owner, pid)
-    return [{"month": f.stem, "size": f.stat().st_size} for f in sorted(d.glob("*.pdf"), reverse=True)] if d.exists() else []
+    pre = _prefix(owner, pid)
+    return [{"month": k[len(pre):-4], "size": size} for k, size in reversed(store.list_blobs("statements", pre))
+            if k.endswith(".pdf")]
 
 
 def read_stored(owner: str, pid: str, month: str) -> bytes | None:
     if not re.fullmatch(r"\d{4}-\d{2}", month):
         return None
-    f = _dir(owner, pid) / f"{month}.pdf"
-    return f.read_bytes() if f.exists() else None
+    return store.get_blob("statements", f"{_prefix(owner, pid)}{month}.pdf")
 
 
 async def generate_monthly(today: date | None = None) -> None:
@@ -198,15 +198,11 @@ async def generate_monthly(today: date | None = None) -> None:
     month = f"{last_month_end:%Y-%m}"
     first_day = last_month_end.replace(day=1)
     names = {u["username"]: " ".join(filter(None, [u.get("first_name"), u.get("last_name")])) for u in load_users()}
-    folder = user_data.DATA_DIR / portfolios.NAMESPACE
-    if not folder.exists():
-        return
-    for f in folder.glob("*.json"):
-        owner = f.stem
+    for owner in user_data.users_with(portfolios.NAMESPACE):
         made = []
         for rec in portfolios.list_own(owner):
-            out = _dir(owner, rec["id"]) / f"{month}.pdf"
-            if out.exists():
+            key = f"{_prefix(owner, rec['id'])}{month}.pdf"
+            if store.get_blob("statements", key) is not None:
                 continue
             if not any(date.fromisoformat(t["date"][:10]) <= last_month_end for t in get_trades(owner, [rec["id"]])) and \
                     not any(date.fromisoformat(e["date"]) <= last_month_end for e in cash_ledger.get_entries(owner, [rec["id"]])):
@@ -216,8 +212,7 @@ async def generate_monthly(today: date | None = None) -> None:
             except Exception as exc:  # noqa: BLE001
                 print(f"[statements] {owner}/{rec['id']} {month}: {exc}")
                 continue
-            out.parent.mkdir(parents=True, exist_ok=True)
-            out.write_bytes(pdf)
+            store.put_blob("statements", key, pdf, "application/pdf")
             made.append(rec["name"])
         if made:
             add_notification(owner, f"{calendar.month_name[last_month_end.month]} statements are ready",

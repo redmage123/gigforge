@@ -10,23 +10,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from config import DATA_DIR
+from services import store
 
-SUBSCRIPTIONS_FILE = DATA_DIR / "push_subscriptions.json"
 
 
 def _load_subscriptions() -> dict[str, list[dict]]:
-    """Load subscriptions keyed by username."""
-    if not SUBSCRIPTIONS_FILE.exists():
-        return {}
-    try:
-        return json.loads(SUBSCRIPTIONS_FILE.read_text())
-    except (json.JSONDecodeError, OSError):
-        return {}
+    return store.get(store.SHARED, "push_subscriptions", {})
 
 
 def _save_subscriptions(data: dict[str, list[dict]]) -> None:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    SUBSCRIPTIONS_FILE.write_text(json.dumps(data, indent=2))
+    store.put(store.SHARED, "push_subscriptions", data)
 
 
 def subscribe(username: str, subscription: dict) -> None:

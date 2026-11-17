@@ -6,24 +6,16 @@ from datetime import datetime
 from pathlib import Path
 
 from config import DATA_DIR
+from services import store
 
-SHARES_FILE = DATA_DIR / "shared_portfolios.json"
 
 
 def _load_shares() -> dict:
-    """Load all share data from disk."""
-    if SHARES_FILE.exists():
-        try:
-            return json.loads(SHARES_FILE.read_text())
-        except (json.JSONDecodeError, OSError):
-            return {}
-    return {}
+    return store.get(store.SHARED, "shared_portfolios", {})
 
 
 def _save_shares(data: dict) -> None:
-    """Persist share data to disk."""
-    SHARES_FILE.parent.mkdir(parents=True, exist_ok=True)
-    SHARES_FILE.write_text(json.dumps(data, indent=2, default=str))
+    store.put(store.SHARED, "shared_portfolios", data)
 
 
 def generate_share_token(username: str, holdings: list[dict], total_value: float) -> str:

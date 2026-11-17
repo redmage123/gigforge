@@ -7,22 +7,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from config import DATA_DIR
+from services import store
 
-SESSIONS_FILE = DATA_DIR / "sessions.json"
 
 
 def _load_sessions() -> list[dict]:
-    if not SESSIONS_FILE.exists():
-        return []
-    try:
-        return json.loads(SESSIONS_FILE.read_text())
-    except (json.JSONDecodeError, OSError):
-        return []
+    return store.get(store.SHARED, "sessions", [])
 
 
 def _save_sessions(sessions: list[dict]) -> None:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    SESSIONS_FILE.write_text(json.dumps(sessions, indent=2))
+    store.put(store.SHARED, "sessions", sessions)
 
 
 def _hash_token(token: str) -> str:

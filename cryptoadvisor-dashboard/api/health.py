@@ -20,12 +20,10 @@ async def health_check():
     except Exception:
         checks["database"] = "error"
 
-    # Check data directory is writable
+    # Record storage (Postgres in production)
     try:
-        test_file = DATA_DIR / ".health_check"
-        test_file.write_text("ok")
-        test_file.unlink()
-        checks["storage"] = "ok"
+        from services import store
+        checks["storage"] = "ok" if store.ping() else "error"
     except Exception:
         checks["storage"] = "error"
 

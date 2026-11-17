@@ -8,6 +8,7 @@ import httpx
 from cachetools import TTLCache
 
 from config import DATA_DIR, ETHERSCAN_APIS
+from services import store
 
 COPY_DIR = DATA_DIR / "copy_trading"
 _cache = TTLCache(maxsize=64, ttl=30)
@@ -34,20 +35,11 @@ def _user_file(username: str) -> Path:
 
 
 def _load_wallets(username: str) -> list[dict]:
-    """Load a user's watched wallets from disk."""
-    path = _user_file(username)
-    if not path.exists():
-        return []
-    try:
-        return json.loads(path.read_text())
-    except (json.JSONDecodeError, OSError):
-        return []
+    return store.get("copy_trading", username, [])
 
 
 def _save_wallets(username: str, wallets: list[dict]) -> None:
-    """Save a user's watched wallets to disk."""
-    _ensure_dir()
-    _user_file(username).write_text(json.dumps(wallets, indent=2))
+    store.put("copy_trading", username, wallets)
 
 
 async def add_watched_wallet(username: str, address: str, label: str) -> dict:

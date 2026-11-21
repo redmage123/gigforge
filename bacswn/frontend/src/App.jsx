@@ -28,6 +28,7 @@ const MeshGuide = lazy(() => import('./pages/MeshGuide'))
 const Simulations = lazy(() => import('./pages/Simulations'))
 const Verification = lazy(() => import('./pages/Verification'))
 const Login = lazy(() => import('./pages/Login'))
+const CoastalPermanence = lazy(() => import('./pages/CoastalPermanence'))
 const GuidedTour = lazy(() => import('./components/tour/GuidedTour'))
 
 const NAV_ITEMS = [
@@ -205,6 +206,8 @@ export default function App() {
         <Suspense fallback={<div className="loading-spinner"><div className="spinner" /></div>}>
           <Routes>
             <Route path="/login" element={<Login />} />
+            {/* Unbranded presentation view, outside the app layout */}
+            <Route path="/present/coastal-permanence" element={<ProtectedRoute><CoastalPermanence /></ProtectedRoute>} />
             <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
               <Route index element={<CommandCenter />} />
               <Route path="watch-office" element={<WatchOffice />} />

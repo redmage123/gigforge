@@ -122,6 +122,7 @@ export const api = {
   hurricaneEvacuation: () => request('/api/hurricane/evacuation'),
   hurricaneHistorical: (minCat) => request('/api/hurricane/historical?min_category=' + (minCat || 1)),
   hurricaneCompare: () => request('/api/hurricane/compare'),
+  coastalReplay: () => request('/api/hurricane/coastal-replay'),
   hurricaneEscalate: (category, name) => request('/api/hurricane/escalate?category=' + category + '&storm_name=' + encodeURIComponent(name), { method: 'POST' }),
 
   // Mesh Network

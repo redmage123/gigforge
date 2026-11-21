@@ -202,3 +202,10 @@ async def hurricane_dashboard():
         "historical_comparisons": comparisons[:5],
         "historical_storms": [{"id": h["id"], "name": h["name"], "year": h["year"], "peak_category": h["peak_category"]} for h in historical],
     }
+
+
+@router.get("/coastal-replay")
+async def coastal_replay():
+    """Hurricane Dorian (NOAA best track) replayed over illustrative coastal carbon projects, hour by hour."""
+    from services.coastal_permanence import replay
+    return replay()

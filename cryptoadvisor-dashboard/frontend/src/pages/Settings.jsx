@@ -4,6 +4,7 @@ import { api } from '../api/client'
 import PasswordInput from '../components/PasswordInput'
 import Card from '../components/Card'
 import LoadingSpinner from '../components/LoadingSpinner'
+import TwoFactorCard from '../components/TwoFactor'
 import { useAuth } from '../App'
 
 // Permanent account deletion: password + typing DELETE, then sign out
@@ -219,6 +220,8 @@ export default function Settings() {
           </div>
         </form>
       </Card>
+
+      <TwoFactorCard />
 
       <ConnectedSignIns />
 

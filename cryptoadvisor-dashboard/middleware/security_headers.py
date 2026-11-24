@@ -19,8 +19,10 @@ CSP = "; ".join([
     "style-src 'self' 'unsafe-inline'",          # React inline style attributes
     "img-src 'self' data: blob: https:",
     "font-src 'self' data:",
-    f"connect-src 'self' https://*.plaid.com https://api.telegram.org https://cloudflareinsights.com {RPC}",
-    "frame-src https://cdn.plaid.com https://*.plaid.com",
+    # WalletConnect relay and verify API: used only when a WalletConnect project id is configured
+    f"connect-src 'self' https://*.plaid.com https://cloudflareinsights.com wss://relay.walletconnect.org "
+    f"https://verify.walletconnect.org {RPC}",
+    "frame-src https://cdn.plaid.com https://*.plaid.com https://verify.walletconnect.org",
     "worker-src 'self' blob:",
     "object-src 'none'",
     "base-uri 'self'",

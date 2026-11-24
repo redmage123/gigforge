@@ -27,6 +27,13 @@ def test_cloudflare_web_analytics_can_load_and_report():
     assert "https://cloudflareinsights.com" in d["connect-src"]
 
 
+def test_walletconnect_can_reach_its_relay_and_telegram_is_gone():
+    d = _directives()
+    assert "wss://relay.walletconnect.org" in d["connect-src"]
+    assert "https://verify.walletconnect.org" in d["frame-src"]
+    assert not any("telegram" in s for s in d["connect-src"])
+
+
 def test_policy_is_enforced_on_every_response(monkeypatch):
     monkeypatch.delenv("CSP_MODE", raising=False)
     app = FastAPI()

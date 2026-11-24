@@ -42,7 +42,7 @@ Open **Active Sessions** in the user menu and check the devices and IP addresses
 
 ### Is there two-factor authentication?
 
-Not yet for sign-in. It is planned.
+Yes. Turn it on under **Settings → Two-factor authentication** with any authenticator app (Google Authenticator, Microsoft Authenticator, 1Password, Authy and others). You get 10 one-time recovery codes in case you lose your phone. Firms can require it for all their members.
 
 ### How do I delete my account?
 
@@ -142,4 +142,4 @@ Not yet. The technical controls are in place and the formal audit is being prepa
 
 ### Who are your service providers?
 
-Hosting (Hetzner), network, TLS and cookie-free page-load analytics (Cloudflare), AI (Anthropic), market data (Binance, Yahoo Finance, CoinGecko), public blockchain data (Blockscout, Blockstream, mempool.space, public RPC nodes) and news feeds (Google News, CoinDesk, Cointelegraph), and, only if you use them, WhatsApp (Meta), Google or Microsoft sign-in, Alpaca, Plaid and SnapTrade.
+Hosting (Hetzner), network, TLS and cookie-free page-load analytics (Cloudflare), AI (Anthropic), market data (Binance, Yahoo Finance, CoinGecko, CoinPaprika, CoinLore), public blockchain data (Blockscout, Blockstream, mempool.space, public RPC nodes) and news feeds (Google News, CoinDesk, Cointelegraph), and, only if you use them, WhatsApp (Meta), WalletConnect (Reown), Google or Microsoft sign-in, Alpaca, Plaid and SnapTrade.

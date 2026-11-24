@@ -291,7 +291,7 @@ def test_tax_lifo_only_uses_buys_before_the_sale():
     r = calculate_tax_report(trades, "lifo", 2026)
     assert [e["cost_basis"] for e in r["events"]] == [120]  # not the later 500 buy
     orphan = calculate_tax_report([_t("sell", 2, 10, "2026-01-01")], "fifo", 2026)
-    assert orphan["events"] == [] and orphan["summary"]["unmatched_quantity"] == 2
+    assert orphan["events"] == [] and orphan["summary"]["open_short_quantity"] == 2  # an open short, not realized
 
 
 def test_tax_api_follows_portfolio_scope():

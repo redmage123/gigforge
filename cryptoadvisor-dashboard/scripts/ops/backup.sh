@@ -28,3 +28,30 @@ REST=$(docker exec $T psql -U postgres -d r -tAc "select (select count(*) from d
 
 find "$B" -maxdepth 1 \( -name 'db-*.dump' -o -name 'files-*.tar.gz' \) -mtime +$KEEP_DAYS -delete
 log "ok db-$TS.dump ($(du -h "$B/db-$TS.dump" | cut -f1)) documents/blobs=$LIVE restore-test=passed"
+
+# ── Off-site copy (optional) ────────────────────────────────────────────────
+# Enabled by /opt/ai-elevate/credentials/assetadvisor-offsite.env containing:
+#   OFFSITE_TARGET=u123456@u123456.your-storagebox.de:assetadvisor   (any rsync-over-ssh destination)
+#   OFFSITE_SSH_KEY=/opt/ai-elevate/credentials/offsite_ed25519        (private key allowed on the target)
+#   OFFSITE_SSH_PORT=23                                                (Hetzner Storage Box uses 23)
+#   OFFSITE_GPG_PUBKEY=/opt/ai-elevate/credentials/offsite-backup.pub.asc
+# Files are encrypted to that public key before they leave the host; the private key is kept OFF this
+# server (offline), so neither this host nor the storage provider can read the backups.
+OFFSITE_ENV=/opt/ai-elevate/credentials/assetadvisor-offsite.env
+if [ -f "$OFFSITE_ENV" ]; then
+  # shellcheck disable=SC1090
+  . "$OFFSITE_ENV"
+  O="$B/offsite"; mkdir -p "$O"
+  GH=$(mktemp -d); trap 'rm -rf "$GH"; docker rm -f '$T' >/dev/null 2>&1 || true' EXIT
+  gpg --homedir "$GH" --batch --quiet --import "$OFFSITE_GPG_PUBKEY"
+  FPR=$(gpg --homedir "$GH" --batch --with-colons --list-keys | awk -F: '/^fpr/ {print $10; exit}')
+  for f in "db-$TS.dump" "files-$TS.tar.gz"; do
+    gpg --homedir "$GH" --batch --yes --trust-model always -r "$FPR" -o "$O/$f.gpg" --encrypt "$B/$f"
+  done
+  find "$O" -maxdepth 1 -name '*.gpg' -mtime +"${OFFSITE_KEEP_DAYS:-30}" -delete
+  rsync -a --delete -e "ssh -i $OFFSITE_SSH_KEY -p ${OFFSITE_SSH_PORT:-22} -o BatchMode=yes -o StrictHostKeyChecking=accept-new" \
+    "$O/" "$OFFSITE_TARGET/"
+  log "offsite ok -> $OFFSITE_TARGET ($(ls "$O" | wc -l) encrypted files)"
+else
+  log "offsite: not configured ($OFFSITE_ENV missing)"
+fi

@@ -35,13 +35,24 @@ def _finish(request: Request, out: dict, method: str) -> Response:
 
     if "linked" in out:
         return RedirectResponse(f"/settings?sso_linked={urllib.parse.quote(out['linked'])}", status_code=303)
+    from services import mfa
+
     user = next((u for u in load_users() if u["username"] == out["username"]), None)
     if not user:
         return _fail("Your account no longer exists.")
-    audit_events.record(user["username"], "auth.login", ip=client_ip(request.scope), firm_id=out.get("firm_id"),
-                        detail={"method": method})
+    firm_id = out.get("firm_id")  # set for a firm's SAML sign-in
+    if mfa.sso_step_needed(user["username"], firm_id):
+        # The user has two-factor on and the IdP isn't trusted to have checked it: code step on /login
+        challenge = mfa.start_challenge(user["username"], method=method, next_path=out.get("next") or "/",
+                                        firm_id=firm_id)
+        response = RedirectResponse(mfa.login_redirect(out.get("next") or "/"), status_code=303)
+        mfa.set_challenge_cookie(response, challenge, request)
+        return response
+    claims = {"idp_mfa_firm": firm_id} if mfa.idp_trusted(firm_id) else None
+    audit_events.record(user["username"], "auth.login", ip=client_ip(request.scope), firm_id=firm_id,
+                        detail={"method": method, **({"mfa": "identity_provider"} if claims else {})})
     return issue_session(request, user, response=RedirectResponse(out.get("next") or "/", status_code=303),
-                         method=method)
+                         method=method, claims=claims)
 
 
 @router.get("/providers")

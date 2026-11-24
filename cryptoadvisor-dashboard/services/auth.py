@@ -111,15 +111,16 @@ def authenticate(username: str, password: str) -> dict | None:
 
 
 def create_token(username: str, role: str = "user", hours: float | None = None, *, ip: str | None = None,
-                 user_agent: str | None = None, method: str | None = None) -> str:
+                 user_agent: str | None = None, method: str | None = None, claims: dict | None = None) -> str:
     """Start a server-side session and return a signed JWT naming it (lifetime: `hours`,
-    default JWT_EXPIRY_HOURS). The token is valid only while the session is (verify_session_token)."""
+    default JWT_EXPIRY_HOURS). The token is valid only while the session is (verify_session_token).
+    `claims` adds facts about the sign-in (e.g. amr, idp_mfa_firm); it can't override the core claims."""
     from services import sessions
 
     hours = hours or JWT_EXPIRY_HOURS
     sid = sessions.create(username, hours, ip=ip, user_agent=user_agent, method=method)
     expire = datetime.now(timezone.utc) + timedelta(hours=hours)
-    payload = {"sub": username, "role": role, "exp": expire, "sid": sid}
+    payload = {**(claims or {}), "sub": username, "role": role, "exp": expire, "sid": sid}
     return jwt.encode(payload, SECRET_KEY, algorithm=JWT_ALGORITHM)
 
 

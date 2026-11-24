@@ -16,6 +16,9 @@ from services import market
 from services.blockchain import blockscout
 
 TIMEOUT = 12.0
+TOKENS_BUDGET = 20.0      # seconds for the ERC-20 list before showing ETH alone
+CACHE_SECONDS = 300       # a wallet's balances are reused for 5 minutes
+_cache: dict[tuple[str, str], tuple[float, dict]] = {}
 _UA = {"User-Agent": "Mozilla/5.0 AssetAdvisor"}
 
 # chain -> (native symbol, market instrument ids to price it, public RPC endpoints in order)
@@ -80,7 +83,11 @@ async def eth_with_tokens(client: httpx.AsyncClient, address: str) -> tuple[floa
     tokens = []
     if info.get("has_tokens", True):
         try:
-            items, _ = await blockscout.paged(f"/addresses/{address}/tokens", {"type": "ERC-20"}, 4, client)
+            # Blockscout can take a minute on busy addresses: don't hold the page hostage for the tokens
+            items, _ = await asyncio.wait_for(
+                blockscout.paged(f"/addresses/{address}/tokens", {"type": "ERC-20"}, 4, client), TOKENS_BUDGET)
+        except asyncio.TimeoutError:
+            return eth, [], f"{source} (token balances are slow to load right now; showing ETH only)"
         except blockscout.BlockscoutError:
             return eth, [], f"{source} (token balances unavailable right now)"
         for it in items:
@@ -146,6 +153,21 @@ async def native_prices(chains) -> dict[str, float]:
 
 
 async def wallet_balance(client: httpx.AsyncClient, wallet: dict, prices: dict[str, float]) -> dict:
+    import time
+
+    key = (wallet.get("chain", "ethereum"), (wallet.get("address") or "").lower())
+    hit = _cache.get(key)
+    if hit and time.time() - hit[0] < CACHE_SECONDS:
+        return {**hit[1], "label": wallet.get("label")}
+    row = await _wallet_balance(client, wallet, prices)
+    if not row.get("error"):
+        if len(_cache) > 500:
+            _cache.clear()
+        _cache[key] = (time.time(), row)
+    return row
+
+
+async def _wallet_balance(client: httpx.AsyncClient, wallet: dict, prices: dict[str, float]) -> dict:
     address, chain = wallet.get("address", ""), wallet.get("chain", "ethereum")
     out = {"label": wallet.get("label"), "address": address, "chain": chain}
     bad = validate(address, chain)

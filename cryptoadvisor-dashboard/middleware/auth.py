@@ -58,4 +58,18 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         # Attach user info to request state
         request.state.user = payload
+
+        # A member of a firm that requires two-factor authentication, without it set up: only the
+        # enrollment endpoints until they enroll (services.mfa). Refuses when the check fails.
+        from services import mfa
+
+        try:
+            enroll = mfa.enrollment_required(payload)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[auth] two-factor policy check failed: {exc}")
+            return JSONResponse(status_code=503, content={"error": "Sign-in checks are unavailable. Try again shortly."})
+        if enroll and not mfa.path_allowed_during_enrollment(path):
+            return JSONResponse(status_code=403, content={
+                "error": "Your firm requires two-factor authentication. Set it up to continue.",
+                "mfa_enrollment_required": True})
         return await call_next(request)

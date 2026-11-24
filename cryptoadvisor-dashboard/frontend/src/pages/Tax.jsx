@@ -33,8 +33,9 @@ export default function Tax() {
 
   const downloadCsv = () => {
     if (!report) return;
-    const headers = ['Sell Date', 'Buy Date', 'Instrument', 'Quantity', 'Proceeds', 'Cost Basis', 'Gain/Loss', 'Method'];
+    const headers = ['Type', 'Opened', 'Closed', 'Holding Days', 'Sell Date', 'Buy Date', 'Instrument', 'Quantity', 'Proceeds', 'Cost Basis', 'Gain/Loss', 'Method'];
     const rows = (report.events || []).map((g) => [
+      g.type === 'short' ? 'Short' : 'Long', g.open_date, g.close_date, g.holding_days ?? '',
       g.sell_date, g.buy_date, g.coin_id, g.quantity, g.proceeds, g.cost_basis, g.gain_loss, g.method,
     ]);
     const csv = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
@@ -106,18 +107,20 @@ export default function Tax() {
             <StatCard label="Net Realized Gain/Loss" value={`${net >= 0 ? '+' : ''}${money(net)}`} color={net >= 0 ? '#4ade80' : '#f87171'} />
             <StatCard label="Gains" value={money(summary.total_gains)} color="#4ade80" />
             <StatCard label="Losses" value={money(-(summary.total_losses || 0))} color="#f87171" />
-            <StatCard label="Lots Sold" value={gains.length} />
+            <StatCard label="Lots Closed" value={gains.length} />
+            {summary.short_count > 0 && <StatCard label="Short Lots Covered" value={summary.short_count} />}
             <StatCard label="Method" value={String(report.method || method).toUpperCase()} />
             <StatCard label="Tax Year" value={report.year || year} />
           </div>
 
           <p style={{ color: '#888', fontSize: '0.85rem', marginBottom: '1rem' }}>
             Portfolio: {report.portfolio === 'all' ? 'all your portfolios' : 'the portfolio selected in the top bar'}.
-            Cost basis uses every earlier buy, including buys from previous years; only sales in {report.year || year} are listed.
+            Cost basis uses every earlier trade, including trades from previous years; only positions closed in {report.year || year} are listed.
+            A sale with no long position open opens a short; it is realized when a later buy covers it.
           </p>
-          {summary.unmatched_quantity > 0 && (
+          {summary.skipped_trades > 0 && (
             <p style={{ color: '#f59e0b', fontSize: '0.85rem', marginBottom: '1rem' }}>
-              Some sales ({summary.unmatched_quantity} units) have no earlier buy on record, so their cost basis is unknown and they are left out. Add the missing buys on the Trades page.
+              {summary.skipped_trades} trade{summary.skipped_trades === 1 ? ' was' : 's were'} left out because the side, quantity or price is missing or invalid. Fix them on the Trades page.
             </p>
           )}
 
@@ -127,7 +130,7 @@ export default function Tax() {
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr>
-                      {['Sell Date', 'Buy Date', 'Instrument', 'Quantity', 'Proceeds', 'Cost Basis', 'Gain/Loss'].map((h) => (
+                      {['Type', 'Opened', 'Closed', 'Days Held', 'Instrument', 'Quantity', 'Proceeds', 'Cost Basis', 'Gain/Loss'].map((h) => (
                         <th key={h} style={headStyle}>{h}</th>
                       ))}
                     </tr>
@@ -135,8 +138,19 @@ export default function Tax() {
                   <tbody>
                     {gains.map((g, i) => (
                       <tr key={i}>
-                        <td style={{ ...cellStyle, color: '#aaa' }}>{g.sell_date || '--'}</td>
-                        <td style={{ ...cellStyle, color: '#aaa' }}>{g.buy_date || '--'}</td>
+                        <td style={cellStyle}>
+                          <span style={{
+                            background: g.type === 'short' ? '#3b2a1e' : '#1e2a3b',
+                            color: g.type === 'short' ? '#fb923c' : '#60a5fa',
+                            padding: '2px 8px', borderRadius: 4, fontSize: '0.8rem', fontWeight: 600,
+                          }}
+                          >
+                            {g.type === 'short' ? 'Short' : 'Long'}
+                          </span>
+                        </td>
+                        <td style={{ ...cellStyle, color: '#aaa' }}>{g.open_date || '--'}</td>
+                        <td style={{ ...cellStyle, color: '#aaa' }}>{g.close_date || '--'}</td>
+                        <td style={{ ...cellStyle, color: '#aaa' }}>{g.holding_days ?? '--'}</td>
                         <td style={{ ...cellStyle, color: '#e0e0e0', fontWeight: 600 }}>{g.symbol || g.coin_id}</td>
                         <td style={{ ...cellStyle, color: '#e0e0e0' }}>{Number(g.quantity).toLocaleString(undefined, { maximumFractionDigits: 8 })}</td>
                         <td style={{ ...cellStyle, color: '#e0e0e0' }}>{money(g.proceeds)}</td>

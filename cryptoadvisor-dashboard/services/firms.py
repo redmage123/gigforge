@@ -45,10 +45,12 @@ def _slug(name: str) -> str:
 
 def _row(r) -> dict:
     return {"id": r[0], "name": r[1], "slug": r[2], "created_by": r[3], "created_at": r[4].isoformat(),
-            "sso_domains": list(r[5] or []), "sso_required": r[6], "default_role": r[7], "session_hours": r[8]}
+            "sso_domains": list(r[5] or []), "sso_required": r[6], "default_role": r[7], "session_hours": r[8],
+            "mfa_required": r[9], "idp_mfa": r[10]}
 
 
-FIRM_COLS = "id, name, slug, created_by, created_at, sso_domains, sso_required, default_role, session_hours"
+FIRM_COLS = ("id, name, slug, created_by, created_at, sso_domains, sso_required, default_role, session_hours, "
+             "mfa_required, idp_mfa")
 
 
 # ── Firms ──────────────────────────────────────────────────────────────────
@@ -132,6 +134,10 @@ def update_policy(username: str, firm_id: str, fields: dict) -> dict:
         sets.append("sso_domains = %s"); args.append(doms)
     if "sso_required" in fields:
         sets.append("sso_required = %s"); args.append(bool(fields["sso_required"]))
+    if "mfa_required" in fields:  # members must set up two-factor authentication before using the app
+        sets.append("mfa_required = %s"); args.append(bool(fields["mfa_required"]))
+    if "idp_mfa" in fields:  # the firm's identity provider enforces MFA: no extra code step for its SAML sign-ins
+        sets.append("idp_mfa = %s"); args.append(bool(fields["idp_mfa"]))
     if "default_role" in fields:
         if fields["default_role"] not in ("analyst", "viewer", "pm", "compliance"):
             raise FirmError("New SSO members can start as pm, analyst, compliance or viewer")
@@ -147,6 +153,7 @@ def update_policy(username: str, firm_id: str, fields: dict) -> dict:
             c.commit()
         audit_events.record(username, "firm.policy_change", firm_id=firm_id, target=firm_id,
                             detail={k: v for k, v in fields.items()})
+    _mfa_recheck()   # turning the requirement on applies to open sessions immediately
     return get(firm_id)
 
 
@@ -285,6 +292,11 @@ def peek_invite(token: str) -> dict:
     return {"firm_id": r[0], "firm_name": r[1], "role": r[2], "expires_at": r[3].isoformat()}
 
 
+def _mfa_recheck() -> None:
+    from services import mfa
+    mfa.clear_cache()
+
+
 def accept_invite(username: str, token: str) -> dict:
     info = peek_invite(token)
     with db.conn() as c:
@@ -296,6 +308,7 @@ def accept_invite(username: str, token: str) -> dict:
                   "ON CONFLICT (firm_id, username) DO UPDATE SET status = 'active'", (info["firm_id"], username, info["role"]))
         c.commit()
     audit_events.record(username, "firm.invite_accept", firm_id=info["firm_id"], target=username, detail={"role": info["role"]})
+    _mfa_recheck()   # a firm that requires MFA applies to the new member at once, not after the cache expires
     return info
 
 
@@ -405,6 +418,17 @@ def password_blocked_by(username: str) -> str | None:
         r = c.execute("SELECT f.name FROM firms f JOIN firm_members m ON m.firm_id = f.id WHERE m.username = %s "
                       "AND m.status = 'active' AND f.sso_required AND m.role <> 'admin' LIMIT 1", (username,)).fetchone()
     return r[0] if r else None
+
+
+def mfa_required_firms(username: str) -> list[dict]:
+    """Active memberships in firms that require two-factor authentication: [{id, name, idp_mfa}]."""
+    if not db.available():
+        return []
+    with db.conn() as c:
+        rows = c.execute("SELECT f.id, f.name, f.idp_mfa FROM firms f JOIN firm_members m ON m.firm_id = f.id "
+                         "WHERE m.username = %s AND m.status = 'active' AND f.mfa_required ORDER BY f.name",
+                         (username,)).fetchall()
+    return [{"id": r[0], "name": r[1], "idp_mfa": bool(r[2])} for r in rows]
 
 
 def sole_admin_of(username: str) -> list[str]:

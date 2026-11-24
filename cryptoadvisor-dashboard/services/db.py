@@ -160,6 +160,10 @@ CREATE TABLE sessions (
 );
 CREATE INDEX sessions_username_idx ON sessions (username);
 """),
+    (6, "firm two-factor policy", """
+ALTER TABLE firms ADD COLUMN mfa_required boolean NOT NULL DEFAULT false;  -- members must use two-factor sign-in
+ALTER TABLE firms ADD COLUMN idp_mfa boolean NOT NULL DEFAULT false;       -- the firm's IdP enforces MFA itself
+"""),
 ]
 
 _applied = False

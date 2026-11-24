@@ -12,6 +12,7 @@ const actionTypes = [
   { value: 'auth.session', label: 'Signed-out Sessions' },
   { value: 'account', label: 'Account' },
   { value: 'sso', label: 'Connected Sign-ins' },
+  { value: 'mfa', label: 'Two-factor Authentication' },
   { value: 'portfolio', label: 'Portfolios' },
   { value: 'trade', label: 'Trades and Orders' },
   { value: 'cash', label: 'Cash Movements' },
@@ -33,6 +34,11 @@ const ACTION_LABELS = {
   'account.create_sso': 'Account created (company sign-in)',
   'sso.link': 'Sign-in connected',
   'sso.unlink': 'Sign-in disconnected',
+  'mfa.enabled': 'Two-factor turned on',
+  'mfa.disabled': 'Two-factor turned off',
+  'mfa.challenge_failed': 'Wrong two-factor code',
+  'mfa.recovery_used': 'Recovery code used',
+  'mfa.recovery_regenerated': 'New recovery codes',
 }
 
 const actionColors = {
@@ -43,6 +49,7 @@ const actionColors = {
   password: '#646cff',
   session: '#646cff',
   sso: '#646cff',
+  mfa: '#646cff',
   account: '#646cff',
   broker: '#facc15',
   trade: '#00a3ff',

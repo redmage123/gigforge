@@ -384,3 +384,27 @@ def test_share_links_work_when_the_old_list_format_is_stored():
     store.put(store.SHARED, share_portfolio.KEY, [])
     row = share_portfolio.create_share("legacyuser", {"holdings": [], "allocation": []}, "Mine", False, False)
     assert [r["token"] for r in share_portfolio.get_user_shares("legacyuser")] == [row["token"]]
+
+
+def test_slow_token_lookup_shows_eth_alone(monkeypatch):
+    """Blockscout can take a minute on busy addresses: the page gets ETH after the token budget instead of waiting."""
+    import asyncio
+    import httpx
+
+    async def info(path, params=None, client=None):
+        return {"coin_balance": str(2 * 10**18), "has_tokens": True}
+
+    async def slow_tokens(*a, **k):
+        await asyncio.sleep(5)
+        return [], None
+
+    monkeypatch.setattr(wb.blockscout, "get", info)
+    monkeypatch.setattr(wb.blockscout, "paged", slow_tokens)
+    monkeypatch.setattr(wb, "TOKENS_BUDGET", 0.05)
+
+    async def run():
+        async with httpx.AsyncClient() as c:
+            return await wb.eth_with_tokens(c, "0x" + "1" * 40)
+
+    eth, tokens, source = asyncio.run(run())
+    assert eth == 2 and tokens == [] and "ETH only" in source

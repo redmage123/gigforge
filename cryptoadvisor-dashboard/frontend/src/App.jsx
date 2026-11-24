@@ -58,6 +58,7 @@ const Firm = lazy(() => import('./pages/Firm'))
 const Join = lazy(() => import('./pages/Join'))
 const SharedPortfolioView = lazy(() => import('./pages/SharedPortfolioView'))
 const Connections = lazy(() => import('./pages/Connections'))
+const MfaSetup = lazy(() => import('./pages/MfaSetup'))
 
 export const AuthContext = createContext(null)
 
@@ -65,11 +66,15 @@ export function useAuth() {
   return useContext(AuthContext)
 }
 
-function ProtectedRoute({ children }) {
-  const { token, checking } = useAuth()
+function ProtectedRoute({ children, enrolling = false }) {
+  const { token, user, checking } = useAuth()
   if (checking) return <div className="loading-spinner"><div className="spinner" /></div>
   if (!token) {
     return <Navigate to="/login" replace />
+  }
+  // The firm requires two-factor authentication: set it up before anything else (the server enforces it too)
+  if (!enrolling && user?.mfa_enrollment_required) {
+    return <Navigate to="/mfa-setup" replace />
   }
   return children
 }
@@ -145,6 +150,7 @@ function App() {
             <Route path="/register" element={<Register />} />
             <Route path="/join/:token" element={<Join />} />
             <Route path="/shared/:token" element={<SharedPortfolioView />} />
+            <Route path="/mfa-setup" element={<ProtectedRoute enrolling><MfaSetup /></ProtectedRoute>} />
             <Route path="/" element={<ProtectedRoute><PortfolioProvider><Layout /></PortfolioProvider></ProtectedRoute>}>
               <Route index element={<Dashboard />} />
               <Route path="technical" element={<Technical />} />

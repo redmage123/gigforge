@@ -2,7 +2,8 @@
 
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
-from services.coingecko import get_prices, get_global_data, get_ohlcv, get_market_chart
+from services.coingecko import get_ohlcv, get_market_chart
+from services import market_stats
 from services.feargreed import get_fear_greed
 from services.news import get_news
 from config import DEFAULT_COINS
@@ -12,27 +13,28 @@ router = APIRouter()
 
 @router.get("/prices")
 async def prices():
+    """CoinGecko /simple/price shape keyed by coin id, plus symbol/image/current_price/stale per coin.
+    Served from cache (stale if needed) when upstreams fail; 502 only with nothing cached."""
     try:
-        data = await get_prices(tuple(DEFAULT_COINS))
-        return data
-    except Exception as e:
+        return await market_stats.get_prices(tuple(DEFAULT_COINS))
+    except Exception as e:  # MarketDataUnavailable: nothing cached and every upstream down
         return JSONResponse({"error": str(e)}, status_code=502)
 
 
 @router.get("/prices/{coin_id}")
 async def price(coin_id: str):
     try:
-        data = await get_prices((coin_id,))
-        return data
-    except Exception as e:
+        return await market_stats.get_prices((coin_id,))
+    except Exception as e:  # MarketDataUnavailable: nothing cached and every upstream down
         return JSONResponse({"error": str(e)}, status_code=502)
 
 
 @router.get("/global")
 async def global_data():
+    """CoinGecko /global shape ({"data": {...}}) plus top-level source, stale and fetched_at."""
     try:
-        return await get_global_data()
-    except Exception as e:
+        return await market_stats.get_global()
+    except Exception as e:  # MarketDataUnavailable: nothing cached and every upstream down
         return JSONResponse({"error": str(e)}, status_code=502)
 
 

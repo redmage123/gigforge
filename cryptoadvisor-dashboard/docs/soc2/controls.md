@@ -10,7 +10,7 @@ Status: **Implemented** (in production, evidence available) · **Partial** · **
 | 6.1b | Login lockout after repeated failures; per-IP rate limiting | Implemented | `services/auth.py` check_lockout, `middleware/rate_limiter.py` |
 | 6.1c | Single sign-on: Google/Microsoft (OIDC, PKCE, verified ID tokens), per-firm SAML 2.0 (signed assertions, audience/recipient/time/InResponseTo, replay protection) | Implemented | `services/sso.py`, `tests/test_sso.py` |
 | 6.1d | Firms can require SSO for members (admin break-glass), set session length 1–24 h | Implemented | `services/firms.py` password_blocked_by, session_hours |
-| 6.1e | Multi-factor authentication enforced for privileged/firm users | **Gap** | Deferred by management 2026-11-17; TOTP exists for individuals but isn't enforced |
+| 6.1e | Multi-factor authentication (TOTP) for users, enforceable per firm | Implemented | services/mfa.py, api/totp.py, middleware/auth.py (enrollment gate), tests/test_mfa.py. Firms can require it; platform admins should enable it on their own accounts |
 | 6.2 | Role-based access: firm roles admin / pm / analyst / compliance / viewer; per-portfolio viewer/manager grants; server-side checks on every request | Implemented | `services/portfolios.py` resolve/write_target, `services/firms.py`, `tests/test_firms.py` |
 | 6.2b | Joiner: one-time invitation links (7-day expiry, revocable); JIT accounts only for verified firm domains | Implemented | firms.invite / accept_invite, sso._provision |
 | 6.3 | Leaver/mover: suspend or remove members (immediate effect); last-admin guard; account deletion removes data, memberships, identities, broker connections | Implemented | firms.set_member, services/account.py |
@@ -52,7 +52,7 @@ Status: **Implemented** (in production, evidence available) · **Partial** · **
 | # | Control | Status | Evidence |
 |---|---|---|---|
 | A1.2a | Nightly database backup with automated restore test, 14 days retention, owner-only files | Implemented | backups/assetadvisor/backup.sh, backup.log |
-| A1.2b | Backups stored off-site and encrypted | **Gap** | Same host today |
+| A1.2b | Backups stored off-site and encrypted | **Partial** | Encryption to an offline GPG key and rsync off-site built into backup.sh; needs a storage target (runbook section 7) |
 | A1.2c | Documented recovery procedure (RTO/RPO) and a restore drill | Partial | scripts/migrate_to_postgres.py export; drill to schedule |
 | A1.1 | Capacity and uptime monitoring with alerting | **Gap** | Add external uptime monitor |
 
@@ -81,5 +81,6 @@ Status: **Implemented** (in production, evidence available) · **Partial** · **
   no fixed release yet; consider moving to PyJWT. ecdsa (PYSEC-2026-1325, timing leak when signing) —
   not used for signing; transitive only.
 - JavaScript (`npm audit`): 30 → 11 after non-breaking fixes (both critical resolved: plotly.js,
-  maplibre-gl). Remaining 11 high are all under `@walletconnect/ethereum-provider` (crypto-wallet
-  connect); fix needs a major upgrade of that feature — scheduled.
+  maplibre-gl); 11 → 0 on 2026-11-24 by replacing `@walletconnect/ethereum-provider` (Reown AppKit tree)
+  with `@walletconnect/universal-provider` and removing `ethers` and `@walletconnect/modal`.
+  `npm audit` reports 0 vulnerabilities in production and dev dependencies.

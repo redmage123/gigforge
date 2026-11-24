@@ -151,10 +151,39 @@ Database migrations only add tables and columns, so an older image runs against 
 2. A tarball of `/app/data` (without key files) to `files-<timestamp>.tar.gz`.
 3. **Restore test**: loads the dump into a throwaway Postgres and compares row counts with live.
 4. Deletes backups older than 14 days. Logs to `backup.log`; sends an alert on failure.
+5. **Off-site copy** (when configured): encrypts both files to an offline GPG public key and mirrors them with rsync over SSH (30-day retention there). Until configured, the log says `offsite: not configured`.
+
+### Turning on off-site backups
+
+1. Get a storage target reachable by rsync over SSH, for example a Hetzner Storage Box (in another location) or any other server.
+2. On a computer you control (not the server), create the encryption key and export only its public part. Keep the private key and its passphrase offline (password manager plus a paper copy):
+
+   ```
+   gpg --quick-gen-key "AssetAdvisor offsite backups" future-default default never
+   gpg --armor --export "AssetAdvisor offsite backups" > offsite-backup.pub.asc
+   ```
+
+3. On the server, create an SSH key for the target and authorize it there (Storage Box: `ssh-copy-id -p 23 -s -i ... u123456@u123456.your-storagebox.de`):
+
+   ```
+   ssh-keygen -t ed25519 -N "" -f /opt/ai-elevate/credentials/offsite_ed25519
+   ```
+
+4. Copy `offsite-backup.pub.asc` to `/opt/ai-elevate/credentials/` and create `/opt/ai-elevate/credentials/assetadvisor-offsite.env` (mode 600):
+
+   ```
+   OFFSITE_TARGET=u123456@u123456.your-storagebox.de:assetadvisor
+   OFFSITE_SSH_KEY=/opt/ai-elevate/credentials/offsite_ed25519
+   OFFSITE_SSH_PORT=23
+   OFFSITE_GPG_PUBKEY=/opt/ai-elevate/credentials/offsite-backup.pub.asc
+   ```
+
+5. Run `bash /opt/ai-elevate/backups/assetadvisor/backup.sh` once and check `backup.log` ends with `offsite ok`.
+6. Test a restore from the off-site copy at least once a quarter: download a `.gpg` file, decrypt it with the offline key (`gpg -d db-....dump.gpg > db.dump`) and load it as in "Restoring the database".
 
 Encryption keys are deliberately not in the backups. Keep a copy of `assetadvisor.env` and `assetadvisor-db.env` in a separate secure place; without `ASSETADVISOR_ENCRYPTION_KEY` restored broker credentials cannot be decrypted (users would have to reconnect).
 
-**Known gap:** backups are on the same host. Copy them off-site until automated off-site storage is set up.
+**Until the off-site copy is configured**, backups exist only on the same host. Turn it on as described above.
 
 ### Restoring the database
 
@@ -208,6 +237,16 @@ docker exec assetadvisor-db psql -U assetadvisor -d assetadvisor -c \
 ```
 
 Each sign-in creates a row in `sessions`; the token only works while its row is unrevoked and unexpired. Ended sessions stay listed for 30 days.
+
+### Reset a user's two-factor authentication
+
+When someone has lost both their phone and their recovery codes. **Verify their identity out of band first** (for example a call to a number on file), and note the ticket.
+
+```
+docker exec -i assetadvisor-app python -c "from services import mfa; print(mfa.reset('THE_USERNAME', actor='support:YOUR_NAME', reason='lost device, identity verified, ticket #123'))"
+```
+
+This deletes their two-factor setup, signs out all their sessions and records `mfa.disabled` in the audit trail with you as the actor. Their next sign-in is password-only; if their firm requires two-factor authentication they are sent to set it up again.
 
 ### Unlock a user
 
@@ -312,6 +351,12 @@ Set the variables in section 1 and recreate the app. The "Coming soon" note on B
 4. Webhook (WhatsApp, Configuration): callback `https://assetadvisor.ai-elevate.ai/api/whatsapp/webhook`, the same verify token; subscribe to `messages`. Every call is checked against the app secret signature.
 5. Optional: get a Utility template approved with one body variable (for example "AssetAdvisor alert: {{1}}") and set `WHATSAPP_ALERT_TEMPLATE`, so alerts reach users outside the 24-hour window. Production messages are billed by Meta per template message; replies inside 24 hours are free.
 
+Check the setup at any time (add a phone number to also send a test message):
+
+```
+docker exec assetadvisor-app python scripts/ops/whatsapp_check.py +353861234567
+```
+
 Users link by sending `LINK <code>` from their own phone; STOP pauses, START resumes, UNLINK disconnects. Telegram was removed in favor of WhatsApp (old Telegram settings are no longer used).
 
 ### SAML for a firm
@@ -322,11 +367,10 @@ Firm admins do this themselves on their firm page. Support: the service provider
 
 Tracked in `docs/soc2/controls.md`:
 
-- Multi-factor authentication for sign-in (deferred; the Settings 2FA control is hidden until it is built).
 - Browser push notifications are not implemented (the setting was removed); alerts go to the bell and WhatsApp.
 - Liquidations data is collected in memory from Binance's public stream and resets on restart (24-hour window).
-- Dedicated host, disk encryption, off-site encrypted backups (`docs/soc2/hosting-plan.md`).
+- Dedicated host and disk encryption (`docs/soc2/hosting-plan.md`). Off-site encrypted backups are built but need a storage target (section 7).
 - Centralized log retention and uptime monitoring.
 - Pull-request review before deploys; staging environment.
-- `@walletconnect` dependency advisories (needs a major upgrade of the wallet feature).
+- WalletConnect needs a free project id from cloud.reown.com set as `VITE_WALLETCONNECT_PROJECT_ID` when the image is built (for example in `frontend/.env.production`); without it the WalletConnect button is hidden and browser-extension wallets still work.
 - Market data from free sources (Yahoo Finance is unofficial and delayed); licensed data needed before commercial launch.

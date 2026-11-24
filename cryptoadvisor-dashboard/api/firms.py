@@ -35,6 +35,8 @@ class FirmBody(BaseModel):
     sso_required: bool | None = None
     default_role: str | None = None
     session_hours: int | None = None
+    mfa_required: bool | None = None
+    idp_mfa: bool | None = None
 
 
 @router.get("/")

@@ -2,6 +2,10 @@
 
 The app holds no trading permissions and places no orders: when a plan is due, the hourly scheduler
 only records a simulated purchase in the plan's log (status "simulated").
+
+A plan is "active" or "paused"; the scheduler skips paused plans. Buys missed while paused are not
+made up: after a resume the next buy is one period after the resume (or, for a plan that never ran,
+its start date or the resume time, whichever is later).
 """
 
 import uuid
@@ -68,6 +72,32 @@ async def create_dca_plan(username: str, plan: dict) -> dict:
     return new_plan
 
 
+def _parse_ts(value) -> datetime | None:
+    try:
+        return datetime.fromisoformat(value) if value else None
+    except (ValueError, TypeError):
+        return None
+
+
+def _due_at(plan: dict, now: datetime) -> datetime | None:
+    """When an active plan's next buy is due (may be in the past); None if it can't be scheduled."""
+    try:
+        start = datetime.strptime(plan["start_date"], "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    except (KeyError, ValueError, TypeError):
+        return None
+    period = timedelta(days=FREQUENCY_DAYS.get(plan.get("frequency"), 7))
+    resumed = _parse_ts(plan.get("resumed_at"))
+    last = plan.get("last_executed")
+    if not last:
+        return max(start, resumed) if resumed else start
+    last_dt = _parse_ts(last)
+    if last_dt is None:
+        return now  # unreadable timestamp: treat as due
+    if resumed and resumed > last_dt:
+        return resumed + period  # missed buys while paused are skipped, not made up
+    return last_dt + period
+
+
 def next_execution(plan: dict, now: datetime | None = None) -> str | None:
     """When the scheduler will next log this plan's (simulated) buy, as an ISO timestamp.
 
@@ -76,24 +106,35 @@ def next_execution(plan: dict, now: datetime | None = None) -> str | None:
     if plan.get("status") != "active":
         return None
     now = now or datetime.now(timezone.utc)
-    try:
-        start = datetime.strptime(plan["start_date"], "%Y-%m-%d").replace(tzinfo=timezone.utc)
-    except (KeyError, ValueError, TypeError):
-        return None
-    last = plan.get("last_executed")
-    if not last:
-        return max(start, now).isoformat()
-    try:
-        last_dt = datetime.fromisoformat(last)
-    except (ValueError, TypeError):
-        return now.isoformat()
-    due = last_dt + timedelta(days=FREQUENCY_DAYS.get(plan.get("frequency"), 7))
-    return max(due, now).isoformat()
+    due = _due_at(plan, now)
+    return max(due, now).isoformat() if due else None
 
 
 def get_dca_plans(username: str) -> list[dict]:
     """List all DCA plans for a user, each with its computed next (simulated) execution."""
     return [{**p, "next_execution": next_execution(p)} for p in _load_plans(username)]
+
+
+def set_plan_status(username: str, plan_id: str, status: str, now: datetime | None = None) -> dict:
+    """Pause or resume a plan. Raises KeyError if there is no such plan, ValueError on a bad transition."""
+    if status not in ("active", "paused"):
+        raise ValueError("status must be active or paused")
+    plans = _load_plans(username)
+    plan = next((p for p in plans if p.get("plan_id") == plan_id), None)
+    if plan is None:
+        raise KeyError(plan_id)
+    current = plan.get("status") or "active"
+    if current == status:
+        raise ValueError(f"Plan is already {status}")
+    now = now or datetime.now(timezone.utc)
+    plan["status"] = status
+    if status == "paused":
+        plan["paused_at"] = now.isoformat()
+    else:
+        plan["resumed_at"] = now.isoformat()
+        plan.pop("paused_at", None)
+    _save_plans(username, plans)
+    return {**plan, "next_execution": next_execution(plan, now)}
 
 
 def delete_dca_plan(username: str, plan_id: str) -> bool:
@@ -123,24 +164,13 @@ async def execute_dca_buy(plan: dict) -> dict:
     return execution
 
 
-def _is_due(plan: dict) -> bool:
-    """Check if a DCA plan is due for execution."""
-    now = datetime.now(timezone.utc)
-    start = datetime.strptime(plan["start_date"], "%Y-%m-%d").replace(tzinfo=timezone.utc)
-
-    if now < start:
+def _is_due(plan: dict, now: datetime | None = None) -> bool:
+    """Check if an active DCA plan is due for execution."""
+    if plan.get("status") != "active":
         return False
-
-    last_executed = plan.get("last_executed")
-    if not last_executed:
-        return True
-
-    try:
-        last_dt = datetime.fromisoformat(last_executed)
-    except (ValueError, TypeError):
-        return True
-
-    return (now - last_dt).days >= FREQUENCY_DAYS.get(plan.get("frequency", "weekly"), 7)
+    now = now or datetime.now(timezone.utc)
+    due = _due_at(plan, now)
+    return due is not None and now >= due
 
 
 async def check_and_execute_dcas() -> None:

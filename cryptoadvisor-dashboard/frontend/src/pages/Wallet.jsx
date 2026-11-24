@@ -19,7 +19,10 @@ function Wallet() {
   const [error, setError] = useState('')
   const [balLoading, setBalLoading] = useState(false)
   const [balError, setBalError] = useState('')
-  const { connect: wcConnect, connecting: wcConnecting, error: wcError } = useWalletConnect()
+  const {
+    connect: wcConnect, cancel: wcCancel, connecting: wcConnecting, error: wcError,
+    pairingUri: wcUri, qrDataUrl: wcQr, available: wcAvailable,
+  } = useWalletConnect()
 
   const fetchBalances = useCallback(async () => {
     setBalLoading(true)
@@ -112,10 +115,29 @@ function Wallet() {
           <button className="btn" onClick={connectMetamask} style={{ background: '#f6851b' }}>
             {metamaskAddr ? `Connected: ${metamaskAddr.slice(0, 6)}...${metamaskAddr.slice(-4)}` : 'Connect MetaMask'}
           </button>
-          <button className="btn" onClick={connectWalletConnect} disabled={wcConnecting} style={{ background: '#3b99fc' }}>
-            {wcConnecting ? 'Connecting...' : 'WalletConnect'}
-          </button>
+          {wcAvailable && (
+            <button className="btn" onClick={connectWalletConnect} disabled={wcConnecting} style={{ background: '#3b99fc' }}>
+              {wcConnecting ? 'Waiting for wallet...' : 'WalletConnect'}
+            </button>
+          )}
         </div>
+        {!wcAvailable && (
+          <p className="muted" style={{ fontSize: '0.85rem', marginTop: 0 }}>
+            WalletConnect (mobile wallets via QR code) is not configured on this server. Browser-extension wallets still work, or paste an address below.
+          </p>
+        )}
+        {wcConnecting && (
+          <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap', marginBottom: '1rem' }}>
+            {wcQr ? (
+              <img src={wcQr} alt="WalletConnect QR code" width={220} height={220} style={{ background: '#fff', borderRadius: 8 }} />
+            ) : <LoadingSpinner />}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxWidth: 320 }}>
+              <span className="muted" style={{ fontSize: '0.85rem' }}>Scan with a WalletConnect-compatible wallet app, then approve the request there.</span>
+              {wcUri && <a className="btn btn-sm btn-secondary" href={wcUri}>Open in wallet app (this device)</a>}
+              <button type="button" className="btn btn-sm btn-secondary" onClick={wcCancel}>Cancel</button>
+            </div>
+          </div>
+        )}
         {wcError && <div className="login-error" style={{ marginBottom: '0.75rem' }}>{wcError}</div>}
 
         <form onSubmit={addWallet} style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>

@@ -25,18 +25,29 @@ def _audit(request: Request, action: str, actor: str, **kw) -> None:
     audit_events.record(actor, action, ip=client_ip(request.scope), **kw)
 
 
+def _enrollment_hint(payload: dict) -> bool:
+    """For the frontend only (the middleware enforces the firm policy): must this session enroll first?"""
+    from services import mfa
+
+    try:
+        return mfa.enrollment_required(payload)
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def issue_session(request: Request, user: dict, status_code: int = 200, extra: dict | None = None,
-                  response=None, method: str = "password"):
+                  response=None, method: str = "password", claims: dict | None = None):
     """Signed session cookie for a verified user. Lifetime: the shortest of the user's firms' session
     lengths (24h otherwise). Each call starts a server-side session (Active Sessions) that can be
-    revoked. Also records the sign-in time for access reviews."""
+    revoked. Also records the sign-in time for access reviews. Callers must have completed the
+    two-factor step when the user has it (services.mfa). `claims`: facts about the sign-in."""
     from middleware.client_ip import client_ip
     from services import firms
     from services.user_data import update_shared_data
 
     hours = firms.session_hours(user["username"])
     token = create_token(user["username"], user.get("role", "user"), hours=hours, ip=client_ip(request.scope),
-                         user_agent=request.headers.get("user-agent", ""), method=method)
+                         user_agent=request.headers.get("user-agent", ""), method=method, claims=claims)
     now = datetime.now(timezone.utc).isoformat()
 
     def touch(users):
@@ -46,7 +57,9 @@ def issue_session(request: Request, user: dict, status_code: int = 200, extra: d
         return users
     update_shared_data("users", touch, [])
     body = {"token": token, "username": user["username"], "first_name": user.get("first_name", ""),
-            "last_name": user.get("last_name", ""), "role": user.get("role", "user"), **(extra or {})}
+            "last_name": user.get("last_name", ""), "role": user.get("role", "user"),
+            "mfa_enrollment_required": _enrollment_hint({**(claims or {}), "sub": user["username"]}),
+            **(extra or {})}
     response = response or JSONResponse(status_code=status_code, content=body)
     response.set_cookie(
         key="access_token",
@@ -145,8 +158,47 @@ async def login(req: LoginRequest, request: Request):
         _audit(request, "auth.login_refused", user["username"], detail={"reason": "sso_required", "firm": blocked})
         return JSONResponse(status_code=403, content={
             "error": f"{blocked} requires single sign-on. Use \"Sign in with your company\" instead."})
+    from services import mfa
+
+    if mfa.is_enabled(user["username"]):
+        # Second factor: no session yet, a single-use challenge for the code step (POST /login/mfa)
+        challenge = mfa.start_challenge(user["username"], method="password")
+        response = JSONResponse(content={"mfa_required": True, "challenge": challenge,
+                                         "expires_in": mfa.CHALLENGE_SECONDS})
+        mfa.set_challenge_cookie(response, challenge, request)
+        return response
     _audit(request, "auth.login", user["username"], detail={"method": "password"})
     return issue_session(request, user)
+
+
+class MfaLoginRequest(BaseModel):
+    code: str
+    challenge: str | None = None  # else the mfa_challenge cookie (set by password and SSO sign-in)
+
+
+@router.post("/login/mfa")
+async def login_mfa(req: MfaLoginRequest, request: Request):
+    """Second sign-in step: a code from the authenticator app (or a recovery code) for a challenge."""
+    from middleware.client_ip import client_ip
+    from services import mfa
+
+    token = req.challenge or request.cookies.get(mfa.CHALLENGE_COOKIE) or ""
+    try:
+        out = mfa.complete_challenge(token, req.code, ip=client_ip(request.scope))
+    except mfa.MfaError as exc:
+        response = JSONResponse(status_code=exc.status, content={"error": str(exc), "code": exc.code})
+        if exc.code == "expired":
+            mfa.clear_challenge_cookie(response)
+        return response
+    user = next((u for u in load_users() if u["username"] == out["username"]), None)
+    if not user:
+        return JSONResponse(status_code=401, content={"error": "Your account no longer exists.", "code": "expired"})
+    _audit(request, "auth.login", user["username"], firm_id=out.get("firm_id"),
+           detail={"method": out["method"], "mfa": out["factor"]})
+    response = issue_session(request, user, method=out["method"], claims={"amr": [out["factor"]]},
+                             extra={"next": out["next"]})
+    mfa.clear_challenge_cookie(response)
+    return response
 
 
 @router.get("/me")
@@ -163,6 +215,7 @@ async def me(request: Request):
         "first_name": u.get("first_name", "") if u else "",
         "last_name": u.get("last_name", "") if u else "",
         "role": user.get("role", "user"),
+        "mfa_enrollment_required": _enrollment_hint(user),
     }
 
 

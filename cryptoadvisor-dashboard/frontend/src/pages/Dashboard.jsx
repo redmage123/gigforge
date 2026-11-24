@@ -300,7 +300,8 @@ function Dashboard() {
 
   if ((lp && !prices && !topData) || !shown) return <LoadingSpinner />
 
-  const allCoins = Array.isArray(prices) ? prices : []
+  // /api/market/prices is keyed by coin id ({bitcoin: {symbol, image, current_price, …}})
+  const allCoins = Array.isArray(prices) ? prices : Object.values(prices || {}).filter((c) => c && c.symbol)
   const topCoins = (topData?.results || []).map((r) => {
     const cg = allCoins.find((c) => (c.symbol || '').toUpperCase() === r.symbol)
     return { id: r.id, symbol: r.symbol, name: r.name, image: cg?.image, price: r.quote.price, change: r.quote.change_pct, volume: r.quote.volume }

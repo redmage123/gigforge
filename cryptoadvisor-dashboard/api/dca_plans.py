@@ -10,6 +10,7 @@ from services.dca_automation import (
     create_dca_plan as svc_create_dca_plan,
     delete_dca_plan as svc_delete_dca_plan,
     next_execution,
+    set_plan_status,
 )
 
 router = APIRouter()
@@ -41,3 +42,24 @@ async def delete_dca_plan(request: Request, plan_id: str):
     if svc_delete_dca_plan(username, plan_id):
         return {"status": "deleted"}
     return JSONResponse({"error": "Plan not found"}, status_code=404)
+
+
+def _set_status(request: Request, plan_id: str, status: str):
+    username = request.state.user.get("sub", "")
+    try:
+        return set_plan_status(username, plan_id, status)
+    except KeyError:
+        return JSONResponse({"error": "Plan not found"}, status_code=404)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=409)
+
+
+@router.post("/{plan_id}/pause")
+async def pause_dca_plan(request: Request, plan_id: str):
+    return _set_status(request, plan_id, "paused")
+
+
+@router.post("/{plan_id}/resume")
+async def resume_dca_plan(request: Request, plan_id: str):
+    """Resume a paused plan. Buys missed while paused are skipped; the next one is scheduled from now."""
+    return _set_status(request, plan_id, "active")

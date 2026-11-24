@@ -33,6 +33,14 @@ const deleteBtnStyle = {
   fontSize: '0.85rem',
 };
 
+const toggleBtnStyle = {
+  ...deleteBtnStyle,
+  background: '#1e2a3b',
+  color: '#93c5fd',
+  border: '1px solid #93c5fd33',
+  marginRight: '0.5rem',
+};
+
 const COINS = ['BTC', 'ETH', 'SOL', 'ADA', 'DOT', 'AVAX', 'LINK'];
 const EXCHANGES = ['Binance', 'Coinbase', 'Kraken', 'KuCoin', 'Bybit'];
 const FREQUENCIES = ['daily', 'weekly', 'monthly'];
@@ -90,6 +98,16 @@ export default function DcaPlans() {
     }
   };
 
+  const setStatus = async (id, action) => {
+    setError('');
+    try {
+      const updated = await api.post(`/api/dca-plans/${id}/${action}`, {});
+      setPlans((prev) => prev.map((p) => (p.plan_id === id ? updated : p)));
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
   const statusColors = {
     active: { bg: '#1e3a2e', color: '#4ade80' },
     paused: { bg: '#3b3b1e', color: '#f59e0b' },
@@ -135,12 +153,13 @@ export default function DcaPlans() {
         </div>
         <p style={{ color: '#666', fontSize: '0.8rem', marginTop: '0.75rem', fontStyle: 'italic' }}>
           Note: AssetAdvisor does not place orders. Plans are tracked only: when a buy is due, it is logged here as a
-          simulated purchase and nothing is sent to the exchange. Place the actual buys yourself.
+          simulated purchase and nothing is sent to the exchange. Place the actual buys yourself. Paused plans log
+          nothing; when you resume, buys missed while paused are skipped and the next one is scheduled from that moment.
         </p>
       </Card>
 
       {/* Active Plans */}
-      <Card title="Active Plans" style={{ marginTop: '1.5rem' }}>
+      <Card title="Your Plans" style={{ marginTop: '1.5rem' }}>
         {plans.length > 0 ? (
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -162,7 +181,9 @@ export default function DcaPlans() {
                       <td style={{ padding: '0.75rem', borderBottom: '1px solid #1a1a2e', color: '#4ade80', fontWeight: 600 }}>${Number(p.amount_usd || 0).toLocaleString()}</td>
                       <td style={{ padding: '0.75rem', borderBottom: '1px solid #1a1a2e', color: '#e0e0e0', textTransform: 'capitalize' }}>{p.frequency || '--'}</td>
                       <td style={{ padding: '0.75rem', borderBottom: '1px solid #1a1a2e', color: '#e0e0e0' }}>{p.exchange || '--'}</td>
-                      <td style={{ padding: '0.75rem', borderBottom: '1px solid #1a1a2e', color: '#aaa' }}>{p.next_execution ? new Date(p.next_execution).toLocaleString() : '--'}</td>
+                      <td style={{ padding: '0.75rem', borderBottom: '1px solid #1a1a2e', color: '#aaa' }}>
+                        {p.next_execution ? new Date(p.next_execution).toLocaleString() : status === 'paused' ? 'Paused' : '--'}
+                      </td>
                       <td style={{ padding: '0.75rem', borderBottom: '1px solid #1a1a2e', color: '#aaa' }}>
                         {p.execution_count || 0}{p.execution_count ? ` ($${Number(p.total_invested || 0).toLocaleString()})` : ''}
                       </td>
@@ -171,7 +192,13 @@ export default function DcaPlans() {
                           {status}
                         </span>
                       </td>
-                      <td style={{ padding: '0.75rem', borderBottom: '1px solid #1a1a2e' }}>
+                      <td style={{ padding: '0.75rem', borderBottom: '1px solid #1a1a2e', whiteSpace: 'nowrap' }}>
+                        {status === 'active' && (
+                          <button onClick={() => setStatus(id, 'pause')} disabled={!id} style={toggleBtnStyle}>Pause</button>
+                        )}
+                        {status === 'paused' && (
+                          <button onClick={() => setStatus(id, 'resume')} disabled={!id} style={toggleBtnStyle} title="Buys missed while paused are skipped">Resume</button>
+                        )}
                         <button onClick={() => deletePlan(id)} disabled={!id} style={deleteBtnStyle}>Delete</button>
                       </td>
                     </tr>

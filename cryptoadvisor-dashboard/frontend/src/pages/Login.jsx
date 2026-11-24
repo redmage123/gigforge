@@ -21,6 +21,11 @@ function Login() {
   // Only same-site paths: never redirect to another site after sign-in
   const rawNext = params.get('next') || '/'
   const next = /^\/(?!\/)[A-Za-z0-9/_\-?=&.%]*$/.test(rawNext) ? rawNext : '/'
+  // Two-factor step: after the password (challenge in the response) or after company sign-in (?mfa=1, cookie)
+  const [mfaStep, setMfaStep] = useState(() => params.get('mfa') === '1')
+  const [challenge, setChallenge] = useState(null)
+  const [mfaCode, setMfaCode] = useState('')
+  const [useRecovery, setUseRecovery] = useState(false)
   const [providers, setProviders] = useState([])
   const [company, setCompany] = useState('')
   const [companyBusy, setCompanyBusy] = useState(false)
@@ -52,10 +57,48 @@ function Login() {
     setLoading(true)
     try {
       const data = await api.post('/api/auth/login', { username, password })
-      auth.login(data.token, { username: data.username, first_name: data.first_name, last_name: data.last_name, role: data.role })
-      navigate(next)
+      if (data.mfa_required) {
+        setChallenge(data.challenge)
+        setMfaStep(true)
+        setPassword('')
+        return
+      }
+      signedIn(data)
     } catch (err) {
       setError(err.message || 'Login failed')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const signedIn = (data) => {
+    auth.login(data.token, { username: data.username, first_name: data.first_name, last_name: data.last_name, role: data.role,
+      mfa_enrollment_required: !!data.mfa_enrollment_required })
+    navigate(data.mfa_enrollment_required ? '/mfa-setup' : next)
+  }
+
+  const handleMfa = async (e) => {
+    e.preventDefault()
+    setError('')
+    setLoading(true)
+    try {
+      // A 401 here (wrong code) must not bounce to /login like other API calls: plain fetch
+      const r = await fetch('/api/auth/login/mfa', {
+        method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: mfaCode.trim(), ...(challenge ? { challenge } : {}) }),
+      })
+      const data = await r.json().catch(() => ({}))
+      if (!r.ok) {
+        if (data.code === 'expired') {
+          setMfaStep(false)
+          setChallenge(null)
+        }
+        setMfaCode('')
+        throw new Error(data.error || 'Sign-in failed')
+      }
+      signedIn(data)
+    } catch (err) {
+      setError(err.message)
     } finally {
       setLoading(false)
     }
@@ -88,13 +131,34 @@ function Login() {
           {isChangePassword ? 'Change Password' : 'AssetAdvisor'}
         </h1>
         <p className="login-subtitle">
-          {isChangePassword ? 'Update your password' : 'Sign in to your dashboard'}
+          {isChangePassword ? 'Update your password' : mfaStep ? 'Two-factor authentication' : 'Sign in to your dashboard'}
         </p>
 
         {error && <div className="login-error">{error}</div>}
         {success && <div className="login-success">{success}</div>}
 
-        {isChangePassword ? (
+        {!isChangePassword && mfaStep ? (
+          <form onSubmit={handleMfa}>
+            <div className="form-group">
+              <label htmlFor="mfa-code">{useRecovery ? 'Recovery code' : 'Code from your authenticator app'}</label>
+              <input id="mfa-code" className="form-input" value={mfaCode} autoFocus required
+                autoComplete="one-time-code" inputMode={useRecovery ? 'text' : 'numeric'}
+                placeholder={useRecovery ? 'xxxxx-xxxxx' : '123456'}
+                onChange={(e) => setMfaCode(useRecovery ? e.target.value : e.target.value.replace(/\D/g, '').slice(0, 6))} />
+            </div>
+            <button type="submit" className="btn login-btn" disabled={loading || (!useRecovery && mfaCode.length !== 6)}>
+              {loading ? 'Checking...' : 'Verify'}
+            </button>
+            <p style={{ textAlign: 'center', marginTop: '1rem', fontSize: '0.85rem' }}>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setUseRecovery(!useRecovery); setMfaCode('') }}>
+                {useRecovery ? 'Use a code from your app' : 'Lost your phone? Use a recovery code'}
+              </button>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setMfaStep(false); setChallenge(null); setMfaCode(''); setError('') }}>
+                Start over
+              </button>
+            </p>
+          </form>
+        ) : isChangePassword ? (
           <form onSubmit={handleChangePassword}>
             <div className="form-group">
               <label>Current Password</label>
@@ -143,7 +207,7 @@ function Login() {
           </form>
         )}
 
-        {!isChangePassword && (
+        {!isChangePassword && !mfaStep && (
           <div className="sso-section">
             <div className="sso-divider"><span>or</span></div>
             {providers.map((p) => (
@@ -162,7 +226,7 @@ function Login() {
           </div>
         )}
 
-        {!isChangePassword && (
+        {!isChangePassword && !mfaStep && (
           <p style={{ textAlign: 'center', marginTop: '1.5rem', color: 'var(--muted)', fontSize: '0.85rem' }}>
             Don't have an account?{' '}
             <Link to={next !== '/' ? `/register?next=${encodeURIComponent(next)}` : '/register'} style={{ color: 'var(--primary)', textDecoration: 'none' }}>

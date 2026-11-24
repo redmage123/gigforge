@@ -41,6 +41,10 @@ async function request(path, options = {}) {
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
+    // The user's firm requires two-factor authentication and they haven't set it up yet
+    if (res.status === 403 && body.mfa_enrollment_required && window.location.pathname !== '/mfa-setup') {
+      window.location.href = '/mfa-setup';
+    }
     // FastAPI validation errors arrive as {detail: [{loc, msg}, ...]}
     const detail = Array.isArray(body.detail)
       ? body.detail.map((d) => `${(d.loc || []).slice(-1)[0] || 'field'}: ${d.msg}`).join('; ')

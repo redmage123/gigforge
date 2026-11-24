@@ -190,7 +190,7 @@ function Invites({ firm }) {
 }
 
 function SignIn({ firm, onChange }) {
-  const [p, setP] = useState({ sso_domains: firm.sso_domains.join(', '), sso_required: firm.sso_required, default_role: firm.default_role, session_hours: firm.session_hours })
+  const [p, setP] = useState({ sso_domains: firm.sso_domains.join(', '), sso_required: firm.sso_required, default_role: firm.default_role, session_hours: firm.session_hours, mfa_required: !!firm.mfa_required, idp_mfa: !!firm.idp_mfa })
   const [s, setS] = useState({ idp_entity_id: firm.saml?.idp_entity_id || '', idp_sso_url: firm.saml?.idp_sso_url || '', idp_cert: '', email_attribute: firm.saml?.email_attribute || '', enabled: firm.saml?.enabled ?? true })
   const [msg, setMsg] = useState('')
   const [error, setError] = useState('')
@@ -223,6 +223,14 @@ function SignIn({ firm, onChange }) {
           <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <input type="checkbox" checked={p.sso_required} onChange={(e) => setP({ ...p, sso_required: e.target.checked })} />
             Require company sign-in for members (admins can still use their password, so you can't lock yourselves out)
+          </label>
+          <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <input type="checkbox" checked={p.mfa_required} onChange={(e) => setP({ ...p, mfa_required: e.target.checked })} />
+            Require two-factor authentication for members (members without it must set up an authenticator app before they can continue; this includes admins)
+          </label>
+          <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <input type="checkbox" checked={p.idp_mfa} onChange={(e) => setP({ ...p, idp_mfa: e.target.checked })} />
+            Our identity provider handles two-factor authentication (no extra code after company sign-in; only tick this if your SAML identity provider enforces MFA)
           </label>
           <div><button className="btn">Save policy</button></div>
         </form>

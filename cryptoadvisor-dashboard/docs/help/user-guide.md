@@ -54,6 +54,8 @@ The sign-in page offers up to three ways in.
 
 If a sign-in goes wrong, the reason is shown in red at the top of the form.
 
+**Two-factor authentication.** If you turned on two-factor authentication (see **Settings**), or your firm requires it, the page asks for a **Code from your authenticator app** after your password or company sign-in. Enter the 6-digit code and select **Verify**. Lost your phone? Select **Lost your phone? Use a recovery code** and type one of your recovery codes; each works once. **Start over** takes you back to the password. After 5 wrong codes the attempt ends and you start again with your password; more wrong codes pause code sign-in for that account for 15 minutes. Each code can be used once.
+
 **Good to know**
 
 - After 5 wrong passwords, sign-in for that username is paused for 5 minutes. You will see "Too many failed attempts. Try again in 5 minutes."
@@ -719,7 +721,7 @@ The shared page states when the snapshot was taken, that it does not update, and
 **Connect Wallet**
 
 - **Connect MetaMask** reads the address from the MetaMask browser extension and fills in the form. If MetaMask is not installed, you see "MetaMask not detected. Please install it."
-- **WalletConnect** opens a WalletConnect window so you can connect a wallet, and fills in the form with its address and chain.
+- **WalletConnect** connects a phone wallet: it shows a QR code to scan with any WalletConnect-compatible wallet app (or **Open in wallet app (this device)** on a phone). Approve the request in the app and the form fills in with the wallet's address and chain; **Cancel** stops waiting. The button appears only when the site has WalletConnect set up; otherwise a short note says so, and browser-extension wallets or pasting an address still work.
 - Or type it yourself: a **Label**, the **Address** and the **Chain** (Ethereum, Polygon, BSC, Arbitrum, Optimism, Avalanche, Base, Solana or Bitcoin).
 
 Select **Add Wallet** to save it. The address is checked against the chain you picked. For example, an Ethereum-style address must start with 0x. If it does not fit, you see "That does not look like a valid ... address". The same address on the same chain cannot be saved twice.
@@ -736,13 +738,14 @@ For each saved wallet, a card shows:
 - For Ethereum wallets, ERC-20 tokens as well, largest first. Up to 10 are listed, with a count of any more.
 - A **Total** for the wallet, and the **Source** of the data.
 
-The **Total** at the top adds up all your wallets. Select **Refresh** to fetch balances again.
+The **Total** at the top adds up all your wallets. Select **Refresh** to fetch balances again (each wallet's balances are kept for up to 5 minutes).
 
 Good to know:
 
 - Balances come from free public sources: Blockscout for Ethereum and its tokens, public network endpoints for the other chains, Blockstream or mempool.space for Bitcoin, and the public Solana network.
 - Tokens without a price show "price unavailable" and are not counted in the total. A note says how many.
 - If a source cannot be reached, that wallet's card shows an error instead of a balance. The other wallets still load.
+- Blockscout can be slow for very active Ethereum addresses. If the token list takes more than about 20 seconds, the card shows ETH only and says so under **Source**; select **Refresh** later to try again. Balances are reused for 5 minutes, so reopening the page is quick.
 
 ### On-chain P&L
 
@@ -1183,27 +1186,31 @@ DCA Plans keeps track of a regular purchase schedule. The page heading reads **D
 2. Enter the **Amount ($)** per purchase and choose the **Frequency** (**Daily**, **Weekly** or **Monthly**).
 3. Select **Create Plan**.
 
-**Active Plans** lists each plan:
+**Your Plans** lists each plan:
 
 | Column | What it means |
 |---|---|
 | **Coin**, **Amount**, **Frequency**, **Exchange** | The plan as you set it up. |
-| **Next Simulated Buy** | When the next purchase will be logged. A new plan logs its first one right away. |
+| **Next Simulated Buy** | When the next purchase will be logged. A new plan logs its first one right away. Shows **Paused** for a paused plan. |
 | **Simulated Buys** | How many purchases have been logged so far, and their total in dollars. |
-| **Status** | Whether the plan is **active**. |
+| **Status** | **active** or **paused**. |
 
-The schedule is checked once an hour, so a due purchase is logged within the hour. Weekly means every 7 days and monthly means every 30 days. Select **Delete** to remove a plan.
+The schedule is checked once an hour, so a due purchase is logged within the hour. Weekly means every 7 days and monthly means every 30 days.
+
+- **Pause** stops a plan: nothing is logged while it is paused.
+- **Resume** starts it again. Purchases missed while it was paused are skipped, not made up, and the next one is scheduled one period after you resume.
+- **Delete** removes a plan.
 
 ### Tax Report
 
 ![The Tax Reporting page with method and tax year selectors, summary tiles and a Realized Gains table.](img/tax.jpg)
 
-Tax Report works out the profit or loss on the sales in your trade history for one year. The page heading reads **Tax Reporting**.
+Tax Report works out the realized profit or loss in your trade history for one year: sales of things you owned, and short positions you closed by buying back. The page heading reads **Tax Reporting**.
 
 1. Choose a portfolio, or all portfolios, in the switcher in the top bar. The report covers whatever is selected there.
 2. Under **Generate Report**, choose the **Method**:
-   - **FIFO** (first in, first out): each sale is matched with your oldest remaining purchases first.
-   - **LIFO** (last in, first out): each sale is matched with your most recent purchases first.
+   - **FIFO** (first in, first out): each sale is matched with your oldest remaining purchases first (and each buy-back with your oldest open short sales).
+   - **LIFO** (last in, first out): each sale is matched with your most recent purchases first (and each buy-back with your most recent short sales).
 3. Choose the **Tax Year**, from the current year back to 2015.
 4. Select **Generate Report**.
 
@@ -1211,24 +1218,26 @@ Tax Report works out the profit or loss on the sales in your trade history for o
 
 | Tile | What it means |
 |---|---|
-| **Net Realized Gain/Loss** | Gains minus losses on the year's sales. |
+| **Net Realized Gain/Loss** | Gains minus losses on the positions closed in the year. |
 | **Gains** and **Losses** | The two totals separately. |
-| **Lots Sold** | The number of rows in the table. A sale matched against several purchases appears once per purchase. |
+| **Lots Closed** | The number of rows in the table. A sale matched against several purchases appears once per purchase. |
+| **Short Lots Covered** | Shown when you closed short positions: how many rows are shorts. |
 | **Method** and **Tax Year** | The settings used. |
 
-A line under the tiles confirms which portfolio was used. Cost basis looks at your whole trade history, so a sale this year is correctly matched with a purchase made in an earlier year. Only sales made in the chosen year are listed.
+A line under the tiles confirms which portfolio was used. Cost basis looks at your whole trade history, so a sale this year is correctly matched with a purchase made in an earlier year. A position counts in the year it was closed: the sale for a normal position, the buy-back for a short. Each portfolio is matched on its own, so a sale in one portfolio never closes a purchase in another.
 
-The **Realized Gains** table shows, for each matched sale:
+The **Realized Gains** table shows, for each closed lot:
 
-- **Sell Date** and **Buy Date**.
+- **Type**: **Long** (bought, then sold) or **Short** (sold first, then bought back).
+- **Opened**, **Closed** and **Days Held**: when the position was opened and closed, and how long it was held.
 - **Instrument** and **Quantity**.
-- **Proceeds**: what you received, minus the sale's fees.
-- **Cost Basis**: what you paid, including the purchase fees.
+- **Proceeds**: what you received from the sale, minus its fees.
+- **Cost Basis**: what you paid, including the purchase fees (for a short, what you paid to buy back).
 - **Gain/Loss**: proceeds minus cost basis.
 
 Select **Download CSV** to save the table as a spreadsheet file, with the method on each row.
 
-If some sales have no earlier purchase on record, an orange warning says how many units are affected. Their cost basis is unknown, so they are left out of the totals. Add the missing purchases on the Trades page and generate the report again.
+A sale with no earlier purchase is treated as a short sale, closed by your next buy of that instrument. If a trade is missing its side, quantity or price, an orange warning says how many trades were left out; fix them on the Trades page and generate the report again.
 
 Tax figures are an aid for your own records, not tax advice.
 
@@ -1650,6 +1659,17 @@ Settings collects your profile, sign-in options and account deletion on one page
 - A Google or Microsoft account can be connected to only one AssetAdvisor account.
 - If your account was created through company sign-in and has no password, you cannot disconnect your only way of signing in. Set a password first on the **Change Password** page.
 
+**Two-factor authentication.** Adds a second step to sign-in: a 6-digit code from an authenticator app on your phone (Google Authenticator, Microsoft Authenticator, 1Password, Authy and others).
+
+1. Select **Set up two-factor authentication**, then **Show my QR code**.
+2. Scan the QR code with your authenticator app, or type the key shown under it.
+3. Enter the 6-digit code the app shows and select **Turn on**.
+4. You get 10 **recovery codes**. Save them somewhere safe (**Copy** or **Download**), then select **I've saved them**. Each recovery code signs you in once if you lose your phone.
+
+Once it is on, the card shows how many recovery codes are left. **New recovery codes** replaces them all (you confirm with a code). **Turn off** asks for your password and a code; it isn't offered when your firm requires two-factor authentication. If you lose both your phone and your recovery codes, contact support, who will verify your identity before resetting it.
+
+If your firm requires two-factor authentication and you haven't set it up, you are taken to a **Set up two-factor authentication** page after signing in and can't use the rest of the app until you finish. You can still sign out, export your data or delete your account.
+
 **Security.** Select **Manage Active Sessions** to see and sign out the devices signed in to your account (see **Active Sessions** below).
 
 **Dashboard.** Points you to the dashboard, where you choose and arrange tiles yourself with **Customize dashboard**. See the dashboard section.
@@ -1895,6 +1915,8 @@ On the **Sign-in & SSO** tab, the **Sign-in policy** card sets how members sign 
 - **New members from company sign-in start as.** The role people get when they join this way: Portfolio manager, Analyst, Compliance or Viewer (never Admin).
 - **Sessions end after (hours, 1–24).** How long members stay signed in. If someone belongs to several firms, the shortest setting applies.
 - **Require company sign-in for members.** Members must sign in with Google, Microsoft or your company sign-in; their password stops working. Admins can still use their password, so you can't lock yourselves out.
+- **Require two-factor authentication for members.** Everyone in the firm, admins included, must use an authenticator app. Members who haven't set it up are sent to set it up the next time they use the app, and can't turn it off while they belong to the firm.
+- **Our identity provider handles two-factor authentication.** Tick this only if your company sign-in (SAML) already enforces MFA: people signing in through it then aren't asked for a second code. Google, Microsoft and password sign-ins still ask for one.
 
 Select **Save policy**. You see "Sign-in policy saved."
 

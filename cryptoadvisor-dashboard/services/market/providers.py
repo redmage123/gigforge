@@ -18,8 +18,10 @@ logger = logging.getLogger(__name__)
 
 # timeframe -> (Binance interval, candles merged per bar, bar seconds); 3h/9d are built, not native
 TIMEFRAMES: dict[str, tuple[str, int, int]] = {
-    "1h": ("1h", 1, 3600), "2h": ("2h", 1, 7200), "3h": ("1h", 3, 10800), "6h": ("6h", 1, 21600),
-    "12h": ("12h", 1, 43200), "1d": ("1d", 1, 86400), "3d": ("3d", 1, 259200), "9d": ("3d", 3, 777600),
+    "5m": ("5m", 1, 300), "15m": ("15m", 1, 900), "30m": ("30m", 1, 1800),
+    "1h": ("1h", 1, 3600), "2h": ("2h", 1, 7200), "3h": ("1h", 3, 10800), "4h": ("4h", 1, 14400), "6h": ("6h", 1, 21600),
+    "12h": ("12h", 1, 43200), "1d": ("1d", 1, 86400), "3d": ("3d", 1, 259200), "1w": ("1w", 1, 604800),
+    "9d": ("3d", 3, 777600),
 }
 MAX_KLINES = 1000
 _UA = {"User-Agent": "Mozilla/5.0 AssetAdvisor"}
@@ -138,10 +140,13 @@ class BinanceProvider:
 
 # timeframe -> (Yahoo interval, candles merged per bar)
 YAHOO_TIMEFRAMES: dict[str, tuple[str, int]] = {
-    "1h": ("60m", 1), "2h": ("60m", 2), "3h": ("60m", 3), "6h": ("60m", 6), "12h": ("60m", 12),
-    "1d": ("1d", 1), "3d": ("1d", 3), "9d": ("1d", 9),
+    "5m": ("5m", 1), "15m": ("15m", 1), "30m": ("30m", 1),
+    "1h": ("60m", 1), "2h": ("60m", 2), "3h": ("60m", 3), "4h": ("60m", 4), "6h": ("60m", 6), "12h": ("60m", 12),
+    "1d": ("1d", 1), "3d": ("1d", 3), "1w": ("1wk", 1), "9d": ("1d", 9),
 }
+_YAHOO_BASE_SECONDS = {"5m": 300, "15m": 900, "30m": 1800, "60m": 3600, "1d": 86400, "1wk": 604800}
 YAHOO_MAX_INTRADAY_DAYS = 729  # Yahoo serves hourly history for about two years
+YAHOO_MAX_MINUTE_DAYS = 59     # and 5/15/30-minute history for 60 days
 _TRADING_HOURS = {"us_equity": 6.5, "futures": 23.0, "fx": 24.0, "index": 6.5, "24/7": 24.0}
 
 
@@ -212,9 +217,13 @@ class YahooProvider:
     async def candles(self, inst: Instrument, timeframe: str, bars: int, client: httpx.AsyncClient | None = None) -> list[Candle]:
         interval, factor = YAHOO_TIMEFRAMES[timeframe]
         need = bars * factor
-        if interval == "60m":
-            per_day = _TRADING_HOURS.get(inst.sessions, 6.5)
-            days = min(YAHOO_MAX_INTRADAY_DAYS, math.ceil(need / per_day * 7 / 5) + 4)
+        base_s = _YAHOO_BASE_SECONDS[interval]
+        if base_s < 86400:
+            per_day = _TRADING_HOURS.get(inst.sessions, 6.5) * 3600 / base_s   # base candles per trading day
+            cap = YAHOO_MAX_INTRADAY_DAYS if interval == "60m" else YAHOO_MAX_MINUTE_DAYS
+            days = min(cap, math.ceil(need / per_day * 7 / 5) + 4)
+        elif interval == "1wk":
+            days = need * 7 + 14
         else:
             days = math.ceil(need * (7 / 5 if inst.sessions != "24/7" else 1)) + 7
         now = int(time.time())
@@ -225,7 +234,6 @@ class YahooProvider:
         else:
             payload = await self._chart(client, inst.providers["yahoo"], params)
         _, base = parse_yahoo_chart(payload, inst.multiplier)
-        base_s = 3600 if interval == "60m" else 86400
         merged = aggregate_sessions(base, factor, base_s) if inst.sessions != "24/7" else aggregate_epoch(base, factor, base_s * factor)
         return merged[-bars:]
 

@@ -140,6 +140,9 @@ const styles = {
   },
 }
 
+const SAVABLE = { price: 'price', rsi: 'rsi', stoch_rsi: 'stoch_k', stoch_k: 'stoch_k' }
+const TIMEFRAMES = ['live', '5m', '15m', '30m', '1h', '2h', '3h', '4h', '6h', '12h', '1d', '3d', '1w', '9d']
+
 // The AI answers with names or tickers ("BTC", "gold", "Apple"): resolve each via instrument search
 async function resolveInstrument(name) {
   const res = await api.get(`/api/instruments/search?q=${encodeURIComponent(String(name || '').trim())}&limit=1`)
@@ -175,12 +178,12 @@ export default function SmartAlertCreator({ onSaved } = {}) {
     setSaving(true)
     setError('')
     try {
-      // The alert store only supports price above/below; save those, report the rest honestly
+      // Alerts support price, RSI and Stochastic RSI above/below, live or on a candle close; report the rest honestly
       const conds = Array.isArray(parsed) ? parsed : parsed?.conditions || []
-      const priceConds = conds.filter((c) => c.metric === 'price' && ['gt', 'lt'].includes(c.operator) && Number(c.value) > 0)
+      const priceConds = conds.filter((c) => SAVABLE[c.metric] && ['gt', 'lt'].includes(c.operator) && Number(c.value) > 0)
       const skipped = conds.length - priceConds.length
       if (!priceConds.length) {
-        setError('Only price above/below conditions can be saved as alerts for now. Try e.g. "Alert me when BTC goes above $90,000".')
+        setError('Only price, RSI or Stochastic RSI above/below conditions can be saved as alerts. Try e.g. "Alert me when BTC closes above $90,000 on the 30 minute".')
         return
       }
       for (const c of priceConds) {
@@ -190,10 +193,12 @@ export default function SmartAlertCreator({ onSaved } = {}) {
           instrument_id: inst.id,
           direction: c.operator === 'gt' ? 'above' : 'below',
           target_price: Number(c.value),
+          metric: SAVABLE[c.metric],
+          timeframe: TIMEFRAMES.includes(c.timeframe) ? c.timeframe : c.metric === 'price' ? 'live' : '1h',
           notes: text,
         })
       }
-      setSuccess(`Saved ${priceConds.length} price alert${priceConds.length > 1 ? 's' : ''}.` +
+      setSuccess(`Saved ${priceConds.length} alert${priceConds.length > 1 ? 's' : ''}.` +
         (skipped ? ` ${skipped} condition${skipped > 1 ? 's' : ''} (volume, gas or % change) can't be saved as alerts yet.` : ''))
       setParsed(null)
       setText('')
@@ -271,6 +276,7 @@ export default function SmartAlertCreator({ onSaved } = {}) {
               {c.metric && <span style={styles.badge}>{c.metric}</span>}
               {c.operator && <span style={{ color: '#00d4aa', fontWeight: 600 }}>{c.operator}</span>}
               {c.value != null && <span style={{ color: '#e2e8f0', fontWeight: 600 }}>{c.value}</span>}
+              {c.timeframe && <span style={styles.badge}>{c.timeframe === 'live' ? 'live price' : `${c.timeframe} candle close`}</span>}
               {c.description && <span style={{ color: '#64748b', fontSize: '0.85rem' }}>{c.description}</span>}
             </div>
           ))}

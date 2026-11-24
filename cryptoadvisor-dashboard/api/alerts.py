@@ -4,7 +4,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from services import market
-from services.alerts import get_alerts, add_alert, remove_alert, update_alert, get_alert_history
+from services.alerts import add_alert, describe, get_alert_history, get_alerts, remove_alert, update_alert, validate
 from services.market import registry
 from services.user_data import get_username
 
@@ -19,6 +19,8 @@ class AlertCreate(BaseModel):
     notes: str = ""
     support: float = 0
     resistance: float = 0
+    metric: str = "price"      # price | rsi | stoch_k
+    timeframe: str = "live"    # live, or a candle size: 5m 15m 30m 1h 2h 3h 4h 6h 12h 1d 3d 1w 9d
 
 
 class AlertUpdate(BaseModel):
@@ -35,6 +37,7 @@ def _describe(alerts: list[dict]) -> list[dict]:
         a["name"] = inst.name if inst else a["instrument_id"]
         a["symbol"] = inst.symbol if inst else a["instrument_id"].split(":", 1)[-1]
         a["asset_class"] = inst.asset_class if inst else a["instrument_id"].split(":", 1)[0]
+        a["summary"] = describe(a, inst.price_decimals if inst else 2)
     return alerts
 
 
@@ -53,7 +56,7 @@ async def create_alert(request: Request, alert: AlertCreate):
         return JSONResponse({"error": f"Unknown instrument '{alert.instrument_id or alert.coin_id}'"}, status_code=400)
     try:
         created = add_alert(get_username(request), inst.id, alert.direction, alert.target_price,
-                            alert.notes, alert.support, alert.resistance)
+                            alert.notes, alert.support, alert.resistance, alert.metric, alert.timeframe)
     except ValueError as exc:
         return JSONResponse({"error": str(exc)}, status_code=400)
     return _describe([created])[0]
@@ -67,8 +70,13 @@ async def delete_alert(request: Request, alert_id: str):
 
 @router.put("/{alert_id}")
 async def modify_alert(request: Request, alert_id: str, updates: AlertUpdate):
-    result = update_alert(get_username(request), alert_id,
-                         {k: v for k, v in updates.model_dump().items() if v is not None})
+    changes = {k: v for k, v in updates.model_dump().items() if v is not None}
+    current = next((a for a in get_alerts(get_username(request)) if a["id"] == alert_id), None)
+    if current and "target_price" in changes:
+        err = validate(current["metric"], current["timeframe"], changes["target_price"])
+        if err:
+            return JSONResponse({"error": err}, status_code=400)
+    result = update_alert(get_username(request), alert_id, changes)
     if not result:
         return JSONResponse({"error": "Alert not found"}, status_code=404)
     return result

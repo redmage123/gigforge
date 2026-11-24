@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { Link } from 'react-router-dom'
 import { api } from '../api/client'
 import PasswordInput from '../components/PasswordInput'
 import Card from '../components/Card'
@@ -118,11 +119,6 @@ export default function Settings() {
   const [currency, setCurrency] = useState('usd')
   const [savingDisplay, setSavingDisplay] = useState(false)
 
-  // Dashboard widgets
-  const [widgets, setWidgets] = useState([])
-  const [savingWidgets, setSavingWidgets] = useState(false)
-  const [dragIndex, setDragIndex] = useState(null)
-
   // Notifications
   const [pushEnabled, setPushEnabled] = useState(false)
   const [savingNotif, setSavingNotif] = useState(false)
@@ -136,16 +132,6 @@ export default function Settings() {
       setTheme(res.theme || 'dark')
       setCurrency(res.currency || 'usd')
       setPushEnabled(res.push_notifications ?? res.notifications?.push ?? false)
-      setWidgets(res.widget_layout || res.widgets || res.dashboard_widgets || [
-        { id: 'market_overview', name: 'Market Overview', enabled: true },
-        { id: 'price_cards', name: 'Top Coins', enabled: true },
-        { id: 'fear_greed', name: 'Fear & Greed Index', enabled: true },
-        { id: 'dominance', name: 'Market Dominance', enabled: true },
-        { id: 'volume', name: 'Volume Chart', enabled: true },
-        { id: 'portfolio_summary', name: 'Portfolio Summary', enabled: true },
-        { id: 'alerts_summary', name: 'Active Alerts', enabled: true },
-        { id: 'recent_trades', name: 'Recent Activity', enabled: true },
-      ])
     } catch (err) {
       setError(err.message)
     } finally {
@@ -240,45 +226,6 @@ export default function Settings() {
       setError(err.message)
     } finally {
       setSavingDisplay(false)
-    }
-  }
-
-  const toggleWidget = (index) => {
-    setWidgets((prev) => prev.map((w, i) =>
-      i === index ? { ...w, enabled: !w.enabled } : w
-    ))
-  }
-
-  const handleDragStart = (index) => {
-    setDragIndex(index)
-  }
-
-  const handleDragOver = (e, index) => {
-    e.preventDefault()
-    if (dragIndex === null || dragIndex === index) return
-    setWidgets((prev) => {
-      const next = [...prev]
-      const [moved] = next.splice(dragIndex, 1)
-      next.splice(index, 0, moved)
-      return next
-    })
-    setDragIndex(index)
-  }
-
-  const handleDragEnd = () => {
-    setDragIndex(null)
-  }
-
-  const saveWidgets = async () => {
-    setSavingWidgets(true)
-    setError('')
-    try {
-      await api.put('/api/settings/widgets', { layout: widgets })
-      showSuccess('Widget layout saved')
-    } catch (err) {
-      setError(err.message)
-    } finally {
-      setSavingWidgets(false)
     }
   }
 
@@ -483,59 +430,20 @@ export default function Settings() {
         </div>
       </Card>
 
-      {/* Dashboard Widgets */}
-      <Card title="Dashboard Widgets" className="mt-1">
-        <p className="muted" style={{ marginBottom: '0.75rem', fontSize: '0.9rem' }}>
-          Drag to reorder. Toggle to enable or disable widgets on your dashboard.
+      {/* The dashboard is customized on the dashboard itself */}
+      <Card title="Dashboard" className="mt-1">
+        <p style={{ margin: 0 }}>
+          Choose, reorder and resize the dashboard's tiles, and pick the instruments in each Markets tile, right on the
+          dashboard: select <strong>Customize dashboard</strong> at the top of it. <Link to="/">Go to the dashboard</Link>
         </p>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginBottom: '1rem' }}>
-          {widgets.map((w, i) => (
-            <div
-              key={w.id}
-              draggable
-              onDragStart={() => handleDragStart(i)}
-              onDragOver={(e) => handleDragOver(e, i)}
-              onDragEnd={handleDragEnd}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '0.6rem 1rem',
-                background: dragIndex === i ? '#00d4aa11' : '#12121f',
-                border: `1px solid ${dragIndex === i ? '#00d4aa44' : '#2a2a3d'}`,
-                borderRadius: 8,
-                cursor: 'grab',
-                transition: 'background 0.15s',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                <span style={{ color: '#64748b', fontSize: '1.2rem', cursor: 'grab' }}>&#8942;&#8942;</span>
-                <span style={{ color: w.enabled ? '#e2e8f0' : '#64748b' }}>{w.name}</span>
-              </div>
-              <button
-                onClick={() => toggleWidget(i)}
-                style={{
-                  padding: '0.3rem 0.8rem',
-                  borderRadius: 12,
-                  border: 'none',
-                  fontSize: '0.8rem',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  background: w.enabled ? '#00d4aa22' : '#2a2a3d',
-                  color: w.enabled ? '#00d4aa' : '#64748b',
-                }}
-              >
-                {w.enabled ? 'Enabled' : 'Disabled'}
-              </button>
-            </div>
-          ))}
-        </div>
-        <button className="btn" onClick={saveWidgets} disabled={savingWidgets}>
-          {savingWidgets ? 'Saving...' : 'Save Widget Layout'}
-        </button>
       </Card>
 
-      {/* Notifications */}
+      <Card title="WhatsApp" className="mt-1">
+        <p style={{ margin: 0 }}>
+          Get alerts, In-Play and a daily briefing on WhatsApp, and chat with the assistant there. <Link to="/whatsapp">Set up WhatsApp</Link>
+        </p>
+      </Card>
+
       <Card title="Notifications" className="mt-1">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', maxWidth: 400 }}>
           <div>

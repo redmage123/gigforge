@@ -28,6 +28,9 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         # authenticated by the XML signature, one-time RelayState and InResponseTo instead
         if re.fullmatch(r"/api/sso/saml/[a-z0-9-]+/acs", request.url.path):
             return await call_next(request)
+        # WhatsApp webhook: a server-to-server POST from Meta, authenticated by its HMAC signature
+        if request.url.path == "/api/whatsapp/webhook":
+            return await call_next(request)
 
         # Skip public endpoints (login, register)
         public = ("/api/auth/login", "/api/auth/register", "/api/health")

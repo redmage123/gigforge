@@ -39,6 +39,7 @@ const AiPortfolioBuilder = lazy(() => import('./pages/AiPortfolioBuilder'))
 const PatternRecognition = lazy(() => import('./pages/PatternRecognition'))
 const TradingCoach = lazy(() => import('./pages/TradingCoach'))
 const TelegramSetup = lazy(() => import('./pages/TelegramSetup'))
+const WhatsAppSetup = lazy(() => import('./pages/WhatsAppSetup'))
 const CsvImport = lazy(() => import('./pages/CsvImport'))
 const SharePortfolio = lazy(() => import('./pages/SharePortfolio'))
 const SetupWizard = lazy(() => import('./pages/SetupWizard'))
@@ -180,6 +181,7 @@ function App() {
               <Route path="pattern-recognition" element={<PatternRecognition />} />
               <Route path="trading-coach" element={<TradingCoach />} />
               <Route path="telegram-setup" element={<TelegramSetup />} />
+              <Route path="whatsapp" element={<WhatsAppSetup />} />
               <Route path="csv-import" element={<CsvImport />} />
               <Route path="share-portfolio" element={<SharePortfolio />} />
               <Route path="setup-wizard" element={<SetupWizard />} />

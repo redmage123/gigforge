@@ -15,6 +15,7 @@ PUBLIC_PATHS = (
     "/api/sso/saml/",
     "/api/firms/invite-info",
     "/api/share/view/",
+    "/api/whatsapp/webhook",  # Meta's servers; every call is checked against the app secret signature
     "/health",
     "/api/health",
     "/static/",

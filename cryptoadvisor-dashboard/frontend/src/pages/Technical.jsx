@@ -5,12 +5,12 @@ import Card from '../components/Card'
 import LoadingSpinner from '../components/LoadingSpinner'
 import AiAnalysisButton from '../components/AiAnalysisButton'
 import AiInsightPanel from '../components/AiInsightPanel'
+import PriceChart from '../components/chart/PriceChart'
 import 'react-grid-layout/css/styles.css'
 
 const COINS = ['bitcoin', 'ethereum', 'solana', 'cardano', 'polkadot', 'avalanche-2', 'chainlink', 'polygon']
 
 const INDICATOR_LABELS = {
-  candlestick: 'Candlestick Chart',
   rsi: 'RSI (Relative Strength Index)',
   macd: 'MACD',
   bollinger: 'Bollinger Bands',
@@ -31,7 +31,12 @@ function Technical() {
   const [labelInput, setLabelInput] = useState('')
   const [containerWidth, setContainerWidth] = useState(1200)
   const containerRef = useRef(null)
-  const plotlyRefs = useRef({})
+  const [instrumentId, setInstrumentId] = useState(null)
+
+  // The price chart uses live market data, keyed by instrument ("crypto:BTC")
+  useEffect(() => {
+    api.get(`/api/instruments/resolve?coingecko=${encodeURIComponent(coin)}`).then((r) => setInstrumentId(r.id)).catch(() => setInstrumentId(''))
+  }, [coin])
 
   // Measure container width
   useEffect(() => {
@@ -49,12 +54,11 @@ function Technical() {
   useEffect(() => {
     api.get('/api/settings/technical-layout')
       .then((res) => {
-        setLayout(res.layout || [])
+        setLayout((res.layout || []).filter((item) => item.indicatorId !== 'candlestick'))
         setAvailableIndicators(res.available_indicators || [])
       })
       .catch(() => {
         setLayout([
-          { i: 'candlestick', x: 0, y: 0, w: 12, h: 7, label: 'Candlestick Chart', indicatorId: 'candlestick' },
           { i: 'rsi-1', x: 0, y: 7, w: 4, h: 4, label: 'RSI', indicatorId: 'rsi' },
           { i: 'macd-1', x: 4, y: 7, w: 4, h: 4, label: 'MACD', indicatorId: 'macd' },
           { i: 'bollinger-1', x: 8, y: 7, w: 4, h: 4, label: 'Bollinger Bands', indicatorId: 'bollinger' },
@@ -70,9 +74,6 @@ function Technical() {
 
     const indicatorIds = [...new Set(layout.map((item) => item.indicatorId))]
     const fetches = indicatorIds.map((id) => {
-      if (id === 'candlestick') {
-        return api.get(`/api/charts/candlestick/${coin}`).then((data) => [id, data]).catch(() => [id, null])
-      }
       return api.get(`/api/charts/technical/${coin}?indicator=${id}`).then((data) => [id, data]).catch(() => [id, null])
     })
 
@@ -85,29 +86,6 @@ function Technical() {
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false))
   }, [coin, layout.length])
-
-  // Render Plotly charts after data loads
-  useEffect(() => {
-    if (!chartData.candlestick) return
-    layout.forEach((item) => {
-      if (item.indicatorId === 'candlestick') {
-        const el = plotlyRefs.current[item.i]
-        if (!el) return
-        const data = chartData.candlestick
-        import('plotly.js-dist-min').then((Plotly) => {
-          Plotly.default.newPlot(el, data.data || [], {
-            ...(data.layout || {}),
-            paper_bgcolor: '#1e1e2f',
-            plot_bgcolor: '#12121f',
-            font: { color: '#aaa' },
-            margin: { l: 50, r: 20, t: 30, b: 40 },
-            xaxis: { ...data.layout?.xaxis, gridcolor: '#2a2a3d' },
-            yaxis: { ...data.layout?.yaxis, gridcolor: '#2a2a3d' },
-          }, { responsive: true })
-        })
-      }
-    })
-  }, [chartData, layout])
 
   const handleLayoutChange = useCallback((newGridLayout) => {
     const merged = newGridLayout.map((gridItem) => {
@@ -134,8 +112,8 @@ function Technical() {
       i: id,
       x: 0,
       y: maxY,
-      w: indicatorId === 'candlestick' ? 12 : 4,
-      h: indicatorId === 'candlestick' ? 6 : 5,
+      w: 4,
+      h: 5,
       label: INDICATOR_LABELS[indicatorId] || indicatorId,
       indicatorId,
     }
@@ -167,7 +145,7 @@ function Technical() {
 
   const resetLayout = () => {
     api.post('/api/settings/technical-layout/reset')
-      .then((res) => setLayout(res.layout))
+      .then((res) => setLayout((res.layout || []).filter((item) => item.indicatorId !== 'candlestick')))
       .catch(() => {})
     setEditing(false)
   }
@@ -175,10 +153,6 @@ function Technical() {
   const renderIndicator = (item) => {
     const data = chartData[item.indicatorId]
     if (!data) return <LoadingSpinner />
-
-    if (item.indicatorId === 'candlestick') {
-      return <div ref={(el) => { plotlyRefs.current[item.i] = el }} style={{ width: '100%', height: '100%' }} />
-    }
 
     const img = data.image
     if (!img) return <p className="muted">No data</p>
@@ -265,6 +239,12 @@ function Technical() {
             ))}
           </div>
         </div>
+      )}
+
+      {instrumentId && (
+        <Card title="Price" style={{ marginBottom: '1rem' }}>
+          <PriceChart instrumentId={instrumentId} storageKey="technical-chart" />
+        </Card>
       )}
 
       {loading && layout.length > 0 && <LoadingSpinner />}

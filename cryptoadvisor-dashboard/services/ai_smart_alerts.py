@@ -14,9 +14,12 @@ async def parse_alert_condition(natural_language: str) -> dict:
         "Parse this price alert condition into structured JSON. The asset may be a stock, ETF, commodity, Treasury "
         "yield or crypto; put its ticker or plain name in \"coin\" (e.g. \"AAPL\", \"gold\", \"BTC\"). "
         "Return ONLY valid JSON with format: "
-        '{"conditions": [{"coin": "...", "metric": "price|volume|gas|change_24h", '
-        '"operator": "gt|lt|eq", "value": number}], '
+        '{"conditions": [{"coin": "...", "metric": "price|rsi|stoch_rsi|volume|gas|change_24h", '
+        '"operator": "gt|lt|eq", "value": number, "timeframe": "live|5m|15m|30m|1h|2h|4h|6h|12h|1d|3d|1w"}], '
         '"logic": "and|or", "description": "..."}. '
+        "timeframe is the candle the condition is judged on (\"on the 30 minute\" -> \"30m\", \"hourly\" or "
+        "\"60 minute\" -> \"1h\", \"daily close\" -> \"1d\"); use \"live\" when none is given for price. "
+        "RSI and Stochastic RSI levels are 0-100; default their timeframe to \"1h\" when none is given. "
         f"Condition: {natural_language}"
     )
 

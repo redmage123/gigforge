@@ -197,4 +197,4 @@ class TestRouting:
 
     def test_candles_rejects_unknown_timeframe(self):
         with pytest.raises(ValueError):
-            asyncio.run(market.candles("crypto:BTC", "4h"))
+            asyncio.run(market.candles("crypto:BTC", "7m"))

@@ -99,6 +99,8 @@ from api.firms import router as firms_router
 from api.sso import router as sso_router
 from api.brokers import router as brokers_router
 from api.help import router as help_router
+from api.dashboard_layout import router as dashboard_layout_router
+from api.whatsapp import router as whatsapp_router
 from api.carbon_desk import router as carbon_desk_router, ws_router as carbon_desk_ws_router
 
 # Auth router (JSON API)
@@ -147,6 +149,8 @@ async def lifespan(app: FastAPI):
     register_task(daily_integrity_check, interval_seconds=24 * 3600, name="audit_integrity")
     from services.sessions import cleanup as cleanup_sessions
     register_task(cleanup_sessions, interval_seconds=24 * 3600, name="session_cleanup")
+    from services.messaging import send_briefings
+    register_task(send_briefings, interval_seconds=3600, name="whatsapp_briefings")
     from services.brokers import sync_all as sync_brokers
     register_task(sync_brokers, interval_seconds=6 * 3600, name="broker_sync")
     register_task(check_and_execute_dcas, interval_seconds=3600, name="dca_executor")
@@ -264,6 +268,8 @@ app.include_router(firms_router, prefix="/api/firms", tags=["firms"])
 app.include_router(sso_router, prefix="/api/sso", tags=["sso"])
 app.include_router(brokers_router, prefix="/api/brokers", tags=["brokers"])
 app.include_router(help_router, prefix="/api/help", tags=["help"])
+app.include_router(dashboard_layout_router, prefix="/api/dashboard/layout", tags=["dashboard"])
+app.include_router(whatsapp_router, prefix="/api/whatsapp", tags=["whatsapp"])
 app.include_router(carbon_desk_router, prefix="/api/carbon-desk", tags=["carbon-desk"])
 app.include_router(carbon_desk_ws_router, tags=["carbon-desk"])
 

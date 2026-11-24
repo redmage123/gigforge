@@ -71,7 +71,7 @@ async def delete_account(username: str) -> dict:
     removed["records"] += sessions.forget(user)
 
     # Shared files keyed by user ("sessions" here is the pre-2026-11 session list)
-    for name in ("sessions", "shared_portfolios", "push_subscriptions", "telegram_config"):
+    for name in ("sessions", "shared_portfolios", "push_subscriptions", "telegram_config", "whatsapp_links", "whatsapp_codes"):
         removed["records"] += _rewrite_json(name, _drop_user_rows(user))
 
     def unmatch(data):

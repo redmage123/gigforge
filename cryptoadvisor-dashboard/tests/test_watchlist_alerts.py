@@ -90,6 +90,69 @@ class TestAlerts:
         assert len(sent) == 1 and "Apple Inc." in sent[0][1]
 
 
+class TestCandleAlerts:
+    """Alerts with a time scale fire on candle closes, never on candles that closed before they existed."""
+
+    def _run(self, setup, rows, now):
+        from services import store as record_store
+        record_store.put("alerts", "u", [])
+        sent = []
+
+        async def fake_candles(iid, tf, bars):
+            return rows
+
+        alerts._next_fetch.clear()
+        with patch.object(alerts.market, "candles", fake_candles), patch.object(alerts.time, "time", lambda: now), \
+                patch.object(alerts, "add_notification", lambda *a, **k: sent.append(a)):
+            asyncio.run(alerts.check_all_alerts())
+        return sent
+
+    def _rows(self, closes, start=1_800_000_000, step=1800):
+        from services.market.models import Candle
+        return [Candle((start + i * step) * 1000, c, c, c, c, 1.0) for i, c in enumerate(closes)]
+
+    def test_validation_of_time_scales_and_levels(self):
+        with pytest.raises(ValueError, match="time scale"):
+            alerts.add_alert("u", "crypto:BTC", "above", 1, metric="price", timeframe="7m")
+        with pytest.raises(ValueError, match="candle time scale"):
+            alerts.add_alert("u", "crypto:BTC", "above", 70, metric="rsi")
+        with pytest.raises(ValueError, match="between 0 and 100"):
+            alerts.add_alert("u", "crypto:BTC", "above", 170, metric="rsi", timeframe="1h")
+        a = alerts.add_alert("u", "crypto:BTC", "above", 70, metric="rsi", timeframe="30m")
+        assert alerts.describe(a) == "30-minute close: RSI (14) at or above 70"
+        legacy = alerts.normalize_alert({"id": "1", "instrument_id": "crypto:BTC", "direction": "below", "target_price": 5})
+        assert legacy["timeframe"] == "live" and legacy["metric"] == "price"
+
+    def test_price_alert_fires_on_a_30_minute_close_after_creation(self, setup):
+        start = 1_800_000_000
+        with patch.object(alerts.time, "time", lambda: start + 99 * 1800 + 60):  # created inside candle 99
+            alerts.add_alert("u", "crypto:BTC", "above", 105, timeframe="30m")
+        closes = [100] * 98 + [110, 101, 106]   # candle 98 closed above *before* the alert existed
+        # Candle 99 (101) has closed, candle 100 (106) is still forming: nothing fires
+        assert self._run(setup, self._rows(closes), start + 100 * 1800 + 10) == []
+        assert setup[("u", "alerts")][0]["active"] is True
+        # Candle 100 closes at 106: fires, naming the time scale
+        sent = self._run(setup, self._rows(closes + [100]), start + 101 * 1800 + 10)
+        assert len(sent) == 1 and "30-minute candle closed at 106" in sent[0][2]
+        a = setup[("u", "alerts")][0]
+        assert a["active"] is False and a["triggered_price"] == 106
+
+    def test_rsi_alert_on_hourly_closes(self, setup):
+        start = 1_800_000_000
+        with patch.object(alerts.time, "time", lambda: start):
+            alerts.add_alert("u", "crypto:BTC", "above", 70, metric="rsi", timeframe="1h")
+        closes = [100 + (i % 2) for i in range(100)] + [102, 104, 106, 108, 110]   # steady climb at the end
+        sent = self._run(setup, self._rows(closes, start=start - 99 * 3600, step=3600), start + 6 * 3600 + 5)
+        assert len(sent) == 1 and "RSI (14) closed at" in sent[0][2] and "1-hour" in sent[0][1]
+
+    def test_daily_stock_candle_closes_with_the_session(self):
+        open_t = 1_800_000_000
+        assert alerts.expected_close(open_t, "1d", "us_equity") == open_t + 6.5 * 3600
+        assert alerts.expected_close(open_t, "1d", "24/7") == open_t + 86400
+        assert alerts.expected_close(open_t, "1w", "us_equity") == float("inf")   # complete when the next one starts
+        assert alerts.expected_close(open_t, "30m", "us_equity") == open_t + 1800
+
+
 class TestClientIp:
     def scope(self, peer, **headers):
         return {"client": (peer, 1234), "headers": [(k.replace("_", "-").encode(), v.encode()) for k, v in headers.items()]}

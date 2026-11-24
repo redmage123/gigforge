@@ -4,6 +4,7 @@ import { api } from '../api/client'
 import { useAuth } from '../App'
 import Card from '../components/Card'
 import LoadingSpinner from '../components/LoadingSpinner'
+import PriceChart from '../components/chart/PriceChart'
 
 const Plot = lazy(() => import('react-plotly.js'))
 
@@ -69,12 +70,17 @@ export default function CoinDetail() {
   const { user } = useAuth()
 
   const [period, setPeriod] = useState(30)
-  const [ohlcv, setOhlcv] = useState(null)
   const [chartData, setChartData] = useState(null)
   const [coinInfo, setCoinInfo] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [isFav, setIsFav] = useState(false)
+  const [instrumentId, setInstrumentId] = useState(null)
+
+  useEffect(() => {
+    setInstrumentId(null)
+    api.get(`/api/instruments/resolve?coingecko=${encodeURIComponent(coinId)}`).then((r) => setInstrumentId(r.id)).catch(() => setInstrumentId(''))
+  }, [coinId])
 
   const coinName = coinId.charAt(0).toUpperCase() + coinId.slice(1).replace(/-/g, ' ')
 
@@ -82,14 +88,10 @@ export default function CoinDetail() {
     setLoading(true)
     setError('')
     try {
-      const [ohlcvRes, chartRes, priceRes] = await Promise.allSettled([
-        api.get(`/api/market/ohlcv/${coinId}?days=${period}`),
+      const [chartRes, priceRes] = await Promise.allSettled([
         api.get(`/api/market/chart/${coinId}?days=${period}`),
         api.get(`/api/market/prices/${coinId}`),
       ])
-
-      if (ohlcvRes.status === 'fulfilled') setOhlcv(ohlcvRes.value)
-      else setError('Failed to load candlestick data')
 
       if (chartRes.status === 'fulfilled') setChartData(chartRes.value)
       if (priceRes.status === 'fulfilled') setCoinInfo(priceRes.value)
@@ -121,14 +123,6 @@ export default function CoinDetail() {
       }
     } catch {}
   }
-
-  // Parse OHLCV data for candlestick: [[timestamp, open, high, low, close], ...]
-  const ohlcvData = ohlcv?.ohlcv || []
-  const dates = ohlcvData.map(d => new Date(d[0]))
-  const opens = ohlcvData.map(d => d[1])
-  const highs = ohlcvData.map(d => d[2])
-  const lows = ohlcvData.map(d => d[3])
-  const closes = ohlcvData.map(d => d[4])
 
   // Parse line chart data
   const prices = chartData?.chart?.prices || []
@@ -182,6 +176,13 @@ export default function CoinDetail() {
         </div>
       )}
 
+      {/* Candles with RSI, Stochastic RSI and SurgeX (market data; range and candle size are chosen in the chart) */}
+      {instrumentId && (
+        <Card title="Price">
+          <PriceChart instrumentId={instrumentId} />
+        </Card>
+      )}
+
       {/* Period selector */}
       <div className="period-selector">
         {PERIODS.map(p => (
@@ -201,34 +202,6 @@ export default function CoinDetail() {
         <LoadingSpinner />
       ) : (
         <Suspense fallback={<LoadingSpinner />}>
-          {/* Candlestick Chart */}
-          {ohlcvData.length > 0 && (
-            <Card title={`Price Action - ${PERIODS.find(p => p.days === period)?.label || ''}`}>
-              <div className="chart-container">
-                <Plot
-                  data={[{
-                    type: 'candlestick',
-                    x: dates,
-                    open: opens,
-                    high: highs,
-                    low: lows,
-                    close: closes,
-                    increasing: { line: { color: '#00d4aa' }, fillcolor: 'rgba(0,212,170,0.3)' },
-                    decreasing: { line: { color: '#ff6b6b' }, fillcolor: 'rgba(255,107,107,0.3)' },
-                    name: 'OHLC',
-                  }]}
-                  layout={{
-                    ...chartLayout,
-                    yaxis: { ...chartLayout.yaxis, title: { text: 'Price (USD)', font: { size: 12, color: '#64748b' } } },
-                    xaxis: { ...chartLayout.xaxis, rangeslider: { visible: false } },
-                  }}
-                  config={{ responsive: true, displayModeBar: false }}
-                  style={{ width: '100%', height: 420 }}
-                />
-              </div>
-            </Card>
-          )}
-
           {/* Price Line + Volume */}
           {priceValues.length > 0 && (
             <Card title="Price & Volume">

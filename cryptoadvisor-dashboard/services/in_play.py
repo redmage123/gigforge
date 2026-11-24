@@ -634,6 +634,18 @@ async def _scan(notify: bool, only_profiles: set[str] | None = None) -> dict:
                 title, body, tags = in_play_push.format_push(candidates[key], current)
                 pushed += await in_play_push.send_ntfy(cfg, title, body, tags)
 
+        # WhatsApp, for users who linked it and want In-Play there: the three strongest new hits per scan
+        from services import messaging, whatsapp
+        if whatsapp.available():
+            for u, keys in new_hits.items():
+                if not whatsapp.get_state(u).get("phone"):
+                    continue
+                r = user_rules[u]
+                current = user_list(candidates, u, retention_days=r.retention_days, profile=r.profile, universe_set=r.universes)
+                for key in sorted(keys, key=lambda k: candidates[k]["volume_ratio"] or 0, reverse=True)[:3]:
+                    title, body, _ = in_play_push.format_push(candidates[key], current)
+                    messaging.send_in_play(u, title, body)
+
     total_new = sum(len(v) for v in new_hits.values())
     logger.info("in_play scan: %s, %d candidates, %d new user hits, %d pushed, %d errors%s%s",
                 scanned, len(candidates), total_new, pushed, errors,

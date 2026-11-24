@@ -59,26 +59,38 @@ async def clear(request: Request):
 
 @router.post("/message")
 async def message(request: Request, body: MessageBody):
+    reply, err = await respond(get_username(request), body.message)
+    if err:
+        return JSONResponse(status_code=502, content={"error": err})
+    return {"message": reply}
+
+
+async def respond(username: str, text: str, channel: str = "app") -> tuple[dict | None, str | None]:
+    """Answer one message in the user's conversation (the app and WhatsApp share it). (reply, error)."""
     from main import build_chat_prompt, _extract_and_store_facts  # shared with the legacy /api/chat
     from services.chat_prompt import SYSTEM_PROMPT
     from services.claude_cli import run_claude
 
-    username = get_username(request)
     msgs = _load(username)
-    prompt = await build_chat_prompt(username, body.message, _history_for_prompt(msgs))
-    result = await run_claude(prompt, system=SYSTEM_PROMPT + "\n\n" + actions.ACTIONS_GUIDE)
+    prompt = await build_chat_prompt(username, text, _history_for_prompt(msgs))
+    system = SYSTEM_PROMPT + "\n\n" + actions.ACTIONS_GUIDE
+    if channel == "whatsapp":
+        system += ("\n\nThis conversation is happening in WhatsApp: keep replies short (under 1,200 characters), "
+                   "plain text with no Markdown tables or headings. Any action you propose has to be confirmed in the app.")
+    result = await run_claude(prompt, system=system)
     if not result.ok:
-        return JSONResponse(status_code=502, content={"error": f"The assistant is unavailable: {result.text[:200]}"})
-    text, proposals = actions.split_reply(result.text)
+        return None, f"The assistant is unavailable: {result.text[:200]}"
+    answer, proposals = actions.split_reply(result.text)
     validated = [await actions.validate(p, username) for p in proposals]
     now = time.time()
-    msgs.append({"role": "user", "content": body.message, "ts": now})
-    reply = {"role": "assistant", "content": text or "Here's what I can do:", "ts": now, "actions": validated}
+    msgs.append({"role": "user", "content": text, "ts": now, **({"channel": channel} if channel != "app" else {})})
+    reply = {"role": "assistant", "content": answer or "Here's what I can do:", "ts": now, "actions": validated,
+             **({"channel": channel} if channel != "app" else {})}
     msgs.append(reply)
     _save(username, msgs)
     asyncio.create_task(_extract_and_store_facts(username, [
-        {"role": "user", "content": body.message}, {"role": "assistant", "content": text}]))
-    return {"message": reply}
+        {"role": "user", "content": text}, {"role": "assistant", "content": answer}]))
+    return reply, None
 
 
 def _find(msgs: list[dict], action_id: str):

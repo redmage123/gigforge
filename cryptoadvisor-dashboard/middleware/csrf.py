@@ -29,7 +29,8 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         if re.fullmatch(r"/api/sso/saml/[a-z0-9-]+/acs", request.url.path):
             return await call_next(request)
         # WhatsApp webhook: a server-to-server POST from Meta, authenticated by its HMAC signature
-        if request.url.path == "/api/whatsapp/webhook":
+        # Stripe webhook: likewise server-to-server, authenticated by the Stripe-Signature header
+        if request.url.path in ("/api/whatsapp/webhook", "/api/payments/webhook/stripe"):
             return await call_next(request)
 
         # Skip public endpoints (login, register)

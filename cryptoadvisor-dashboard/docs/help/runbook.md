@@ -35,6 +35,8 @@ All user records (users, portfolios, trades, cash, statements, settings) are in 
 | `PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_ENV` | Plaid broker connections ("Coming soon" when unset) |
 | `SNAPTRADE_CLIENT_ID`, `SNAPTRADE_CONSUMER_KEY` | SnapTrade broker connections ("Coming soon" when unset) |
 | `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_DISPLAY_NUMBER`, `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN` | WhatsApp (Meta Cloud API). All but the verify token are required; the WhatsApp page says "not available" when unset |
+| `PAYMENTS_ENABLED`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | Paid plans by card (Stripe). Pro includes WhatsApp; the Billing page says "Coming soon" until all three are set (section 11) |
+| `STRIPE_PRICE_PRO`, `PLAN_PRO_PRICE_USD` | Optional: the recurring Price id for Pro, or the monthly amount (default 19.99) |
 | `WHATSAPP_ALERT_TEMPLATE`, `WHATSAPP_TEMPLATE_LANG` | Optional approved template (one body variable) for alerts sent more than 24 hours after the user last wrote |
 
 Any change to the env file needs the container recreated (section 4); `docker restart` does not reload it.
@@ -238,6 +240,17 @@ docker exec assetadvisor-db psql -U assetadvisor -d assetadvisor -c \
 
 Each sign-in creates a row in `sessions`; the token only works while its row is unrevoked and unexpired. Ended sessions stay listed for 30 days.
 
+### Give or remove a plan without payment
+
+For testers, early users or goodwill. Pro includes WhatsApp. `days=None` means until revoked. Both are recorded in the audit trail.
+
+```
+docker exec -i assetadvisor-app python -c "from services import payments; print(payments.grant('USER', 'pro', days=90, actor='support:NAME', reason='beta tester'))"
+docker exec -i assetadvisor-app python -c "from services import payments; print(payments.revoke('USER', actor='support:NAME', reason='beta over'))"
+```
+
+Card subscriptions can't be granted over or revoked here: refund or cancel those in the Stripe dashboard, and the webhook updates the user.
+
 ### Reset a user's two-factor authentication
 
 When someone has lost both their phone and their recovery codes. **Verify their identity out of band first** (for example a call to a number on file), and note the ticket.
@@ -342,6 +355,18 @@ Check the app log for `broker` errors. For Alpaca, check https://status.alpaca.m
 ### Plaid and SnapTrade
 
 Set the variables in section 1 and recreate the app. The "Coming soon" note on Broker Connections is replaced by the connect buttons. Start Plaid with `PLAID_ENV=sandbox` and test before switching to `production`.
+
+### Paid plans (Stripe)
+
+WhatsApp is the paid feature (Pro); without Pro nothing is sent on WhatsApp. To take payments:
+
+1. In the Stripe dashboard (start in test mode), Developers → API keys: set `STRIPE_SECRET_KEY`.
+2. Developers → Webhooks → Add endpoint `https://assetadvisor.ai-elevate.ai/api/payments/webhook/stripe` with the events `checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.paid` and `invoice.payment_failed`. Set its signing secret as `STRIPE_WEBHOOK_SECRET`.
+3. Settings → Billing → Customer portal: save the settings once (the **Manage subscription** button needs it); allow cancelling and updating the payment method.
+4. Price: either create a recurring monthly Price for the product "AssetAdvisor Pro" and set `STRIPE_PRICE_PRO`, or set `PLAN_PRO_PRICE_USD` (default 19.99) and the checkout uses that amount. Keep `PLAN_PRO_PRICE_USD` equal to the Price, since it's the amount shown on the Billing page.
+5. Set `PAYMENTS_ENABLED=true`; recreate the app. Test with card 4242 4242 4242 4242 in test mode, then switch to live keys and a live webhook.
+
+Stripe is the source of truth: subscription state comes only from signed webhook calls. If a renewal webhook is missed, access ends 3 days after the paid period. Deleting an account cancels its subscription.
 
 ### WhatsApp
 

@@ -16,6 +16,7 @@ PUBLIC_PATHS = (
     "/api/firms/invite-info",
     "/api/share/view/",
     "/api/whatsapp/webhook",  # Meta's servers; every call is checked against the app secret signature
+    "/api/payments/webhook/stripe",  # Stripe's servers; every call is checked against the webhook signature
     "/health",
     "/api/health",
     "/static/",

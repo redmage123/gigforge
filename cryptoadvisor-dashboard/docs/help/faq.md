@@ -76,7 +76,11 @@ Crypto prices are live. Stocks, ETFs, futures and forex may be delayed by about 
 
 ### Can I get alerts on WhatsApp?
 
-Yes. Open **WhatsApp** in the user menu and select **Link WhatsApp**, then send the code it shows from your phone. You choose whether alerts, In-Play hits and a daily briefing are sent, and you can chat with the assistant there. Reply STOP at any time to pause messages. Telegram is no longer offered.
+Yes, with the Pro plan. WhatsApp charges for every message a business sends, so WhatsApp comes with Pro (**Billing & plan** in the user menu); everything else is free. Once you have Pro, open **WhatsApp** in the user menu and select **Link WhatsApp**, then send the code it shows from your phone. You choose whether alerts, In-Play hits and a daily briefing are sent, and you can chat with the assistant there. Reply STOP at any time to pause messages. Telegram is no longer offered.
+
+### How do I cancel Pro?
+
+Open **Billing & plan** in the user menu and select **Manage subscription**, then cancel on Stripe's page. Pro stays on until the end of the month you've paid for. Your data isn't affected.
 
 ### Why don't my returns look right?
 

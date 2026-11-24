@@ -1,39 +1,18 @@
-import { useState, useEffect } from 'react'
-import { useFetch } from '../hooks/useFetch'
+import { useCallback, useEffect, useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
+import { api } from '../api/client'
 import Card from '../components/Card'
 import LoadingSpinner from '../components/LoadingSpinner'
 
-const methodIcons = {
-  stripe: (
-    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="1" y="4" width="22" height="16" rx="2" ry="2" />
-      <line x1="1" y1="10" x2="23" y2="10" />
-    </svg>
-  ),
-  btc: (
-    <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M11.5 1v2.07C7.89 3.55 5.13 6.29 4.57 9.87L2.5 10l-.01 2 2.08.13c.56 3.58 3.32 6.32 6.93 6.8V21h2v-2.07c3.61-.48 6.37-3.22 6.93-6.8l2.07-.13v-2l-2.07-.13c-.56-3.58-3.32-6.32-6.93-6.8V1h-2zm0 4.09c2.6.46 4.63 2.49 5.09 5.04H7.41c.46-2.55 2.49-4.58 5.09-5.04v5.04h-1v2h1v5.04c-2.6-.46-4.63-2.49-5.09-5.04h9.18c-.46 2.55-2.49 4.58-5.09 5.04v-5.04h1v-2h-1V5.09z"/>
-    </svg>
-  ),
-  eth: (
-    <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M12 1.5l-7 10.17L12 15.72l7-4.05L12 1.5zM5 13.34L12 22.5l7-9.16-7 4.05-7-4.05z"/>
-    </svg>
-  ),
-}
-
-function PlanCard({ plan, current, enabled, onSelect }) {
-  const isCurrent = current === plan.id
+function PlanCard({ plan, sub, onUpgrade, busy }) {
+  const isCurrent = sub.plan_id === plan.id
   const isFree = plan.price_usd === 0
-
+  const label = `${plan.name} plan`
   return (
-    <div className={`billing-plan-card ${isCurrent ? 'current' : ''} ${plan.id === 'premium' ? 'featured' : ''}`}>
-      {plan.id === 'premium' && <div className="plan-badge">Most Popular</div>}
+    <section className={`billing-plan-card ${isCurrent ? 'current' : ''} ${!isFree ? 'featured' : ''}`} aria-label={label}>
       <h3 className="plan-name">{plan.name}</h3>
       <div className="plan-price">
-        {isFree ? (
-          <span className="plan-amount">Free</span>
-        ) : (
+        {isFree ? <span className="plan-amount">Free</span> : (
           <>
             <span className="plan-currency">$</span>
             <span className="plan-amount">{plan.price_usd}</span>
@@ -42,188 +21,123 @@ function PlanCard({ plan, current, enabled, onSelect }) {
         )}
       </div>
       <ul className="plan-features">
-        {plan.features.map((f, i) => (
-          <li key={i}>{f}</li>
-        ))}
+        {plan.features.map((f) => <li key={f}>{f}</li>)}
       </ul>
       {isCurrent ? (
-        <button className="btn plan-btn current-btn" disabled>Current Plan</button>
-      ) : isFree ? (
-        <button className="btn btn-outline plan-btn" disabled>Downgrade</button>
-      ) : (
-        <button
-          className="btn plan-btn"
-          disabled={!enabled}
-          onClick={() => onSelect(plan)}
-        >
-          {enabled ? 'Upgrade' : 'Coming Soon'}
+        <button type="button" className="btn plan-btn current-btn" disabled>Current plan</button>
+      ) : isFree ? null : (
+        <button type="button" className="btn plan-btn" disabled={!sub.card || busy} onClick={() => onUpgrade(plan)}>
+          {!sub.card ? 'Coming soon' : busy ? 'Opening checkout…' : `Subscribe to ${plan.name}`}
         </button>
       )}
-    </div>
-  )
-}
-
-function PaymentMethodSelector({ plan, onClose }) {
-  const [method, setMethod] = useState(null)
-
-  return (
-    <div className="ai-modal-overlay" onClick={onClose}>
-      <div className="ai-modal billing-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="ai-modal-header">
-          <h3>Choose Payment Method</h3>
-          <button className="ai-modal-close" onClick={onClose}>&times;</button>
-        </div>
-        <p className="muted" style={{ marginBottom: '1.25rem', fontSize: '0.9rem' }}>
-          Upgrade to <strong style={{ color: 'var(--primary)' }}>{plan.name}</strong> &mdash; ${plan.price_usd}/{plan.interval}
-        </p>
-
-        <div className="payment-methods">
-          <button
-            className={`payment-method-card ${method === 'stripe' ? 'selected' : ''}`}
-            onClick={() => setMethod('stripe')}
-          >
-            <div className="pm-icon">{methodIcons.stripe}</div>
-            <div className="pm-info">
-              <div className="pm-name">Credit / Debit Card</div>
-              <div className="pm-desc">Visa, Mastercard, Amex via Stripe</div>
-            </div>
-          </button>
-
-          <button
-            className={`payment-method-card ${method === 'btc' ? 'selected' : ''}`}
-            onClick={() => setMethod('btc')}
-          >
-            <div className="pm-icon" style={{ color: '#f7931a' }}>{methodIcons.btc}</div>
-            <div className="pm-info">
-              <div className="pm-name">Bitcoin</div>
-              <div className="pm-desc">{plan.price_btc} BTC</div>
-            </div>
-          </button>
-
-          <button
-            className={`payment-method-card ${method === 'eth' ? 'selected' : ''}`}
-            onClick={() => setMethod('eth')}
-          >
-            <div className="pm-icon" style={{ color: '#627eea' }}>{methodIcons.eth}</div>
-            <div className="pm-info">
-              <div className="pm-name">Ethereum</div>
-              <div className="pm-desc">{plan.price_eth} ETH</div>
-            </div>
-          </button>
-        </div>
-
-        <button
-          className="btn"
-          style={{ width: '100%', marginTop: '1.25rem' }}
-          disabled={!method}
-          onClick={() => {
-            // This would call the checkout API when enabled
-            alert('Payments are currently in testing mode.')
-          }}
-        >
-          {method ? `Pay with ${method === 'stripe' ? 'Card' : method.toUpperCase()}` : 'Select a payment method'}
-        </button>
-      </div>
-    </div>
+    </section>
   )
 }
 
 export default function Billing() {
-  const { data: status, loading: ls } = useFetch('/api/payments/status')
-  const { data: plansData, loading: lp } = useFetch('/api/payments/plans')
-  const { data: subscription, loading: lsub } = useFetch('/api/payments/subscription')
-  const { data: historyData, loading: lh } = useFetch('/api/payments/history')
+  const [params] = useSearchParams()
+  const [plans, setPlans] = useState(null)
+  const [sub, setSub] = useState(null)
+  const [history, setHistory] = useState([])
+  const [busy, setBusy] = useState('')
+  const [error, setError] = useState('')
 
-  const [selectedPlan, setSelectedPlan] = useState(null)
+  const load = useCallback(() => Promise.all([
+    api.get('/api/payments/plans').then((d) => setPlans(d.plans || [])),
+    api.get('/api/payments/subscription').then(setSub),
+    api.get('/api/payments/history').then((d) => setHistory(d.payments || [])),
+  ]).catch((e) => setError(e.message)), [])
+  useEffect(() => { load() }, [load])
 
-  if (ls || lp) return <LoadingSpinner />
+  // Back from Stripe: the webhook may land a moment after the redirect, so look again shortly
+  const checkout = params.get('checkout')
+  useEffect(() => {
+    if (checkout !== 'success') return
+    const t = setTimeout(load, 3000)
+    return () => clearTimeout(t)
+  }, [checkout, load])
 
-  const enabled = status?.enabled || false
-  const plans = plansData?.plans || []
-  const currentPlan = subscription?.plan_id || 'free'
-  const payments = historyData?.payments || []
+  const go = async (key, path, body) => {
+    setBusy(key); setError('')
+    try {
+      const r = await api.post(path, body || {})
+      window.location.assign(r.checkout_url || r.url)
+    } catch (e) { setError(e.message); setBusy('') }
+  }
 
+  if (!plans || !sub) return error ? <Card title="Billing"><p className="negative">{error}</p></Card> : <LoadingSpinner />
+
+  const paid = sub.plan_id !== 'free'
   return (
-    <div>
-      <h1>Billing & Subscription</h1>
-
-      {!enabled && (
+    <div style={{ maxWidth: 900 }}>
+      <h1 style={{ marginTop: 0 }}>Billing &amp; plan</h1>
+      <p className="muted">
+        AssetAdvisor is free. The Pro plan adds WhatsApp: alerts, In-Play, the daily briefing and chat with the
+        assistant on your phone. WhatsApp charges for every business message, so it needs a paid plan.
+      </p>
+      {error && <p className="negative" role="alert">{error}</p>}
+      {checkout === 'success' && (
+        <p className="positive" role="status" style={{ margin: '0.5rem 0 1rem' }}>
+          {sub.whatsapp ? 'Thank you, Pro is active. ' : 'Thank you. Your payment is being confirmed; this page updates in a moment. '}
+          {sub.whatsapp && <Link to="/whatsapp">Set up WhatsApp now</Link>}
+        </p>
+      )}
+      {checkout === 'cancelled' && <p className="muted" role="status" style={{ margin: '0.5rem 0 1rem' }}>Checkout cancelled. You haven't been charged.</p>}
+      {!sub.card && (
         <div className="billing-banner">
-          <div className="billing-banner-icon">&#128679;</div>
+          <div className="billing-banner-icon" aria-hidden="true">&#128679;</div>
           <div>
-            <strong>Payments Coming Soon</strong>
-            <p>We're currently in testing mode. Subscription features will be available at launch. All users have full access during the beta period.</p>
+            <strong>Subscriptions open soon</strong>
+            <p>Paying by card isn't switched on yet. Everything except WhatsApp is free in the meantime.</p>
           </div>
         </div>
       )}
 
       <div className="billing-plans">
-        {plans.map((plan) => (
-          <PlanCard
-            key={plan.id}
-            plan={plan}
-            current={currentPlan}
-            enabled={enabled}
-            onSelect={setSelectedPlan}
-          />
-        ))}
+        {plans.map((p) => <PlanCard key={p.id} plan={p} sub={sub} busy={busy === 'checkout'}
+          onUpgrade={(plan) => go('checkout', '/api/payments/checkout/stripe', { plan_id: plan.id })} />)}
       </div>
 
-      <Card title="Payment Methods">
-        <div className="billing-payment-methods-summary">
-          <div className="pm-accepted">
-            <div className="pm-accepted-item">
-              <span style={{ color: 'var(--text)' }}>{methodIcons.stripe}</span>
-              <span>Visa, Mastercard, Amex</span>
+      {paid && (
+        <Card title="Your subscription">
+          <p style={{ marginTop: 0 }}>
+            <strong>{plans.find((p) => p.id === sub.plan_id)?.name || sub.plan_id}</strong>
+            {sub.payment_method === 'comp' && <span className="muted"> · given by AssetAdvisor support</span>}
+            {sub.status === 'past_due' && <span className="negative"> · the last payment failed; please update your card</span>}
+            {sub.expires_at && (
+              <span className="muted"> · {sub.cancel_at_period_end || sub.payment_method === 'comp' ? 'ends' : 'renews'} {new Date(sub.expires_at).toLocaleDateString()}</span>
+            )}
+          </p>
+          {sub.can_manage && (
+            <div style={{ marginTop: '0.75rem' }}>
+              <button type="button" className="btn btn-sm" disabled={!!busy} onClick={() => go('portal', '/api/payments/portal')}>
+                {busy === 'portal' ? 'Opening…' : 'Manage subscription'}
+              </button>
             </div>
-            <div className="pm-accepted-item">
-              <span style={{ color: '#f7931a' }}>{methodIcons.btc}</span>
-              <span>Bitcoin (BTC)</span>
-            </div>
-            <div className="pm-accepted-item">
-              <span style={{ color: '#627eea' }}>{methodIcons.eth}</span>
-              <span>Ethereum (ETH)</span>
-            </div>
-          </div>
-          {!enabled && <p className="muted" style={{ marginTop: '0.75rem', fontSize: '0.85rem' }}>Payment processing will be enabled when we exit testing mode.</p>}
-        </div>
-      </Card>
+          )}
+          {sub.can_manage && <p className="muted" style={{ fontSize: '0.85rem', marginBottom: 0 }}>Change your card, download invoices or cancel on Stripe's secure page.</p>}
+        </Card>
+      )}
 
-      <Card title="Payment History">
-        {payments.length === 0 ? (
-          <p className="muted">No payment history yet.</p>
-        ) : (
+      <Card title="Payment history" className="mt-1">
+        {history.length === 0 ? <p className="muted" style={{ margin: 0 }}>No payments yet.</p> : (
           <table>
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Plan</th>
-                <th>Amount</th>
-                <th>Method</th>
-                <th>Status</th>
-              </tr>
-            </thead>
+            <caption className="sr-only">Payment history</caption>
+            <thead><tr><th scope="col">Date</th><th scope="col">Plan</th><th scope="col">Amount</th><th scope="col">Status</th><th scope="col">Invoice</th></tr></thead>
             <tbody>
-              {payments.map((p, i) => (
-                <tr key={i}>
+              {history.map((p) => (
+                <tr key={p.id || p.date}>
                   <td>{new Date(p.date).toLocaleDateString()}</td>
                   <td>{p.plan}</td>
                   <td>{p.amount}</td>
-                  <td>{p.method}</td>
-                  <td><span className={`badge badge-${p.status === 'completed' ? 'green' : 'yellow'}`}>{p.status}</span></td>
+                  <td><span className={`badge badge-${p.status === 'completed' ? 'green' : 'red'}`}>{p.status === 'completed' ? 'Paid' : 'Failed'}</span></td>
+                  <td>{p.invoice_url ? <a href={p.invoice_url} target="_blank" rel="noopener noreferrer">View</a> : '—'}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         )}
       </Card>
-
-      {selectedPlan && (
-        <PaymentMethodSelector
-          plan={selectedPlan}
-          onClose={() => setSelectedPlan(null)}
-        />
-      )}
     </div>
   )
 }

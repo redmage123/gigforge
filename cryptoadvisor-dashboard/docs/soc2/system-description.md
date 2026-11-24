@@ -29,7 +29,7 @@ Hetzner (hosting), Cloudflare (edge, web analytics), Anthropic (AI), market data
 public blockchain data (Blockscout, Blockstream, mempool.space, public RPC nodes; only wallet addresses users enter are sent),
 news feeds (Google News, CoinDesk, Cointelegraph),
 optional: WalletConnect relay (Reown, only when a user pairs a wallet), Meta WhatsApp Business Cloud API (alerts and assistant chat for users who link a number; message text and the
-phone number are processed by Meta), Google / Microsoft (sign-in), Alpaca, Plaid, SnapTrade (broker data), customers'
+phone number are processed by Meta), Stripe (card payments for the Pro plan; card details are entered on Stripe's page and never reach AssetAdvisor), Google / Microsoft (sign-in), Alpaca, Plaid, SnapTrade (broker data), customers'
 SAML identity providers.
 
 ## Boundaries and current limitation

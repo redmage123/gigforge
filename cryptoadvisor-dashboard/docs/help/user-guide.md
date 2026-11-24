@@ -1280,6 +1280,8 @@ In the **Smart Alert Creator** you can type an alert in plain English, for examp
 
 Link your WhatsApp to get alerts there and to chat with the AssetAdvisor assistant from your phone. Open **WhatsApp** from the user menu (or from Settings).
 
+WhatsApp is part of the **Pro** plan, because WhatsApp charges for every message a business sends. Without Pro, the WhatsApp page explains this and links to **Billing & plan**; nothing is sent to your phone, and a message you send gets a short reply pointing to Billing. STOP, START, UNLINK and HELP always work. Everything else in AssetAdvisor is free. See [Billing and your plan](#billing-and-your-plan).
+
 ![The WhatsApp page: a linked number and the choice of what to send](img/whatsapp.jpg)
 
 ### Linking your number
@@ -1639,6 +1641,33 @@ What can be saved:
 
 **Get Suggestions** asks the AI for about five alert ideas based on your holdings, each with a short reason. Select the suggestion text to copy it into the box, then edit it down to the alert you want before selecting **Create Smart Alert**.
 
+
+## Billing and your plan
+
+Open **Billing & plan** from the user menu. AssetAdvisor has two plans:
+
+![The Billing & plan page: the Free and Pro plans, the active subscription with Manage subscription, and the payment history](img/billing.jpg)
+
+| Plan | Price | What it includes |
+|---|---|---|
+| Free | Free | Every dashboard, chart and indicator; portfolios, trades, tax report and DCA plans; unlimited alerts in the app and by email; the AI assistant and briefings in the app |
+| Pro | Monthly, shown on the page | Everything in Free, plus WhatsApp: alerts with their time scale, In-Play, the daily AI briefing, and chat with the assistant |
+
+### Subscribing
+
+1. Select **Subscribe to Pro**. You go to Stripe's secure checkout page; AssetAdvisor never sees your card number.
+2. Pay by card. You come back to Billing & plan, which shows **Pro is active** within a few seconds.
+3. Select **Set up WhatsApp now** to link your number (see [WhatsApp](#whatsapp)).
+
+The subscription renews every month on the same date. While subscriptions aren't open yet, the button reads **Coming soon**.
+
+### Changing your card, invoices and cancelling
+
+Under **Your subscription**, select **Manage subscription**. Stripe's page lets you change your card, download invoices and cancel. If you cancel, Pro and WhatsApp stay on until the end of the month you've paid for, then your account moves to Free; nothing else changes and no data is removed.
+
+If a renewal payment fails, Billing & plan says so and Stripe tries the card again over the following days; WhatsApp keeps working meanwhile. If every retry fails, the account moves to Free.
+
+**Payment history** lists each payment with a link to its invoice. Deleting your account also cancels the subscription.
 
 ## Settings, security and your data
 

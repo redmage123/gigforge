@@ -11,6 +11,10 @@ Configuration (environment):
   WHATSAPP_TEMPLATE_LANG    the template's language code (default en_US)
   WHATSAPP_API_VERSION      Graph API version (default v21.0)
 
+WhatsApp is a paid feature (services.payments.has_whatsapp): Meta charges per message. Without a paid
+plan nobody can link a number, nothing is sent, and chat messages get a reply pointing to Billing
+(replies inside the 24-hour window are free). STOP, START, UNLINK and HELP always work.
+
 Linking needs no paid message: the user sends "LINK 123456" from their own WhatsApp (a wa.me link fills
 it in), which proves they own the number and opens the 24-hour window in which replies are free.
 """
@@ -25,7 +29,7 @@ import time
 
 import httpx
 
-from services import store
+from services import payments, store
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +79,8 @@ def public_state(username: str) -> dict:
     phone = s.get("phone")
     return {
         "available": available(),
+        "entitled": payments.has_whatsapp(username),
+        "payments_enabled": payments.is_payments_enabled(),
         "business_number": c["display"] or None,
         "linked": bool(phone),
         "phone": f"+{phone[:-4].translate(str.maketrans('0123456789', '••••••••••'))}{phone[-4:]}" if phone else None,
@@ -202,6 +208,8 @@ async def send_to_user(username: str, text: str, kind: str) -> tuple[bool, str]:
     phone = s.get("phone")
     if not phone:
         return False, "No WhatsApp number linked"
+    if not payments.has_whatsapp(username):
+        return False, "WhatsApp needs a Pro plan"
     if s.get("paused"):
         return False, "WhatsApp messages are paused (the user sent STOP)"
     if kind != "test" and not s["prefs"].get(kind):
@@ -294,6 +302,10 @@ async def handle(message: dict) -> str | None:
     _put_state(username, s)
     if word in ("HELP", "?"):
         return HELP
+    if not payments.has_whatsapp(username):
+        from services.sso import public_url
+        return ("AssetAdvisor on WhatsApp is part of the Pro plan, and your account doesn't have it at the moment. "
+                f"You can subscribe under Billing in the app: {public_url()}/billing")
     if not s["prefs"].get("chat"):
         return "Chat with the assistant is turned off for this number. Turn it on under Settings > WhatsApp in the app."
 

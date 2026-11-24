@@ -58,6 +58,10 @@ async def delete_account(username: str) -> dict:
         raise ValueError("invalid username")
     removed = {"files": 0, "records": 0, "memories": 0}
 
+    # Stop any card subscription first: it needs the subscription record that's about to be deleted
+    from services import payments
+    await payments.cancel_on_account_deletion(user)
+
     # Every per-user record (all namespaces) and stored statements
     from services import store
     removed["files"] += store.delete_owner(user)
@@ -71,7 +75,7 @@ async def delete_account(username: str) -> dict:
     removed["records"] += sessions.forget(user)
 
     # Shared files keyed by user ("sessions" here is the pre-2026-11 session list)
-    for name in ("sessions", "shared_portfolios", "push_subscriptions", "telegram_config", "whatsapp_links", "whatsapp_codes"):
+    for name in ("sessions", "shared_portfolios", "push_subscriptions", "telegram_config", "whatsapp_links", "whatsapp_codes", "stripe_customers"):
         removed["records"] += _rewrite_json(name, _drop_user_rows(user))
 
     def unmatch(data):

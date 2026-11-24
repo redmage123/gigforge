@@ -56,6 +56,18 @@ export default function WhatsAppSetup() {
         <Card title="Not available yet">
           <p className="muted" style={{ margin: 0 }}>WhatsApp isn't set up on this server yet. Your administrator can enable it (see the runbook).</p>
         </Card>
+      ) : !st.entitled ? (
+        <Card title="WhatsApp is part of Pro">
+          <p style={{ marginTop: 0 }}>
+            WhatsApp charges for every message a business sends, so alerts, In-Play, the daily briefing and chat on
+            WhatsApp come with the Pro plan. Everything else in AssetAdvisor stays free.
+          </p>
+          {st.linked && <p className="muted" style={{ fontSize: '0.85rem' }}>Your number {st.phone} is still linked, but nothing is sent to it until you subscribe.</p>}
+          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center', marginTop: '1rem' }}>
+            <Link className="btn" to="/billing">{st.payments_enabled ? 'See the Pro plan' : 'See plans (subscriptions open soon)'}</Link>
+            {st.linked && <button type="button" className="btn btn-sm btn-ghost" onClick={unlink} disabled={!!busy}>Disconnect number</button>}
+          </div>
+        </Card>
       ) : !st.linked ? (
         <Card title="Link your WhatsApp">
           {!code ? (

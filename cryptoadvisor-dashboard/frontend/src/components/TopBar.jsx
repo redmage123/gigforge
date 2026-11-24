@@ -82,6 +82,9 @@ function TopBar({ onStartGuide }) {
             <button className="dropdown-item" onClick={() => go('/settings')}>
               <span className="dropdown-icon">&#9881;</span> Settings
             </button>
+            <button className="dropdown-item" onClick={() => go('/billing')}>
+              <span className="dropdown-icon">&#128179;</span> Billing &amp; plan
+            </button>
             <button className="dropdown-item" onClick={() => go('/change-password')}>
               <span className="dropdown-icon">&#128274;</span> Change Password
             </button>

@@ -25,7 +25,7 @@ async def _send(username: str, text: str, kind: str) -> None:
     from services import whatsapp
 
     ok, why = await whatsapp.send_to_user(username, text, kind)
-    if not ok and "not configured" not in why and "No WhatsApp" not in why and "turned off" not in why:
+    if not ok and not any(s in why for s in ("not configured", "No WhatsApp", "turned off", "Pro plan")):
         logger.info("whatsapp %s to %s not sent: %s", kind, username, why)
 
 
@@ -42,7 +42,7 @@ async def send_briefings() -> None:
     """Scheduler (hourly): the daily AI briefing to users who asked for it, at their chosen local hour."""
     import time
 
-    from services import store, whatsapp
+    from services import payments, store, whatsapp
 
     if not whatsapp.available():
         return
@@ -51,7 +51,7 @@ async def send_briefings() -> None:
     for username in store.keys(whatsapp.NAMESPACE):
         s = whatsapp.get_state(username)
         p = s["prefs"]
-        if not s.get("phone") or s.get("paused") or not p.get("briefing"):
+        if not s.get("phone") or s.get("paused") or not p.get("briefing") or not payments.has_whatsapp(username):
             continue
         local = now + p.get("tz_offset_min", 0) * 60
         day = int(local // 86400)

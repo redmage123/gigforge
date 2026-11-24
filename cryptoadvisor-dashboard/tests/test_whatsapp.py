@@ -33,6 +33,8 @@ def configured(monkeypatch):
         return True, ""
 
     monkeypatch.setattr(whatsapp, "_post", fake_post)
+    # WhatsApp is a paid feature; these tests are about WhatsApp itself (the gate is in test_payments.py)
+    monkeypatch.setattr(whatsapp.payments, "has_whatsapp", lambda username, now=None: True)
     whatsapp._seen.clear()
     whatsapp._chat_times.clear()
     for k in ("alice", "bob"):

@@ -16,7 +16,7 @@ import logging
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 
-from services import audit_events, whatsapp
+from services import audit_events, payments, whatsapp
 from services.user_data import get_username
 
 logger = logging.getLogger(__name__)
@@ -33,6 +33,8 @@ async def status(request: Request):
 async def link(request: Request):
     if not whatsapp.available():
         return JSONResponse({"error": "WhatsApp isn't set up on this server yet."}, status_code=503)
+    if not payments.has_whatsapp(get_username(request)):
+        return JSONResponse({"error": "WhatsApp is part of the Pro plan. Subscribe under Billing first."}, status_code=402)
     return whatsapp.start_link(get_username(request))
 
 

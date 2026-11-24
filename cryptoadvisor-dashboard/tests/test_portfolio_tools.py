@@ -375,3 +375,12 @@ async def test_onchain_api_errors(monkeypatch):
         assert r.status_code == 400 and "Ethereum address" in r.json()["detail"]
         r = await c.get(f"/api/onchain-pnl/?address={ETH_ADDR}")
         assert r.status_code == 502 and "unavailable" in r.json()["detail"]
+
+
+def test_share_links_work_when_the_old_list_format_is_stored():
+    """Production held the pre-2026-11 record as a list; creating, listing and revoking must still work."""
+    from services import share_portfolio, store
+
+    store.put(store.SHARED, share_portfolio.KEY, [])
+    row = share_portfolio.create_share("legacyuser", {"holdings": [], "allocation": []}, "Mine", False, False)
+    assert [r["token"] for r in share_portfolio.get_user_shares("legacyuser")] == [row["token"]]

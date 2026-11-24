@@ -64,6 +64,11 @@ def build_snapshot(positions: list[dict], show_values: bool, show_returns: bool)
     return snap
 
 
+def _as_dict(shares) -> dict:
+    """The stored links. Before 2026-11 this record was a list that nothing could ever add to: read it as empty."""
+    return shares if isinstance(shares, dict) else {}
+
+
 def create_share(username: str, snapshot: dict, title: str | None, show_values: bool, show_returns: bool) -> dict:
     """Store a snapshot under a new random token. Returns the owner's view of the new link."""
     token = secrets.token_urlsafe(24)
@@ -73,6 +78,7 @@ def create_share(username: str, snapshot: dict, title: str | None, show_values: 
     }
 
     def add(shares: dict) -> dict:
+        shares = _as_dict(shares)
         mine = sum(1 for e in shares.values() if isinstance(e, dict) and e.get("username") == username)
         if mine >= MAX_LINKS_PER_USER:
             raise ShareError(f"You can have up to {MAX_LINKS_PER_USER} active share links. Revoke one first.")
@@ -90,7 +96,7 @@ def _owner_row(token: str, e: dict) -> dict:
 
 
 def get_user_shares(username: str) -> list[dict]:
-    shares = store.get(store.SHARED, KEY, {}) or {}
+    shares = _as_dict(store.get(store.SHARED, KEY, {}))
     rows = [_owner_row(t, e) for t, e in shares.items() if isinstance(e, dict) and e.get("username") == username]
     return sorted(rows, key=lambda r: r["created_at"] or "", reverse=True)
 
@@ -99,7 +105,7 @@ def get_shared_portfolio(token: str) -> dict | None:
     """The public view of a link, or None if the token is unknown or revoked. Never includes the owner."""
     if not _TOKEN_RE.match(token or ""):
         return None
-    e = (store.get(store.SHARED, KEY, {}) or {}).get(token)
+    e = _as_dict(store.get(store.SHARED, KEY, {})).get(token)
     if not isinstance(e, dict) or "holdings" not in e:
         return None
     out = {"title": e.get("title") or "Portfolio", "created_at": e.get("created_at"),
@@ -121,6 +127,7 @@ def revoke_share(username: str, token: str) -> bool:
     done = []
 
     def drop(shares: dict) -> dict:
+        shares = _as_dict(shares)
         e = shares.get(token)
         if isinstance(e, dict) and e.get("username") == username:
             del shares[token]

@@ -3,11 +3,10 @@ import { api } from '../api/client';
 import Card from '../components/Card';
 import LoadingSpinner from '../components/LoadingSpinner';
 
-const COINS = [
-  { id: 'bitcoin', label: 'BTC' },
-  { id: 'ethereum', label: 'ETH' },
-  { id: 'solana', label: 'SOL' },
-];
+// Binance spot USDT pairs (instrument ids from the registry)
+const COINS = ['BTC', 'ETH', 'SOL', 'XRP', 'BNB', 'DOGE', 'ADA', 'LINK'].map((s) => ({ id: `crypto:${s}`, label: s }));
+
+const fmtPrice = (v) => (v == null ? '--' : `$${Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: v < 1 ? 6 : 2 })}`);
 
 const selectStyle = {
   padding: '0.6rem 1rem',
@@ -21,17 +20,18 @@ const selectStyle = {
 const cellStyle = { padding: '0.5rem 0.75rem', borderBottom: '1px solid #1a1a2e' };
 
 export default function Orderbook() {
-  const [coin, setCoin] = useState('bitcoin');
+  const [coin, setCoin] = useState('crypto:BTC');
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   const fetchBook = useCallback(async () => {
     try {
-      const res = await api.get(`/api/orderbook?coin=${coin}`);
+      const res = await api.get(`/api/orderbook/?instrument=${encodeURIComponent(coin)}&depth=20`);
       setData(res);
       setError('');
     } catch (err) {
+      setData(null);
       setError(err.message);
     } finally {
       setLoading(false);
@@ -51,10 +51,10 @@ export default function Orderbook() {
   const maxBidQty = bids.reduce((m, b) => Math.max(m, Number(b.quantity || b.amount || 0)), 1);
   const maxAskQty = asks.reduce((m, a) => Math.max(m, Number(a.quantity || a.amount || 0)), 1);
 
-  const bestBid = bids.length > 0 ? Number(bids[0].price || 0) : 0;
-  const bestAsk = asks.length > 0 ? Number(asks[0].price || 0) : 0;
-  const spread = bestAsk - bestBid;
-  const midPrice = (bestAsk + bestBid) / 2;
+  // Computed server-side from the best bid and best ask; null when either side is empty
+  const spread = data?.spread ?? null;
+  const midPrice = data?.mid_price ?? null;
+  const spreadPct = data?.spread_pct ?? null;
 
   return (
     <div>
@@ -79,19 +79,26 @@ export default function Orderbook() {
               <div style={{ textAlign: 'center' }}>
                 <div style={{ color: '#888', fontSize: '0.85rem', marginBottom: 4 }}>Spread</div>
                 <div style={{ color: '#f59e0b', fontSize: '1.3rem', fontWeight: 700 }}>
-                  ${spread.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  {fmtPrice(spread)}
                 </div>
+                {spreadPct != null && <div style={{ color: '#888', fontSize: '0.8rem' }}>{spreadPct.toFixed(4)}%</div>}
               </div>
             </Card>
             <Card>
               <div style={{ textAlign: 'center' }}>
                 <div style={{ color: '#888', fontSize: '0.85rem', marginBottom: 4 }}>Mid Price</div>
                 <div style={{ color: '#e0e0e0', fontSize: '1.3rem', fontWeight: 700 }}>
-                  ${midPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  {fmtPrice(midPrice)}
                 </div>
               </div>
             </Card>
           </div>
+
+          {data?.pair && (
+            <p style={{ color: '#888', fontSize: '0.85rem', marginBottom: '1rem', textAlign: 'center' }}>
+              Top 20 levels of the {data.pair} book on Binance spot (public data, refreshed every 5 seconds).
+            </p>
+          )}
 
           {/* Bids and Asks */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
@@ -113,7 +120,7 @@ export default function Orderbook() {
                       return (
                         <tr key={i}>
                           <td style={{ ...cellStyle, color: '#4ade80', fontWeight: 600, fontFamily: 'monospace' }}>
-                            ${Number(b.price || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                            {fmtPrice(Number(b.price || 0))}
                           </td>
                           <td style={{ ...cellStyle, color: '#e0e0e0', fontFamily: 'monospace' }}>{qty.toLocaleString()}</td>
                           <td style={cellStyle}>
@@ -155,7 +162,7 @@ export default function Orderbook() {
                       return (
                         <tr key={i}>
                           <td style={{ ...cellStyle, color: '#f87171', fontWeight: 600, fontFamily: 'monospace' }}>
-                            ${Number(a.price || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                            {fmtPrice(Number(a.price || 0))}
                           </td>
                           <td style={{ ...cellStyle, color: '#e0e0e0', fontFamily: 'monospace' }}>{qty.toLocaleString()}</td>
                           <td style={cellStyle}>

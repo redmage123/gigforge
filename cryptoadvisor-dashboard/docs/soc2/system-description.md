@@ -26,7 +26,11 @@ personal accounts. Firms are optional team accounts that own portfolios, with ro
 
 ## Third parties (subservice organizations / vendors)
 Hetzner (hosting), Cloudflare (edge, web analytics), Anthropic (AI), market data (Binance, Yahoo Finance, CoinGecko),
-optional: Google / Microsoft (sign-in), Alpaca, Plaid, SnapTrade (broker data), customers' SAML identity providers.
+public blockchain data (Blockscout, Blockstream, mempool.space, public RPC nodes; only wallet addresses users enter are sent),
+news feeds (Google News, CoinDesk, Cointelegraph),
+optional: Meta WhatsApp Business Cloud API (alerts and assistant chat for users who link a number; message text and the
+phone number are processed by Meta), Google / Microsoft (sign-in), Alpaca, Plaid, SnapTrade (broker data), customers'
+SAML identity providers.
 
 ## Boundaries and current limitation
 Production currently shares a host with other company workloads and automation agents. The audit scope

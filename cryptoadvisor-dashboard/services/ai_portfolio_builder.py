@@ -29,7 +29,7 @@ async def optimize_existing(holdings: list[dict], goal: str) -> str:
     Returns Claude's optimization suggestions.
     """
     holdings_text = "\n".join(
-        f"- {h.get('coin', '?')}: {h.get('amount', '?')} units (~${h.get('value_usd', 0):,.2f})"
+        f"- {h.get('Asset', h.get('coin', '?'))}: {h.get('amount', '?')} units (~${h.get('value_usd') or 0:,.2f})"
         for h in holdings
     )
     prompt = (

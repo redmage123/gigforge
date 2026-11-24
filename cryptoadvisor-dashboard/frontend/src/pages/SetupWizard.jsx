@@ -25,6 +25,14 @@ const INTEREST_OPTIONS = [
 ]
 
 const EXPERIENCE_LEVELS = ['Beginner', 'Intermediate', 'Advanced']
+
+// Chain for a watch-only address (EVM addresses are saved as Ethereum; change the chain on the Wallets page)
+function detectChain(address) {
+  if (/^0x[0-9a-fA-F]{40}$/.test(address)) return 'ethereum'
+  if (/^(bc1[02-9ac-hj-np-z]{11,71}|[13][1-9A-HJ-NP-Za-km-z]{25,34})$/.test(address)) return 'bitcoin'
+  if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(address)) return 'solana'
+  return null
+}
 const RISK_LEVELS = ['Conservative', 'Moderate', 'Aggressive']
 
 // Key integrations shown in the wizard (subset of full list)
@@ -60,17 +68,6 @@ const WIZARD_INTEGRATIONS = [
     description: 'On-chain data, wallet health, and transaction history',
     fields: [{ key: 'api_key', label: 'API Key', type: 'password' }],
     url: 'https://etherscan.io/myapikey',
-  },
-  {
-    id: 'telegram',
-    name: 'Telegram Bot',
-    category: 'Notifications',
-    description: 'Receive alerts and notifications via Telegram',
-    fields: [
-      { key: 'bot_token', label: 'Bot Token', type: 'password' },
-      { key: 'chat_id', label: 'Chat ID', type: 'text' },
-    ],
-    url: 'https://t.me/BotFather',
   },
 ]
 
@@ -150,6 +147,8 @@ export default function SetupWizard() {
   const [completedSteps, setCompletedSteps] = useState([])
   const [apiKeyValues, setApiKeyValues] = useState({})
   const [savingKeys, setSavingKeys] = useState(false)
+  const [savedWallet, setSavedWallet] = useState('')
+  const [stepError, setStepError] = useState('')
 
   const setApiKeyField = (fieldId, value) => {
     setApiKeyValues(prev => ({ ...prev, [fieldId]: value }))
@@ -213,7 +212,29 @@ export default function SetupWizard() {
     fetchGuidance(STEPS[currentStep].key)
   }, [])
 
+  // Add the entered address to the user's saved wallets (the Wallets page). Returns false to stay on the step.
+  const saveWallet = async () => {
+    const address = walletAddress.trim()
+    if (!address || address === savedWallet) return true
+    const chain = detectChain(address)
+    if (!chain) {
+      setStepError('That does not look like an Ethereum (0x...), Bitcoin or Solana address.')
+      return false
+    }
+    try {
+      await api.post('/api/wallet/saved', { label: 'Wallet', address, chain })
+    } catch (err) {
+      if (!/already saved/i.test(err.message)) {
+        setStepError(`Could not save the wallet: ${err.message}`)
+        return false
+      }
+    }
+    setSavedWallet(address)
+    return true
+  }
+
   const goToStep = async (stepIndex, extraInput = {}) => {
+    setStepError('')
     // Save API keys when leaving the api_keys step
     if (STEPS[currentStep].key === 'api_keys') {
       await saveApiKeys()
@@ -236,6 +257,12 @@ export default function SetupWizard() {
       return
     }
     if (currentStep === 1 && interests.length === 0) {
+      return
+    }
+    if (stepKey === 'wallet') {
+      saveWallet().then((ok) => {
+        if (ok) goToStep(currentStep + 1)
+      })
       return
     }
 
@@ -261,8 +288,16 @@ export default function SetupWizard() {
   }
 
   const handleComplete = async () => {
+    setStepError('')
     // Save any remaining API keys
     await saveApiKeys()
+    // Experience, interests and risk tolerance: kept in the profile and in AI memory for the assistant
+    try {
+      await api.put('/api/account/profile', { experience, interests, risk_tolerance: risk })
+    } catch (err) {
+      setStepError(`Could not save your profile: ${err.message}`)
+      return
+    }
     try {
       await fetch('/api/wizard/complete', {
         method: 'POST',
@@ -357,7 +392,7 @@ export default function SetupWizard() {
         {stepKey === 'welcome' && (
           <div>
             <h3 style={{ color: 'var(--text)', fontSize: '1.1rem', marginBottom: '1rem', textTransform: 'none' }}>
-              What is your crypto experience level?
+              What is your investing experience level?
             </h3>
             <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
               {EXPERIENCE_LEVELS.map(level => (
@@ -443,14 +478,17 @@ export default function SetupWizard() {
               <label>Or enter a wallet address to watch (read-only, no private keys needed)</label>
               <input
                 className="form-input"
-                placeholder="0x... or ENS name or Solana address"
+                placeholder="0x..., Bitcoin or Solana address"
                 value={walletAddress}
                 onChange={(e) => setWalletAddress(e.target.value)}
               />
             </div>
-            {walletAddress && (
+            <p className="muted" style={{ fontSize: '0.8rem' }}>
+              Select Next to add it to your Wallets. You can change its chain or label there.
+            </p>
+            {savedWallet && savedWallet === walletAddress.trim() && (
               <div className="alert alert-success">
-                Wallet added: {walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}
+                Wallet added: {savedWallet.slice(0, 6)}...{savedWallet.slice(-4)}
               </div>
             )}
           </div>
@@ -464,6 +502,9 @@ export default function SetupWizard() {
             </h3>
             <p className="muted" style={{ fontSize: '0.85rem', marginBottom: '1rem' }}>
               The AI has suggested some alerts above. You can set these up now or later from the Alerts page.
+            </p>
+            <p className="muted" style={{ fontSize: '0.85rem', marginBottom: '1rem' }}>
+              To get alerts on your phone, <a href="/whatsapp" style={{ color: 'var(--primary)', textDecoration: 'none' }}>set up WhatsApp</a>.
             </p>
             <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
               <button className="btn btn-sm" onClick={() => navigate('/alerts')}>
@@ -519,9 +560,9 @@ export default function SetupWizard() {
               <p style={{ fontSize: '0.9rem', marginBottom: '0.5rem' }}>
                 <strong>Risk tolerance:</strong> {risk}
               </p>
-              {walletAddress && (
+              {savedWallet && (
                 <p style={{ fontSize: '0.9rem' }}>
-                  <strong>Wallet:</strong> {walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}
+                  <strong>Wallet:</strong> {savedWallet.slice(0, 6)}...{savedWallet.slice(-4)}
                 </p>
               )}
             </div>
@@ -531,6 +572,8 @@ export default function SetupWizard() {
           </div>
         )}
       </div>
+
+      {stepError && <div className="alert alert-error" role="alert" style={{ marginTop: '1rem' }}>{stepError}</div>}
 
       {/* Navigation */}
       {stepKey !== 'complete' && (

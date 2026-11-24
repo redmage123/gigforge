@@ -48,6 +48,18 @@ async def list_docs(request: Request):
             for slug, m in DOCS.items() if admin or not m["admin_only"]]
 
 
+@router.get("/img/{name}")
+async def doc_image(name: str):
+    """Screenshots used by the guides (everyone may see them: they show no one's data)."""
+    import re
+
+    path = HELP_DIR / "img" / name
+    if not re.fullmatch(r"[a-z0-9-]+\.(png|jpg)", name) or not path.is_file():
+        raise HTTPException(404, "No such image")
+    return FileResponse(path, media_type="image/png" if name.endswith(".png") else "image/jpeg",
+                        headers={"Cache-Control": "public, max-age=86400"})
+
+
 @router.get("/{slug}.pdf")
 async def doc_pdf(request: Request, slug: str):
     _doc(request, slug)

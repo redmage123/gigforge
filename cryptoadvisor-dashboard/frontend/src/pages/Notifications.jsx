@@ -187,7 +187,7 @@ function RulesEditor({ data, onSaved }) {
       const res = await api.put('/api/in-play/rules', body)
       onSaved(res)
       toast.success(res.profile_ready
-        ? `Rules saved: ${res.entries.length} coins match in the last ${res.rules.retention_days} days`
+        ? `Rules saved: ${res.entries.length} instruments match in the last ${res.rules.retention_days} days`
         : `Rules saved. Building ${candleName(res.rules.timeframe)} candle history; the list fills in within a few minutes.`)
     } catch (err) {
       toast.error(err.message)
@@ -258,7 +258,7 @@ function RulesEditor({ data, onSaved }) {
           </label>
         ))}
         <label style={labelStyle} htmlFor="ip-retention">
-          Keep coins on the list for (days)
+          Keep instruments on the list for (days)
           <input
             id="ip-retention"
             className="input"
@@ -271,7 +271,7 @@ function RulesEditor({ data, onSaved }) {
             onChange={(e) => setDraft({ ...draft, retention_days: e.target.value })}
             style={{ width: '100%', boxSizing: 'border-box' }}
           />
-          <span className="muted" style={{ fontSize: '0.75rem' }}>A coin drops off this many days after it last triggered ({minDays}-{maxDays})</span>
+          <span className="muted" style={{ fontSize: '0.75rem' }}>An instrument drops off this many days after it last triggered ({minDays}-{maxDays})</span>
         </label>
       </div>
       <h4 style={{ color: '#e2e8f0', margin: '0 0 0.5rem', fontSize: '0.9rem' }}>SurgeX confirmation</h4>
@@ -442,7 +442,7 @@ export default function Notifications() {
         {entries.length === 0 ? (
           <p className="muted" style={{ textAlign: 'center' }}>
             {building ? 'Waiting for the first scan of your timeframe…'
-              : `No coins match your rules in the last ${rules?.retention_days ?? 14} days. The scanner runs every 15 minutes; try loosening the rules below.`}
+              : `No instruments match your rules in the last ${rules?.retention_days ?? 14} days. The scanner runs every 15 minutes; try loosening the rules below.`}
           </p>
         ) : narrow ? (
           <InPlayList entries={entries} />

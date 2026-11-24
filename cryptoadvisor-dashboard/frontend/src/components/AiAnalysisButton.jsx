@@ -117,7 +117,7 @@ export default function AiAnalysisButton({ endpoint, body, label = 'AI Analysis'
     setOpen(true)
     try {
       const res = await api.post(endpoint, body || {})
-      const text = typeof res === 'string' ? res : res.analysis || res.result || res.content || res.message || JSON.stringify(res, null, 2)
+      const text = typeof res === 'string' ? res : res.analysis || res.suggestions || res.result || res.content || res.message || JSON.stringify(res, null, 2)
       setResult(text)
       if (onResult) onResult(text)
     } catch (err) {

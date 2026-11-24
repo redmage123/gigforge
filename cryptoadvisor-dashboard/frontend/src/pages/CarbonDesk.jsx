@@ -222,9 +222,9 @@ export default function CarbonTrading() {
           onClick={() => setAdvisorOpen(o => !o)} aria-label="AI trading advisor">
           ✦<span className="tt-advisor-text"> AI Advisor</span>
         </button>
-        <button type="button" className="tt-icon-btn" aria-pressed={cbSafe} onClick={toggleCb} aria-label="Colour-blind-safe palette"
-          title="Swap green/red for a blue/orange palette that is distinguishable with colour-vision deficiency">
-          ◐<span className="tt-btn-text"> {cbSafe ? 'Colour-safe on' : 'Colour-safe'}</span>
+        <button type="button" className="tt-icon-btn" aria-pressed={cbSafe} onClick={toggleCb} aria-label="Color-blind-safe palette"
+          title="Swap green/red for a blue/orange palette that is distinguishable with color-vision deficiency">
+          ◐<span className="tt-btn-text"> {cbSafe ? 'Color-safe on' : 'Color-safe'}</span>
         </button>
         <button type="button" className="tt-icon-btn" onClick={toggleFullscreen} title="Full screen (Esc to exit)" aria-label="Full screen">
           ⛶<span className="tt-btn-text"> Full screen</span>
@@ -283,7 +283,7 @@ export default function CarbonTrading() {
           <span className={pnlClass(position?.qty)}>
             {position?.qty ? `${position.qty > 0 ? 'LONG +' : 'SHORT '}${position.qty}` : 'FLAT'}
           </span>
-          <button type="button" className="tt-link-btn" onClick={() => setRecenter(n => n + 1)} title="Centre on the inside market (Home)">⌖ Centre</button>
+          <button type="button" className="tt-link-btn" onClick={() => setRecenter(n => n + 1)} title="Center on the inside market (Home)">⌖ Center</button>
         </div>
         <PriceLadder quote={quote} depth={depth} workingOrders={working} position={position}
           onPlace={place} onCancelAt={cancelAt} recenterSignal={recenter} />

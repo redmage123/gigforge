@@ -1,17 +1,17 @@
 """Wallet API endpoints — balance aggregation + saved wallet management."""
 
 import json
-from pathlib import Path
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from services.blockchain.ethereum import EVMClient
-from services.blockchain.solana import SolanaClient
-from services.blockchain.bitcoin import BitcoinClient
 from services.coingecko import get_prices
 from config import EVM_CHAINS, BASE_DIR
+from services import store, wallet_balances
+from services.sanitize import sanitize_filename
+from services.user_data import load_user_data, save_user_data, update_user_data
 
 router = APIRouter()
 
@@ -30,27 +30,29 @@ CHAIN_NATIVE_COINS = {
 
 
 class SavedWallet(BaseModel):
-    label: str
-    address: str
+    label: str = Field("", max_length=60)
+    address: str = Field(min_length=20, max_length=100)
     chain: str  # "ethereum", "solana", "bitcoin", or specific EVM chain
 
 
-def _wallets_file(username: str) -> Path:
-    """Per-user saved wallets file."""
-    WALLETS_DIR.mkdir(parents=True, exist_ok=True)
-    return WALLETS_DIR / f"{username}.json"
+NAMESPACE = "wallets"  # same record the snapshot job, net worth, tokens and NFT pages read
 
 
 def _load_wallets(username: str) -> list[dict]:
-    path = _wallets_file(username)
-    if not path.exists():
-        return []
-    return json.loads(path.read_text())
-
-
-def _save_wallets(username: str, wallets: list[dict]) -> None:
-    path = _wallets_file(username)
-    path.write_text(json.dumps(wallets, indent=2))
+    rows = load_user_data(username, NAMESPACE)
+    if rows:
+        return rows if isinstance(rows, list) else []
+    # Wallets saved before this page used the shared store lived in data/wallets/<user>.json
+    legacy = WALLETS_DIR / f"{sanitize_filename(username)}.json"
+    if store.using_postgres() and legacy.exists():
+        try:
+            rows = json.loads(legacy.read_text())
+        except (OSError, ValueError):
+            return []
+        if isinstance(rows, list) and rows:
+            save_user_data(username, NAMESPACE, rows)
+            return rows
+    return []
 
 
 def _get_username(request: Request) -> str:
@@ -61,101 +63,59 @@ def _get_username(request: Request) -> str:
 @router.get("/saved")
 async def list_saved_wallets(request: Request):
     """List all saved wallets for the current user."""
-    username = _get_username(request)
-    return _load_wallets(username)
+    return _load_wallets(_get_username(request))
 
 
 @router.post("/saved")
 async def add_saved_wallet(request: Request, wallet: SavedWallet):
     """Add a wallet to the user's saved list."""
     username = _get_username(request)
-    wallets = _load_wallets(username)
+    address, chain = wallet.address.strip(), wallet.chain.strip().lower()
+    bad = wallet_balances.validate(address, chain)
+    if bad:
+        return JSONResponse({"detail": bad}, status_code=400)
+    record = {"label": wallet.label.strip() or "Wallet", "address": address, "chain": chain}
+    _load_wallets(username)  # migrate a legacy file first so it isn't shadowed
 
-    # Check for duplicate address+chain
-    for w in wallets:
-        if w["address"].lower() == wallet.address.lower() and w["chain"] == wallet.chain:
-            return JSONResponse({"error": "Wallet already saved"}, status_code=409)
+    def add(rows):
+        rows = rows if isinstance(rows, list) else []
+        if any(w.get("address", "").lower() == address.lower() and w.get("chain") == chain for w in rows):
+            raise ValueError("Wallet already saved")
+        return rows + [record]
 
-    wallets.append(wallet.model_dump())
-    _save_wallets(username, wallets)
-    return {"status": "saved", "wallet": wallet.model_dump()}
+    try:
+        update_user_data(username, NAMESPACE, add)
+    except ValueError as exc:
+        return JSONResponse({"detail": str(exc)}, status_code=409)
+    return {"status": "saved", "wallet": record}
 
 
-@router.delete("/saved/{index}")
-async def remove_saved_wallet(request: Request, index: int):
-    """Remove a saved wallet by index."""
+@router.delete("/saved/{address}")
+async def remove_saved_wallet(request: Request, address: str, chain: str | None = Query(None)):
+    """Remove a saved wallet by address (and chain, when the same address is saved on several)."""
     username = _get_username(request)
-    wallets = _load_wallets(username)
-    if index < 0 or index >= len(wallets):
-        return JSONResponse({"error": "Invalid wallet index"}, status_code=404)
-    removed = wallets.pop(index)
-    _save_wallets(username, wallets)
-    return {"status": "removed", "wallet": removed}
+    _load_wallets(username)
+    removed = []
+
+    def drop(rows):
+        keep = []
+        for w in rows if isinstance(rows, list) else []:
+            if w.get("address", "").lower() == address.lower() and (chain is None or w.get("chain") == chain):
+                removed.append(w)
+            else:
+                keep.append(w)
+        return keep
+
+    update_user_data(username, NAMESPACE, drop)
+    if not removed:
+        return JSONResponse({"detail": "Wallet not found"}, status_code=404)
+    return {"status": "removed", "wallets": removed}
 
 
 @router.get("/saved/balances")
 async def get_all_saved_balances(request: Request):
-    """Get balances for all saved wallets."""
-    username = _get_username(request)
-    wallets = _load_wallets(username)
-    results = []
-    for w in wallets:
-        try:
-            bal = await _get_wallet_balance(w["address"], w["chain"])
-            results.append({**w, **bal})
-        except Exception as e:
-            results.append({**w, "balance": 0, "usd_value": 0, "error": str(e)})
-    total_usd = sum(r.get("usd_value", 0) for r in results)
-    return {"wallets": results, "total_usd": round(total_usd, 2)}
-
-
-async def _get_wallet_balance(address: str, chain: str) -> dict:
-    """Get balance for a single wallet on a specific chain."""
-    if chain in EVM_CHAINS:
-        client = EVMClient(chain)
-        bal = await client.get_balance(address)
-        coin_id = CHAIN_NATIVE_COINS.get(chain, "ethereum")
-        try:
-            prices = await get_prices((coin_id,))
-            usd_price = prices.get(coin_id, {}).get("usd", 0)
-        except Exception:
-            usd_price = 0
-        return {
-            "balance": bal["balance"],
-            "symbol": EVM_CHAINS[chain]["symbol"],
-            "usd_value": round(bal["balance"] * usd_price, 2),
-            "usd_price": usd_price,
-        }
-    elif chain == "solana":
-        client = SolanaClient()
-        bal = await client.get_balance(address)
-        try:
-            prices = await get_prices(("solana",))
-            usd_price = prices.get("solana", {}).get("usd", 0)
-        except Exception:
-            usd_price = 0
-        return {
-            "balance": bal["balance_sol"],
-            "symbol": "SOL",
-            "usd_value": round(bal["balance_sol"] * usd_price, 2),
-            "usd_price": usd_price,
-        }
-    elif chain == "bitcoin":
-        client = BitcoinClient()
-        bal = await client.get_address_balance(address)
-        try:
-            prices = await get_prices(("bitcoin",))
-            usd_price = prices.get("bitcoin", {}).get("usd", 0)
-        except Exception:
-            usd_price = 0
-        return {
-            "balance": bal["balance_btc"],
-            "symbol": "BTC",
-            "usd_value": round(bal["balance_btc"] * usd_price, 2),
-            "usd_price": usd_price,
-        }
-    else:
-        return {"balance": 0, "symbol": "?", "usd_value": 0, "error": f"Unknown chain: {chain}"}
+    """Balances for all saved wallets, from free public explorers and RPC endpoints."""
+    return await wallet_balances.balances(_load_wallets(_get_username(request)))
 
 
 @router.get("/balances/{address}")

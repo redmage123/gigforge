@@ -33,7 +33,7 @@ const deleteBtnStyle = {
   fontSize: '0.85rem',
 };
 
-const COINS = ['bitcoin', 'ethereum', 'solana', 'cardano', 'polkadot', 'avalanche-2', 'chainlink'];
+const COINS = ['BTC', 'ETH', 'SOL', 'ADA', 'DOT', 'AVAX', 'LINK'];
 const EXCHANGES = ['Binance', 'Coinbase', 'Kraken', 'KuCoin', 'Bybit'];
 const FREQUENCIES = ['daily', 'weekly', 'monthly'];
 
@@ -44,7 +44,7 @@ export default function DcaPlans() {
   const [creating, setCreating] = useState(false);
 
   // Form state
-  const [coin, setCoin] = useState('bitcoin');
+  const [coin, setCoin] = useState('BTC');
   const [exchange, setExchange] = useState('Binance');
   const [amount, setAmount] = useState('100');
   const [frequency, setFrequency] = useState('weekly');
@@ -70,7 +70,7 @@ export default function DcaPlans() {
       await api.post('/api/dca-plans/', {
         coin,
         exchange,
-        amount: Number(amount),
+        amount_usd: Number(amount),
         frequency,
       });
       await fetchPlans();
@@ -84,7 +84,7 @@ export default function DcaPlans() {
   const deletePlan = async (id) => {
     try {
       await api.del(`/api/dca-plans/${id}`);
-      setPlans((prev) => prev.filter((p) => (p.id || p._id) !== id));
+      setPlans((prev) => prev.filter((p) => p.plan_id !== id));
     } catch (err) {
       setError(err.message);
     }
@@ -134,7 +134,8 @@ export default function DcaPlans() {
           </button>
         </div>
         <p style={{ color: '#666', fontSize: '0.8rem', marginTop: '0.75rem', fontStyle: 'italic' }}>
-          Note: Requires connected exchange API keys for automatic execution.
+          Note: AssetAdvisor does not place orders. Plans are tracked only: when a buy is due, it is logged here as a
+          simulated purchase and nothing is sent to the exchange. Place the actual buys yourself.
         </p>
       </Card>
 
@@ -145,7 +146,7 @@ export default function DcaPlans() {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr>
-                  {['Coin', 'Amount', 'Frequency', 'Exchange', 'Next Execution', 'Status', ''].map((h) => (
+                  {['Coin', 'Amount', 'Frequency', 'Exchange', 'Next Simulated Buy', 'Simulated Buys', 'Status', ''].map((h) => (
                     <th key={h} style={{ padding: '0.75rem', borderBottom: '1px solid #2a2a3d', color: '#888', textAlign: 'left', fontSize: '0.85rem' }}>{h}</th>
                   ))}
                 </tr>
@@ -154,21 +155,24 @@ export default function DcaPlans() {
                 {plans.map((p, i) => {
                   const status = (p.status || 'active').toLowerCase();
                   const sc = statusColors[status] || statusColors.active;
-                  const id = p.id || p._id || i;
+                  const id = p.plan_id;
                   return (
-                    <tr key={id}>
+                    <tr key={id || i}>
                       <td style={{ padding: '0.75rem', borderBottom: '1px solid #1a1a2e', color: '#e0e0e0', fontWeight: 600 }}>{p.coin || '--'}</td>
-                      <td style={{ padding: '0.75rem', borderBottom: '1px solid #1a1a2e', color: '#4ade80', fontWeight: 600 }}>${Number(p.amount || 0).toLocaleString()}</td>
+                      <td style={{ padding: '0.75rem', borderBottom: '1px solid #1a1a2e', color: '#4ade80', fontWeight: 600 }}>${Number(p.amount_usd || 0).toLocaleString()}</td>
                       <td style={{ padding: '0.75rem', borderBottom: '1px solid #1a1a2e', color: '#e0e0e0', textTransform: 'capitalize' }}>{p.frequency || '--'}</td>
                       <td style={{ padding: '0.75rem', borderBottom: '1px solid #1a1a2e', color: '#e0e0e0' }}>{p.exchange || '--'}</td>
-                      <td style={{ padding: '0.75rem', borderBottom: '1px solid #1a1a2e', color: '#aaa' }}>{p.next_execution || p.nextExecution || '--'}</td>
+                      <td style={{ padding: '0.75rem', borderBottom: '1px solid #1a1a2e', color: '#aaa' }}>{p.next_execution ? new Date(p.next_execution).toLocaleString() : '--'}</td>
+                      <td style={{ padding: '0.75rem', borderBottom: '1px solid #1a1a2e', color: '#aaa' }}>
+                        {p.execution_count || 0}{p.execution_count ? ` ($${Number(p.total_invested || 0).toLocaleString()})` : ''}
+                      </td>
                       <td style={{ padding: '0.75rem', borderBottom: '1px solid #1a1a2e' }}>
                         <span style={{ background: sc.bg, color: sc.color, padding: '2px 8px', borderRadius: 4, fontSize: '0.85rem', fontWeight: 600, textTransform: 'capitalize' }}>
                           {status}
                         </span>
                       </td>
                       <td style={{ padding: '0.75rem', borderBottom: '1px solid #1a1a2e' }}>
-                        <button onClick={() => deletePlan(id)} style={deleteBtnStyle}>Delete</button>
+                        <button onClick={() => deletePlan(id)} disabled={!id} style={deleteBtnStyle}>Delete</button>
                       </td>
                     </tr>
                   );

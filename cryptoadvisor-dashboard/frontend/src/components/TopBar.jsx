@@ -97,9 +97,6 @@ function TopBar({ onStartGuide }) {
             <button className="dropdown-item" onClick={() => go('/whatsapp')}>
               <span className="dropdown-icon">&#128172;</span> WhatsApp
             </button>
-            <button className="dropdown-item" onClick={() => go('/telegram-setup')}>
-              <span className="dropdown-icon">&#9993;</span> Telegram Setup
-            </button>
             <button className="dropdown-item" onClick={() => go('/csv-import')}>
               <span className="dropdown-icon">&#128196;</span> CSV Import
             </button>

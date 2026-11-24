@@ -47,7 +47,7 @@ export default function TradingCoach() {
   const [baLoading, setBaLoading] = useState(false);
 
   useEffect(() => {
-    api.get('/api/trades')
+    api.get('/api/trades/')
       .then((res) => {
         const arr = Array.isArray(res) ? res : res.trades || [];
         setTrades(arr);
@@ -63,9 +63,8 @@ export default function TradingCoach() {
     setError('');
     setPostMortem(null);
     try {
-      const trade = trades.find((t) => (t.id || t._id || '') === selectedTrade) || trades[Number(selectedTrade)];
-      const res = await api.post('/api/ai-advanced/trade-coach', { trade });
-      setPostMortem(res);
+      const res = await api.post('/api/ai-advanced/trade-coach', { trade_id: selectedTrade });
+      setPostMortem(res.analysis || 'No analysis returned.');
     } catch (err) {
       setError(err.message);
     } finally {
@@ -78,9 +77,8 @@ export default function TradingCoach() {
     setError('');
     setBehavioralAnalysis(null);
     try {
-      const res = await api.post('/api/ai-advanced/trading-insights', { trades });
-      const text = typeof res === 'string' ? res : res.analysis || res.insights || res.result || res.content || JSON.stringify(res, null, 2);
-      setBehavioralAnalysis(text);
+      const res = await api.post('/api/ai-advanced/trading-insights', {});
+      setBehavioralAnalysis(res);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -88,14 +86,19 @@ export default function TradingCoach() {
     }
   };
 
-  const pm = postMortem || {};
-  const pmText = typeof postMortem === 'string' ? postMortem : null;
-  const sections = [
-    { key: 'what_went_right', label: 'What Went Right', color: '#4ade80' },
-    { key: 'what_went_wrong', label: 'What Went Wrong', color: '#f87171' },
-    { key: 'timing', label: 'Timing Analysis', color: '#f59e0b' },
-    { key: 'lesson', label: 'Key Lesson', color: '#646cff' },
-  ];
+  const ba = behavioralAnalysis;
+  const fmt = (v, suffix = '') => (v == null ? '--' : `${v}${suffix}`);
+  const money = (v) => (v == null ? '--' : `${v < 0 ? '-' : ''}$${Math.abs(v).toLocaleString(undefined, { maximumFractionDigits: 2 })}`);
+  const statTiles = ba ? [
+    { label: 'Total Trades', value: fmt(ba.total_trades) },
+    { label: 'Closed Trades', value: fmt(ba.closed_trades) },
+    { label: 'Win Rate', value: fmt(ba.win_rate, '%') },
+    { label: 'Avg Hold Time', value: ba.avg_hold_days == null ? '--' : `${ba.avg_hold_days} days` },
+    { label: 'Realized P&L', value: money(ba.realized_pnl) },
+    { label: 'Avg Win', value: money(ba.avg_win) },
+    { label: 'Avg Loss', value: money(ba.avg_loss) },
+    { label: 'Trades per Week', value: fmt(ba.trades_per_week) },
+  ] : [];
 
   if (loading) return <LoadingSpinner />;
 
@@ -113,7 +116,7 @@ export default function TradingCoach() {
               {trades.length === 0 && <option value="">No trades found</option>}
               {trades.map((t, i) => {
                 const id = t.id || t._id || String(i);
-                const label = `${t.side || t.type || 'Trade'} ${t.symbol || t.coin || ''} - ${t.date || t.timestamp || ''}`;
+                const label = `${t.date || ''}: ${(t.side || 'trade').toUpperCase()} ${t.quantity ?? ''} ${t.symbol || t.instrument_id || ''} @ ${t.price ?? ''}`;
                 return <option key={id} value={id}>{label}</option>;
               })}
             </select>
@@ -132,45 +135,41 @@ export default function TradingCoach() {
       {/* Post-Mortem Display */}
       {postMortem && (
         <div style={{ marginTop: '1.5rem' }}>
-          {pmText ? (
-            <AiInsightPanel title="Trade Post-Mortem" content={pmText} loading={false} onClose={() => setPostMortem(null)} />
-          ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1rem' }}>
-              {sections.map(({ key, label, color }) => {
-                // Try camelCase and snake_case
-                const camelKey = key.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
-                const content = pm[key] || pm[camelKey] || null;
-                if (!content) return null;
-                return (
-                  <Card key={key}>
-                    <div style={{ color, fontWeight: 700, marginBottom: '0.5rem', fontSize: '0.95rem' }}>{label}</div>
-                    <div style={{ color: '#e0e0e0', fontSize: '0.9rem', lineHeight: 1.6 }}>{content}</div>
-                  </Card>
-                );
-              })}
-              {/* Fallback: if none of the expected sections exist, render all keys */}
-              {sections.every(({ key }) => !pm[key] && !pm[key.replace(/_([a-z])/g, (_, c) => c.toUpperCase())]) && (
-                <AiInsightPanel
-                  title="Trade Post-Mortem"
-                  content={JSON.stringify(pm, null, 2)}
-                  loading={false}
-                  onClose={() => setPostMortem(null)}
-                />
-              )}
-            </div>
-          )}
+          <AiInsightPanel title="Trade Post-Mortem" content={postMortem} loading={false} onClose={() => setPostMortem(null)} />
         </div>
       )}
 
       {/* Behavioral Analysis */}
-      {behavioralAnalysis && (
+      {ba && (
         <div style={{ marginTop: '1.5rem' }}>
-          <AiInsightPanel
-            title="Full Behavioral Analysis"
-            content={behavioralAnalysis}
-            loading={false}
-            onClose={() => setBehavioralAnalysis(null)}
-          />
+          {ba.total_trades === 0 ? (
+            <Card title="Full Behavioral Analysis">
+              <p style={{ color: '#888', margin: 0 }}>No trades in this portfolio yet. Log trades in the Trade Journal to get an analysis.</p>
+            </Card>
+          ) : (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
+                {statTiles.map(({ label, value }) => (
+                  <Card key={label}>
+                    <div style={{ color: '#888', fontSize: '0.8rem', marginBottom: 4 }}>{label}</div>
+                    <div style={{ color: '#e0e0e0', fontWeight: 700, fontSize: '1.2rem' }}>{value}</div>
+                  </Card>
+                ))}
+              </div>
+              {ba.closed_trades === 0 && (
+                <p style={{ color: '#888', fontSize: '0.85rem' }}>Win rate and hold time need at least one closed (sold or covered) position.</p>
+              )}
+              {ba.ai_error && <div style={{ color: '#f87171', marginBottom: '1rem' }}>{ba.ai_error}</div>}
+              {ba.analysis && (
+                <AiInsightPanel
+                  title="Full Behavioral Analysis"
+                  content={ba.analysis}
+                  loading={false}
+                  onClose={() => setBehavioralAnalysis(null)}
+                />
+              )}
+            </>
+          )}
         </div>
       )}
     </div>

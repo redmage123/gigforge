@@ -45,8 +45,26 @@ def test_pdfs_are_built_from_the_current_markdown():
         pdf = (help_api.HELP_DIR / f"{slug}.pdf").read_bytes()
         m = re.search(rb"/Subject \(source-sha256:([0-9a-f]{64})\)", pdf)
         assert m, f"{slug}.pdf has no source hash"
-        assert m.group(1).decode() == hashlib.sha256(md).hexdigest(), \
-            f"{slug}.pdf is out of date: run python scripts/build_help_pdfs.py"
+        assert m.group(1).decode() == source_hash(md.decode("utf-8")), \
+            f"{slug}.pdf is out of date (its Markdown or a screenshot changed): run python scripts/build_help_pdfs.py"
+
+
+def source_hash(md: str) -> str:
+    """Same as scripts/build_help_pdfs.py: the Markdown plus every screenshot it shows."""
+    h = hashlib.sha256(md.encode("utf-8"))
+    for name in re.findall(r"^!\[[^\]]*\]\(img/([a-z0-9-]+\.(?:png|jpg))\)", md, flags=re.M):
+        path = help_api.HELP_DIR / "img" / name
+        h.update(path.read_bytes() if path.is_file() else b"missing")
+    return h.hexdigest()
+
+
+def test_every_screenshot_a_guide_shows_exists_and_is_served(client):
+    for slug in help_api.DOCS:
+        md = (help_api.HELP_DIR / f"{slug}.md").read_text(encoding="utf-8")
+        for name in re.findall(r"^!\[[^\]]*\]\(img/([a-z0-9-]+\.(?:png|jpg))\)", md, flags=re.M):
+            assert (help_api.HELP_DIR / "img" / name).is_file(), f"{slug} shows missing img/{name}"
+    assert client.get("/api/help/img/..%2F..%2Fmain.py").status_code == 404
+    assert client.get("/api/help/img/nope.jpg").status_code == 404
 
 
 def test_users_see_the_guides_but_not_the_runbook(client):

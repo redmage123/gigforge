@@ -1,49 +1,45 @@
 """Portfolio backtesting API."""
 
-from fastapi import APIRouter, Request, Query
-from pydantic import BaseModel
+from datetime import date
 from typing import List
+
+from fastapi import APIRouter
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
+
+from services import portfolio_backtest as bt
 
 router = APIRouter()
 
 
 class BacktestPortfolio(BaseModel):
-    original_coin: str
-    alternative_coin: str
-    start_date: str
-    amount_usd: float
+    original_coin: str = Field(min_length=1, max_length=64)  # instrument id, ticker or CoinGecko id
+    alternative_coin: str = Field(min_length=1, max_length=64)
+    start_date: date
+    amount_usd: float = Field(gt=0, le=1e12)
 
 
 class BacktestCompare(BaseModel):
-    coins: List[str]
-    start_date: str
-    amount: float
+    coins: List[str] = Field(min_length=2, max_length=10)
+    start_date: date
+    amount_usd: float = Field(gt=0, le=1e12)
+
+
+def _error(exc: bt.BacktestError) -> JSONResponse:
+    return JSONResponse({"detail": str(exc)}, status_code=exc.status)
 
 
 @router.post("/portfolio")
-async def run_backtest(request: Request, body: BacktestPortfolio):
-    username = request.state.user.get("sub", "")
-    return {
-        "original_coin": body.original_coin,
-        "alternative_coin": body.alternative_coin,
-        "start_date": body.start_date,
-        "amount_usd": body.amount_usd,
-        "original_result": 0.0,
-        "alternative_result": 0.0,
-        "difference_usd": 0.0,
-        "difference_pct": 0.0,
-        "username": username,
-    }
+async def run_backtest(body: BacktestPortfolio):
+    try:
+        return await bt.backtest_portfolio(body.original_coin, body.alternative_coin, body.start_date, body.amount_usd)
+    except bt.BacktestError as exc:
+        return _error(exc)
 
 
 @router.post("/compare")
-async def compare_strategies(request: Request, body: BacktestCompare):
-    username = request.state.user.get("sub", "")
-    return {
-        "coins": body.coins,
-        "start_date": body.start_date,
-        "amount": body.amount,
-        "results": [],
-        "best_performer": None,
-        "username": username,
-    }
+async def compare_strategies(body: BacktestCompare):
+    try:
+        return await bt.compare(body.coins, body.start_date, body.amount_usd)
+    except bt.BacktestError as exc:
+        return _error(exc)

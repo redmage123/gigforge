@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { api } from '../api/client'
 import AiInsightPanel from '../components/AiInsightPanel'
 
@@ -97,7 +97,20 @@ const styles = {
   },
 }
 
-const COINS = ['bitcoin', 'ethereum', 'solana', 'cardano', 'polkadot', 'avalanche-2', 'chainlink', 'dogecoin']
+// Instrument ids, so the cost basis lines up with the trade journal (which stores instrument ids)
+const DEFAULT_INSTRUMENTS = [
+  { id: 'crypto:BTC', label: 'Bitcoin (BTC)' },
+  { id: 'crypto:ETH', label: 'Ethereum (ETH)' },
+  { id: 'crypto:SOL', label: 'Solana (SOL)' },
+  { id: 'crypto:ADA', label: 'Cardano (ADA)' },
+  { id: 'crypto:DOT', label: 'Polkadot (DOT)' },
+  { id: 'crypto:AVAX', label: 'Avalanche (AVAX)' },
+  { id: 'crypto:LINK', label: 'Chainlink (LINK)' },
+  { id: 'crypto:DOGE', label: 'Dogecoin (DOGE)' },
+]
+
+// AI endpoints return their text under different keys
+const aiText = (res, key) => (typeof res === 'string' ? res : res[key] || res.analysis || 'No answer returned.')
 
 export default function AiTaxOptimizer() {
   const [harvestResult, setHarvestResult] = useState(null)
@@ -108,7 +121,8 @@ export default function AiTaxOptimizer() {
   const [optimizeLoading, setOptimizeLoading] = useState(false)
   const [optimizeError, setOptimizeError] = useState('')
 
-  const [tradeCoin, setTradeCoin] = useState('bitcoin')
+  const [instruments, setInstruments] = useState(DEFAULT_INSTRUMENTS)
+  const [tradeCoin, setTradeCoin] = useState('crypto:BTC')
   const [tradeType, setTradeType] = useState('buy')
   const [tradeAmount, setTradeAmount] = useState('')
   const [tradePrice, setTradePrice] = useState('')
@@ -116,14 +130,30 @@ export default function AiTaxOptimizer() {
   const [impactLoading, setImpactLoading] = useState(false)
   const [impactError, setImpactError] = useState('')
 
+  // Instruments from the user's own journal come first: those are the ones with a cost basis
+  useEffect(() => {
+    api.get('/api/trades/')
+      .then((rows) => {
+        if (!Array.isArray(rows)) return
+        const seen = new Set()
+        const own = []
+        for (const t of rows) {
+          if (!t.instrument_id || seen.has(t.instrument_id)) continue
+          seen.add(t.instrument_id)
+          own.push({ id: t.instrument_id, label: `${t.name || t.symbol} (${t.symbol || t.instrument_id})` })
+        }
+        setInstruments([...own, ...DEFAULT_INSTRUMENTS.filter((d) => !seen.has(d.id))])
+      })
+      .catch(() => {})
+  }, [])
+
   const findHarvestOpportunities = async () => {
     setHarvestLoading(true)
     setHarvestError('')
     setHarvestResult(null)
     try {
       const res = await api.post('/api/ai/tax/harvest', {})
-      const text = typeof res === 'string' ? res : res.analysis || res.result || res.content || JSON.stringify(res, null, 2)
-      setHarvestResult(text)
+      setHarvestResult(aiText(res, 'opportunities'))
     } catch (err) {
       setHarvestError(err.message || 'Failed to find opportunities')
     } finally {
@@ -137,8 +167,7 @@ export default function AiTaxOptimizer() {
     setOptimizeResult(null)
     try {
       const res = await api.post('/api/ai/tax/optimize', {})
-      const text = typeof res === 'string' ? res : res.analysis || res.result || res.content || JSON.stringify(res, null, 2)
-      setOptimizeResult(text)
+      setOptimizeResult(aiText(res, 'strategy'))
     } catch (err) {
       setOptimizeError(err.message || 'Failed to optimize strategy')
     } finally {
@@ -153,13 +182,14 @@ export default function AiTaxOptimizer() {
     setImpactResult(null)
     try {
       const res = await api.post('/api/ai/tax/impact', {
-        coin: tradeCoin,
-        type: tradeType,
-        amount: parseFloat(tradeAmount),
-        price: parseFloat(tradePrice),
+        trade: {
+          coin_id: tradeCoin,
+          side: tradeType,
+          quantity: parseFloat(tradeAmount),
+          price: parseFloat(tradePrice),
+        },
       })
-      const text = typeof res === 'string' ? res : res.analysis || res.result || res.content || JSON.stringify(res, null, 2)
-      setImpactResult(text)
+      setImpactResult(aiText(res, 'impact'))
     } catch (err) {
       setImpactError(err.message || 'Failed to estimate impact')
     } finally {
@@ -221,10 +251,10 @@ export default function AiTaxOptimizer() {
         </p>
         <div style={styles.inputGroup}>
           <div style={{ minWidth: 120 }}>
-            <label style={styles.label}>Coin</label>
+            <label style={styles.label}>Instrument</label>
             <select style={styles.select} value={tradeCoin} onChange={(e) => setTradeCoin(e.target.value)}>
-              {COINS.map((c) => (
-                <option key={c} value={c}>{c.replace(/-/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())}</option>
+              {instruments.map((i) => (
+                <option key={i.id} value={i.id}>{i.label}</option>
               ))}
             </select>
           </div>

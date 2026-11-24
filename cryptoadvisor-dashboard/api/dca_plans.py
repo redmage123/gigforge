@@ -1,21 +1,25 @@
-"""DCA (Dollar Cost Averaging) plans API."""
+"""DCA (Dollar Cost Averaging) plans API. Plans are tracked and their buys simulated; no orders are placed."""
 
-from fastapi import APIRouter, Request, Query
-from pydantic import BaseModel
+from typing import Literal
+
+from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
 from services.dca_automation import (
     get_dca_plans,
     create_dca_plan as svc_create_dca_plan,
     delete_dca_plan as svc_delete_dca_plan,
+    next_execution,
 )
 
 router = APIRouter()
 
 
 class DcaPlanCreate(BaseModel):
-    coin: str
-    exchange: str
-    amount_usd: float
-    frequency: str  # "daily", "weekly", "biweekly", "monthly"
+    coin: str = Field(min_length=1, max_length=20)  # symbol, e.g. "BTC"
+    exchange: str = Field(default="", max_length=40)
+    amount_usd: float = Field(gt=0, le=1_000_000)
+    frequency: Literal["daily", "weekly", "monthly"]
 
 
 @router.get("/")
@@ -27,10 +31,13 @@ async def list_dca_plans(request: Request):
 @router.post("/")
 async def create_dca_plan(request: Request, body: DcaPlanCreate):
     username = request.state.user.get("sub", "")
-    return await svc_create_dca_plan(username, body.dict())
+    plan = await svc_create_dca_plan(username, body.model_dump())
+    return {**plan, "next_execution": next_execution(plan)}
 
 
 @router.delete("/{plan_id}")
 async def delete_dca_plan(request: Request, plan_id: str):
     username = request.state.user.get("sub", "")
-    return svc_delete_dca_plan(username, plan_id)
+    if svc_delete_dca_plan(username, plan_id):
+        return {"status": "deleted"}
+    return JSONResponse({"error": "Plan not found"}, status_code=404)

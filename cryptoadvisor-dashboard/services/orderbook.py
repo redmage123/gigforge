@@ -1,123 +1,92 @@
-"""Multi-exchange order book aggregation service."""
+"""Order book from Binance spot's free public depth endpoint (no API key).
+
+Any crypto instrument with a Binance spot USDT pair works; the registry maps it to the Binance symbol
+(inst.providers["binance"]). Books are cached for a few seconds so polling pages stay polite.
+"""
+
+import time
 
 import httpx
-from cachetools import TTLCache
 
-_cache = TTLCache(maxsize=64, ttl=5)
-_TIMEOUT = 10.0
+from services import market
+from services.market import registry
+from services.market.models import make_id
 
-# Coin name → exchange symbol mappings
-SYMBOL_MAP = {
-    "BTC": {"binance": "BTCUSDT", "coinbase": "BTC-USD"},
-    "ETH": {"binance": "ETHUSDT", "coinbase": "ETH-USD"},
-    "SOL": {"binance": "SOLUSDT", "coinbase": "SOL-USD"},
-    "ADA": {"binance": "ADAUSDT", "coinbase": "ADA-USD"},
-    "DOT": {"binance": "DOTUSDT", "coinbase": "DOT-USD"},
-    "AVAX": {"binance": "AVAXUSDT", "coinbase": "AVAX-USD"},
-    "MATIC": {"binance": "MATICUSDT", "coinbase": "MATIC-USD"},
-    "LINK": {"binance": "LINKUSDT", "coinbase": "LINK-USD"},
-    "UNI": {"binance": "UNIUSDT", "coinbase": "UNI-USD"},
-    "AAVE": {"binance": "AAVEUSDT", "coinbase": "AAVE-USD"},
-    "ARB": {"binance": "ARBUSDT", "coinbase": "ARB-USD"},
-    "OP": {"binance": "OPUSDT", "coinbase": "OP-USD"},
-    "DOGE": {"binance": "DOGEUSDT", "coinbase": "DOGE-USD"},
-    "XRP": {"binance": "XRPUSDT", "coinbase": "XRP-USD"},
-}
+HOSTS = ("https://api.binance.com", "https://data-api.binance.vision")
+CACHE_S = 3.0
+MAX_DEPTH = 100  # Binance charges the same request weight for any limit up to 100: fetch once, slice
+_UA = {"User-Agent": "Mozilla/5.0 AssetAdvisor"}
+_cache: dict[str, tuple[float, dict]] = {}
 
 
-async def get_binance_orderbook(symbol: str, limit: int = 20) -> dict:
-    """Fetch order book from Binance."""
-    url = f"https://api.binance.com/api/v3/depth?symbol={symbol}&limit={limit}"
-    cache_key = f"binance_{symbol}_{limit}"
-    if cache_key in _cache:
-        return _cache[cache_key]
+class OrderbookError(Exception):
+    """A readable failure: `status` is the HTTP status the API should answer with."""
 
-    try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            resp = await client.get(url)
-            resp.raise_for_status()
-            data = resp.json()
-            result = {
-                "bids": [[float(p), float(q)] for p, q in data.get("bids", [])],
-                "asks": [[float(p), float(q)] for p, q in data.get("asks", [])],
-                "exchange": "binance",
-                "symbol": symbol,
-            }
-            _cache[cache_key] = result
-            return result
-    except Exception as e:
-        return {"bids": [], "asks": [], "exchange": "binance", "symbol": symbol, "error": str(e)}
+    def __init__(self, message: str, status: int = 502):
+        super().__init__(message)
+        self.status = status
 
 
-async def get_coinbase_orderbook(product_id: str, level: int = 2) -> dict:
-    """Fetch order book from Coinbase."""
-    url = f"https://api.exchange.coinbase.com/products/{product_id}/book?level={level}"
-    cache_key = f"coinbase_{product_id}_{level}"
-    if cache_key in _cache:
-        return _cache[cache_key]
-
-    try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            resp = await client.get(url)
-            resp.raise_for_status()
-            data = resp.json()
-            result = {
-                "bids": [[float(p), float(q)] for p, q, _ in data.get("bids", [])],
-                "asks": [[float(p), float(q)] for p, q, _ in data.get("asks", [])],
-                "exchange": "coinbase",
-                "product_id": product_id,
-            }
-            _cache[cache_key] = result
-            return result
-    except Exception as e:
-        return {"bids": [], "asks": [], "exchange": "coinbase", "product_id": product_id, "error": str(e)}
+def resolve_instrument_id(ref: str) -> str:
+    """"crypto:BTC" stays as is; a CoinGecko id ("bitcoin") or a bare symbol ("btc") becomes crypto:<SYM>."""
+    ref = (ref or "").strip()
+    if ":" in ref:
+        return ref
+    return registry.from_coingecko_id(ref.lower()) or make_id("crypto", ref)
 
 
-async def get_aggregated_orderbook(coin: str) -> dict:
-    """Aggregate order books from multiple exchanges for a given coin."""
-    coin_upper = coin.upper()
-    mapping = SYMBOL_MAP.get(coin_upper)
-    if not mapping:
-        return {"error": f"Unknown coin: {coin}. Supported: {list(SYMBOL_MAP.keys())}"}
+def parse_depth(payload: dict, depth: int) -> dict:
+    """Binance depth payload -> sorted levels plus best bid/ask, spread and mid price (pure)."""
+    def levels(rows, reverse):
+        out = [{"price": float(p), "quantity": float(q), "exchange": "binance"} for p, q in rows or []]
+        out = [lv for lv in out if lv["price"] > 0 and lv["quantity"] > 0]
+        out.sort(key=lambda lv: lv["price"], reverse=reverse)
+        return out[:depth]
 
-    cache_key = f"agg_{coin_upper}"
-    if cache_key in _cache:
-        return _cache[cache_key]
+    bids, asks = levels(payload.get("bids"), True), levels(payload.get("asks"), False)
+    best_bid = bids[0]["price"] if bids else None
+    best_ask = asks[0]["price"] if asks else None
+    spread = mid = spread_pct = None
+    if best_bid is not None and best_ask is not None:
+        spread = round(best_ask - best_bid, 10)  # drop float noise (0.0100000000020 -> 0.01)
+        mid = round((best_ask + best_bid) / 2, 10)
+        spread_pct = spread / mid * 100 if mid else None
+    return {"bids": bids, "asks": asks, "best_bid": best_bid, "best_ask": best_ask,
+            "spread": spread, "mid_price": mid, "spread_pct": spread_pct}
 
-    binance_data = await get_binance_orderbook(mapping["binance"])
-    coinbase_data = await get_coinbase_orderbook(mapping["coinbase"])
 
-    # Merge bids: [[price, qty, exchange], ...] sorted descending by price
-    merged_bids: list[list] = []
-    for p, q in binance_data.get("bids", []):
-        merged_bids.append([p, q, "binance"])
-    for p, q in coinbase_data.get("bids", []):
-        merged_bids.append([p, q, "coinbase"])
-    merged_bids.sort(key=lambda x: x[0], reverse=True)
+async def _fetch_depth(symbol: str, limit: int) -> dict:
+    last = None
+    async with httpx.AsyncClient(timeout=10, headers=_UA) as client:
+        for host in HOSTS:
+            try:
+                r = await client.get(f"{host}/api/v3/depth", params={"symbol": symbol, "limit": limit})
+                r.raise_for_status()
+                return r.json()
+            except (httpx.HTTPError, ValueError) as exc:
+                last = exc
+    raise OrderbookError(f"Binance order book is unavailable right now ({last.__class__.__name__}). Try again shortly.")
 
-    # Merge asks: sorted ascending by price
-    merged_asks: list[list] = []
-    for p, q in binance_data.get("asks", []):
-        merged_asks.append([p, q, "binance"])
-    for p, q in coinbase_data.get("asks", []):
-        merged_asks.append([p, q, "coinbase"])
-    merged_asks.sort(key=lambda x: x[0])
 
-    best_bid = merged_bids[0][0] if merged_bids else 0.0
-    best_ask = merged_asks[0][0] if merged_asks else 0.0
-    spread = best_ask - best_bid if best_ask and best_bid else 0.0
-    mid_price = (best_ask + best_bid) / 2 if best_ask and best_bid else 0.0
+async def get_orderbook(ref: str, depth: int = 20) -> dict:
+    iid = resolve_instrument_id(ref)
+    inst = await market.get_instrument(iid)
+    if not inst or inst.asset_class != "crypto":
+        raise OrderbookError(f"Unknown crypto instrument: {ref}", 404)
+    symbol = inst.providers.get("binance")
+    if not symbol:
+        raise OrderbookError(f"{inst.symbol} has no Binance spot market, so no order book is available", 404)
+    depth = max(1, min(int(depth), MAX_DEPTH))
 
-    result = {
-        "coin": coin_upper,
-        "bids": merged_bids,
-        "asks": merged_asks,
-        "spread": round(spread, 8),
-        "mid_price": round(mid_price, 8),
-        "sources": {
-            "binance": {"error": binance_data.get("error")},
-            "coinbase": {"error": coinbase_data.get("error")},
-        },
+    hit = _cache.get(symbol)
+    if hit and time.time() - hit[0] < CACHE_S:
+        book = hit[1]
+    else:
+        book = parse_depth(await _fetch_depth(symbol, MAX_DEPTH), MAX_DEPTH)
+        book["as_of"] = time.time()
+        _cache[symbol] = (book["as_of"], book)
+    return {
+        **book, "bids": book["bids"][:depth], "asks": book["asks"][:depth],
+        "instrument_id": inst.id, "symbol": inst.symbol, "pair": symbol, "exchange": "binance",
+        "source": "Binance spot public order book",
     }
-    _cache[cache_key] = result
-    return result

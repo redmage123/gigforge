@@ -4,6 +4,9 @@ import Card from '../components/Card'
 import LoadingSpinner from '../components/LoadingSpinner'
 import { useWalletConnect } from '../hooks/useWalletConnect'
 
+const fmtUsd = (v) => (v == null ? 'price unavailable' : `$${Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)
+const fmtAmt = (v) => Number(v).toLocaleString(undefined, { maximumFractionDigits: 6 })
+
 function Wallet() {
   const [wallets, setWallets] = useState([])
   const [balances, setBalances] = useState(null)
@@ -14,7 +17,21 @@ function Wallet() {
   const [newChain, setNewChain] = useState('ethereum')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [balLoading, setBalLoading] = useState(false)
+  const [balError, setBalError] = useState('')
   const { connect: wcConnect, connecting: wcConnecting, error: wcError } = useWalletConnect()
+
+  const fetchBalances = useCallback(async () => {
+    setBalLoading(true)
+    setBalError('')
+    try {
+      setBalances(await api.get('/api/wallet/saved/balances'))
+    } catch (err) {
+      setBalError(`Could not load balances: ${err.message}`)
+    } finally {
+      setBalLoading(false)
+    }
+  }, [])
 
   const fetchWallets = useCallback(async () => {
     setLoading(true)
@@ -22,17 +39,14 @@ function Wallet() {
       const res = await api.get('/api/wallet/saved')
       const list = Array.isArray(res) ? res : res.wallets || []
       setWallets(list)
-      if (list.length > 0) {
-        const addrs = list.map((w) => w.address).join(',')
-        const bal = await api.get(`/api/wallet/balances?addresses=${addrs}`)
-        setBalances(bal)
-      }
+      if (list.length > 0) fetchBalances()
+      else setBalances(null)
     } catch (err) {
       setError(err.message)
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [fetchBalances])
 
   useEffect(() => { fetchWallets() }, [fetchWallets])
 
@@ -77,18 +91,17 @@ function Wallet() {
     }
   }
 
-  const removeWallet = async (id) => {
+  const removeWallet = async (w) => {
+    setError('')
     try {
-      await api.del(`/api/wallet/saved/${id}`)
+      await api.del(`/api/wallet/saved/${encodeURIComponent(w.address)}?chain=${encodeURIComponent(w.chain || 'ethereum')}`)
       await fetchWallets()
     } catch (err) {
-      setError(err.message)
+      setError(`Could not remove the wallet: ${err.message}`)
     }
   }
 
-  const balArr = balances
-    ? (Array.isArray(balances) ? balances : balances.balances || Object.entries(balances).map(([addr, val]) => ({ address: addr, ...val })))
-    : []
+  const balArr = balances?.wallets || []
 
   return (
     <div>
@@ -140,33 +153,63 @@ function Wallet() {
             {wallets.length > 0 ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                 {wallets.map((w) => (
-                  <div key={w.id || w.address} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div key={`${w.chain}:${w.address}`} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div>
                       <strong>{w.label || 'Wallet'}</strong>
                       <div className="muted" style={{ fontFamily: 'monospace', fontSize: '0.85rem' }}>{w.address}</div>
                       <div style={{ color: '#646cff', fontSize: '0.8rem' }}>{w.chain || 'ethereum'}</div>
                     </div>
-                    <button className="btn btn-danger" onClick={() => removeWallet(w.id || w.address)}>Remove</button>
+                    <button className="btn btn-danger" onClick={() => removeWallet(w)}>Remove</button>
                   </div>
                 ))}
               </div>
             ) : <p className="muted">No wallets saved yet.</p>}
           </Card>
 
-          {balArr.length > 0 && (
+          {wallets.length > 0 && (
             <Card title="Balances" className="mt-1">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: 8 }}>
+                <strong>{balances ? `Total: ${fmtUsd(balances.total_usd)}` : ''}</strong>
+                <button className="btn btn-sm btn-secondary" onClick={fetchBalances} disabled={balLoading}>{balLoading ? 'Loading...' : 'Refresh'}</button>
+              </div>
+              {balError && <div className="login-error" style={{ marginBottom: '0.75rem' }}>{balError}</div>}
+              {balLoading && !balances && <LoadingSpinner />}
               <div className="grid-row">
-                {balArr.map((b, i) => (
-                  <div key={i} className="card">
+                {balArr.map((b) => (
+                  <div key={`${b.chain}:${b.address}`} className="card">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                      <strong>{b.label || 'Wallet'}</strong>
+                      <span style={{ color: '#646cff', fontSize: '0.8rem' }}>{b.chain}</span>
+                    </div>
                     <div className="muted" style={{ fontFamily: 'monospace', fontSize: '0.8rem', marginBottom: 4 }}>
                       {(b.address || '').slice(0, 10)}...{(b.address || '').slice(-6)}
                     </div>
-                    {(b.balances || [{ chain: b.chain, balance: b.balance, usd_value: b.usd_value }]).map((cb, j) => (
-                      <div key={j} style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
-                        <span className="muted">{cb.chain || cb.token || 'ETH'}</span>
-                        <strong>{cb.balance} {cb.usd_value ? `($${Number(cb.usd_value).toLocaleString()})` : ''}</strong>
-                      </div>
-                    ))}
+                    {b.error ? (
+                      <div className="negative" style={{ fontSize: '0.85rem' }}>{b.error}</div>
+                    ) : (
+                      <>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
+                          <span className="muted">{b.symbol}</span>
+                          <strong>{fmtAmt(b.balance)} ({fmtUsd(b.usd_value)})</strong>
+                        </div>
+                        {(b.tokens || []).slice(0, 10).map((t) => (
+                          <div key={t.contract || t.symbol} style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4, fontSize: '0.9rem' }}>
+                            <span className="muted" title={t.name}>{t.symbol}</span>
+                            <span>{fmtAmt(t.balance)} ({fmtUsd(t.usd_value)})</span>
+                          </div>
+                        ))}
+                        {(b.tokens || []).length > 10 && (
+                          <div className="muted" style={{ fontSize: '0.8rem', marginTop: 4 }}>+{b.tokens.length - 10} more tokens</div>
+                        )}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, borderTop: '1px solid #2a2a3d', paddingTop: 6 }}>
+                          <span className="muted">Total</span>
+                          <strong>{fmtUsd(b.total_usd)}</strong>
+                        </div>
+                        <div className="muted" style={{ fontSize: '0.75rem', marginTop: 4 }}>
+                          Source: {b.source}{b.unpriced_tokens ? `. ${b.unpriced_tokens} token(s) have no price and are not in the total.` : ''}
+                        </div>
+                      </>
+                    )}
                   </div>
                 ))}
               </div>

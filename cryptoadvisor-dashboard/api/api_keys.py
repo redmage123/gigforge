@@ -51,12 +51,16 @@ async def save_key(req: SaveKeyRequest, request: Request):
         return JSONResponse(status_code=401, content={"error": "Not authenticated"})
 
     # Validate integration exists
-    valid_ids = {i["id"] for i in get_integrations()}
-    if req.integration_id not in valid_ids:
+    integration = next((i for i in get_integrations() if i["id"] == req.integration_id), None)
+    if integration is None:
         return JSONResponse(status_code=400, content={"error": "Unknown integration"})
 
-    # Validate fields aren't empty
-    non_empty = {k: v for k, v in req.fields.items() if v and v.strip()}
+    # Only this integration's fields; blank ones keep their stored value
+    allowed = {f["key"] for f in integration["fields"]}
+    unknown = sorted(set(req.fields) - allowed)
+    if unknown:
+        return JSONResponse(status_code=400, content={"error": f"Unknown field for {integration['name']}: {unknown[0]}"})
+    non_empty = {k: v.strip() for k, v in req.fields.items() if v and v.strip()}
     if not non_empty:
         return JSONResponse(status_code=400, content={"error": "At least one field is required"})
 

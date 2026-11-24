@@ -15,9 +15,11 @@ function IntegrationCard({ integration, savedKeys, onSave, onDelete }) {
 
   const handleSave = async () => {
     setSaving(true)
-    await onSave(integration.id, fields)
-    setFields({})
-    setEditing(false)
+    const ok = await onSave(integration.id, fields)
+    if (ok) {
+      setFields({})
+      setEditing(false)
+    }
     setSaving(false)
   }
 
@@ -62,7 +64,7 @@ function IntegrationCard({ integration, savedKeys, onSave, onDelete }) {
                 <PasswordInput
                   value={fields[f.key] || ''}
                   onChange={(e) => updateField(f.key, e.target.value)}
-                  placeholder={isConfigured ? 'Enter new value to update' : `Enter ${f.label}`}
+                  placeholder={isConfigured ? 'Leave blank to keep the current value' : `Enter ${f.label}`}
                 />
               ) : (
                 <input
@@ -70,7 +72,7 @@ function IntegrationCard({ integration, savedKeys, onSave, onDelete }) {
                   type="text"
                   value={fields[f.key] || ''}
                   onChange={(e) => updateField(f.key, e.target.value)}
-                  placeholder={isConfigured ? 'Enter new value to update' : `Enter ${f.label}`}
+                  placeholder={isConfigured ? 'Leave blank to keep the current value' : `Enter ${f.label}`}
                 />
               )}
             </div>
@@ -113,6 +115,7 @@ export default function ApiKeys() {
   const [categories, setCategories] = useState({})
   const [userKeys, setUserKeys] = useState({})
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
 
   const fetchAll = async () => {
     setLoading(true)
@@ -134,26 +137,30 @@ export default function ApiKeys() {
   useEffect(() => { fetchAll() }, [])
 
   const handleSave = async (integrationId, fields) => {
+    setError('')
     try {
       await api.post('/api/keys/keys', { integration_id: integrationId, fields })
       await fetchAll()
-    } catch {
-      // ignore
+      return true
+    } catch (err) {
+      setError(err.message)
+      return false
     }
   }
 
   const handleDelete = async (integrationId) => {
+    setError('')
     try {
       await api.del(`/api/keys/keys/${integrationId}`)
       await fetchAll()
-    } catch {
-      // ignore
+    } catch (err) {
+      setError(err.message)
     }
   }
 
   if (loading) return <LoadingSpinner />
 
-  const configuredCount = Object.keys(userKeys).length
+  const configuredCount = integrations.filter((i) => userKeys[i.id]).length
 
   // Group by category
   const grouped = {}
@@ -185,6 +192,7 @@ export default function ApiKeys() {
       <p className="muted" style={{ marginBottom: '1.5rem', fontSize: '0.88rem' }}>
         All keys are encrypted at rest. We never display full key values. You can update or remove keys at any time.
       </p>
+      {error && <div className="alert alert-error" role="alert" style={{ marginBottom: '1rem' }}>{error}</div>}
 
       {Object.entries(categories).map(([catId, catName]) => {
         const items = grouped[catId]

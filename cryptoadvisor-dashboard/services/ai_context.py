@@ -75,7 +75,7 @@ async def market_headlines(limit: int = 8) -> list[dict]:
     if items and time.time() - at < 900:
         return items[:limit]
     try:
-        async with httpx.AsyncClient(timeout=15, headers={"User-Agent": "Mozilla/5.0 AssetAdvisor"}) as client:
+        async with httpx.AsyncClient(timeout=15, follow_redirects=True, headers={"User-Agent": "Mozilla/5.0 AssetAdvisor"}) as client:
             r = await client.get(BUSINESS_NEWS)
             r.raise_for_status()
         items = []

@@ -19,7 +19,7 @@ from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.platypus import (KeepTogether, ListFlowable, ListItem, Paragraph, Preformatted,
+from reportlab.platypus import (Image, KeepTogether, ListFlowable, ListItem, Paragraph, Preformatted,
                                 SimpleDocTemplate, Spacer, Table, TableStyle)
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -45,6 +45,7 @@ H2 = ParagraphStyle("h2", parent=BODY, fontName="Sans-Bold", fontSize=13.5, lead
 H3 = ParagraphStyle("h3", parent=BODY, fontName="Sans-Bold", fontSize=10.5, leading=14, spaceBefore=7, spaceAfter=3)
 CELL = ParagraphStyle("cell", parent=BODY, fontSize=8.5, leading=11.5, spaceAfter=0)
 CELL_HEAD = ParagraphStyle("cellh", parent=CELL, fontName="Sans-Bold")
+CAPTION = ParagraphStyle("caption", parent=BODY, fontSize=8, leading=10.5, textColor=MUTED, spaceAfter=8)
 CODE = ParagraphStyle("code", fontName="Mono", fontSize=7.8, leading=10.2, textColor=INK)
 
 
@@ -83,6 +84,31 @@ def _cells(line: str) -> list[str]:
     return [c.strip() for c in line.strip().strip("|").split("|")]
 
 
+IMG_DIR = Path(__file__).resolve().parent.parent / "docs" / "help" / "img"
+
+
+def _image(path: Path, caption: str, width: float) -> list:
+    """A screenshot scaled to the text width (shorter if it would take most of a page), with its caption."""
+    if not path.is_file():
+        raise SystemExit(f"missing screenshot {path}")
+    from reportlab.lib.utils import ImageReader
+
+    w, h = ImageReader(str(path)).getSize()
+    draw_w = width
+    draw_h = draw_w * h / w
+    max_h = 150 * mm
+    if draw_h > max_h:
+        draw_w, draw_h = draw_w * max_h / draw_h, max_h
+    img = Image(str(path), width=draw_w, height=draw_h)
+    img.hAlign = "LEFT"
+    frame = Table([[img]], colWidths=[draw_w + 2])
+    frame.hAlign = "LEFT"
+    frame.setStyle(TableStyle([("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#c9d1db")),
+                               ("LEFTPADDING", (0, 0), (-1, -1), 1), ("RIGHTPADDING", (0, 0), (-1, -1), 1),
+                               ("TOPPADDING", (0, 0), (-1, -1), 1), ("BOTTOMPADDING", (0, 0), (-1, -1), 1)]))
+    return [KeepTogether([Spacer(1, 3), frame, Paragraph(inline(caption), CAPTION)])]
+
+
 def flowables(md: str, width: float) -> tuple[str, list]:
     """(title, flowables) for a Markdown document."""
     lines, story, title, i = md.splitlines(), [], "", 0
@@ -102,6 +128,11 @@ def flowables(md: str, width: float) -> tuple[str, list]:
                                      ("BOTTOMPADDING", (0, 0), (-1, -1), 5)]))
             story += [box, Spacer(1, 6)]
             i = j + 1
+            continue
+        shot = re.fullmatch(r"!\[([^\]]*)\]\(img/([a-z0-9-]+\.(?:png|jpg))\)\s*", line)
+        if shot:
+            story += _image(IMG_DIR / shot.group(2), shot.group(1), width)
+            i += 1
             continue
         m = re.match(r"(#{1,3}) (.*)", line)
         if m:
@@ -161,7 +192,12 @@ def flowables(md: str, width: float) -> tuple[str, list]:
 
 
 def source_hash(md_text: str) -> str:
-    return hashlib.sha256(md_text.encode("utf-8")).hexdigest()
+    """Hash of the Markdown and every screenshot it shows, so a changed image also makes the PDF stale."""
+    h = hashlib.sha256(md_text.encode("utf-8"))
+    for name in re.findall(r"^!\[[^\]]*\]\(img/([a-z0-9-]+\.(?:png|jpg))\)", md_text, flags=re.M):
+        path = IMG_DIR / name
+        h.update(path.read_bytes() if path.is_file() else b"missing")
+    return h.hexdigest()
 
 
 def build(md_path: Path) -> Path:

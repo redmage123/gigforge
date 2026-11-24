@@ -7,7 +7,7 @@ async def generate_daily_briefing(prices: dict, news: list, sentiment: dict) -> 
     """Compile a concise daily market briefing."""
     # Format price data
     price_summary = "Market prices:\n"
-    for coin, data in list(prices.items())[:10]:
+    for coin, data in list(prices.items())[:30]:   # the cross-asset set is ~14 items; crypto comes last
         p = data.get("usd", 0)
         change = data.get("usd_24h_change", 0)
         vol = data.get("usd_24h_vol", 0)
@@ -72,10 +72,15 @@ async def get_market_commentary(coin: str, price_data: dict, news: list) -> str:
 
     # Filter news relevant to the coin
     relevant_news = ""
-    coin_lower = coin.lower()
+    # coin arrives as "Bitcoin (BTC, crypto)": match a headline on the name or the ticker as a whole word
+    import re
+
+    m = re.match(r"\s*(.*?)\s*\(([^,)]+)", coin)
+    terms = [m.group(1), m.group(2)] if m else [coin]
+    patterns = [re.compile(rf"\b{re.escape(t.strip())}\b", re.I) for t in terms if len(t.strip()) >= 2]
     for article in news[:15]:
         title = article.get("title", "")
-        if coin_lower in title.lower():
+        if any(p.search(title) for p in patterns):
             relevant_news += f"- {title}\n"
     if not relevant_news:
         relevant_news = "No coin-specific news found.\n"

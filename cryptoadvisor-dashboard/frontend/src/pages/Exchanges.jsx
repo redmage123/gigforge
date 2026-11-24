@@ -20,10 +20,9 @@ export default function Exchanges() {
       const res = await api.get('/api/exchanges');
       const list = Array.isArray(res) ? res : res.exchanges || [];
       setExchanges(list);
-      if (list.length > 0) {
-        const bal = await api.get('/api/exchanges/balances').catch(() => null);
-        setBalances(bal);
-      }
+      // The balance check doubles as the connection test: each result carries a status per exchange
+      const bal = list.length > 0 ? await api.get('/api/exchanges/balances').catch(() => null) : null;
+      setBalances(bal);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -38,7 +37,7 @@ export default function Exchanges() {
     setSaving(true);
     setError('');
     try {
-      await api.post('/api/exchanges/', { name, label: label || name, api_key: apiKey, secret });
+      await api.post('/api/exchanges/', { name, label: label || name, api_key: apiKey, api_secret: secret });
       setLabel('');
       setApiKey('');
       setSecret('');
@@ -47,6 +46,17 @@ export default function Exchanges() {
       setError(err.message);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const removeExchange = async (ex) => {
+    if (!window.confirm(`Remove ${ex.label || ex.name}? Its stored API key and secret are deleted.`)) return;
+    setError('');
+    try {
+      await api.del(`/api/exchanges/${ex.id}`);
+      await fetchData();
+    } catch (err) {
+      setError(err.message);
     }
   };
 
@@ -71,7 +81,13 @@ export default function Exchanges() {
     fontWeight: 600,
   };
 
-  const balArr = balances ? (Array.isArray(balances) ? balances : balances.balances || Object.entries(balances).map(([k, v]) => ({ exchange: k, ...v }))) : [];
+  const balArr = Array.isArray(balances) ? balances : [];
+  const statusOf = (ex) => {
+    const b = balArr.find((r) => r.id === ex.id);
+    if (!b) return { text: 'Check failed', bg: '#3f3f46', title: 'Could not run the balance check' };
+    if (b.status === 'connected') return { text: 'Connected', bg: '#166534', title: 'API key accepted by the exchange' };
+    return { text: b.status === 'unsupported' ? 'Unsupported' : 'Error', bg: '#7f1d1d', title: b.error || '' };
+  };
 
   return (
     <div>
@@ -82,7 +98,7 @@ export default function Exchanges() {
           <div>
             <label style={{ color: '#888', fontSize: '0.8rem', display: 'block', marginBottom: 4 }}>Exchange</label>
             <select value={name} onChange={(e) => setName(e.target.value)} style={inputStyle}>
-              {['binance', 'coinbase', 'kraken', 'kucoin', 'bybit', 'okx', 'gate.io'].map((ex) => (
+              {['binance', 'coinbase'].map((ex) => (
                 <option key={ex} value={ex}>{ex.charAt(0).toUpperCase() + ex.slice(1)}</option>
               ))}
             </select>
@@ -109,41 +125,44 @@ export default function Exchanges() {
           <Card title="Connected Exchanges" style={{ marginBottom: '1.5rem' }}>
             {exchanges.length > 0 ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                {exchanges.map((ex, i) => (
-                  <div key={ex.id || i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem', background: '#12121f', borderRadius: 8 }}>
-                    <div>
-                      <div style={{ color: '#e0e0e0', fontWeight: 600 }}>{ex.label || ex.name}</div>
-                      <div style={{ color: '#888', fontSize: '0.85rem' }}>{ex.name || ex.exchange}</div>
+                {exchanges.map((ex) => {
+                  const st = statusOf(ex);
+                  const err = balArr.find((r) => r.id === ex.id)?.error;
+                  return (
+                    <div key={ex.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', padding: '0.75rem', background: '#12121f', borderRadius: 8 }}>
+                      <div>
+                        <div style={{ color: '#e0e0e0', fontWeight: 600 }}>{ex.label || ex.name}</div>
+                        <div style={{ color: '#888', fontSize: '0.85rem' }}>{ex.name}</div>
+                        {err && <div style={{ color: '#f87171', fontSize: '0.8rem' }}>{err}</div>}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <div title={st.title} style={{ color: '#fff', fontSize: '0.8rem', fontWeight: 600, background: st.bg, padding: '2px 8px', borderRadius: 4 }}>
+                          {st.text}
+                        </div>
+                        <button type="button" onClick={() => removeExchange(ex)} aria-label={`Remove ${ex.label || ex.name}`}
+                          style={{ padding: '0.3rem 0.7rem', background: '#3a1e1e', color: '#f87171', border: '1px solid #f8717133', borderRadius: 6, cursor: 'pointer', fontWeight: 600, fontSize: '0.8rem' }}>
+                          Remove
+                        </button>
+                      </div>
                     </div>
-                    <div style={{
-                      color: '#fff', fontSize: '0.8rem', fontWeight: 600,
-                      background: ex.status === 'active' || ex.connected ? '#166534' : '#713f12',
-                      padding: '2px 8px', borderRadius: 4,
-                    }}>
-                      {ex.status || (ex.connected ? 'Active' : 'Inactive')}
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             ) : <p style={{ color: '#888' }}>No exchanges connected yet.</p>}
           </Card>
 
-          {balArr.length > 0 && (
+          {balArr.some((b) => b.balances?.length) && (
             <Card title="Exchange Balances">
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '0.75rem' }}>
-                {balArr.map((b, i) => (
-                  <div key={i} style={{ padding: '1rem', background: '#12121f', borderRadius: 8 }}>
-                    <div style={{ color: '#646cff', fontWeight: 600, marginBottom: '0.5rem' }}>{b.exchange || b.name || b.label}</div>
-                    {(b.assets || b.balances || Object.entries(b).filter(([k]) => !['exchange', 'name', 'label'].includes(k))).map((asset, j) => {
-                      const sym = Array.isArray(asset) ? asset[0] : (asset.symbol || asset.coin);
-                      const amt = Array.isArray(asset) ? asset[1] : (asset.amount || asset.balance || asset.free);
-                      return (
-                        <div key={j} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.25rem 0' }}>
-                          <span style={{ color: '#aaa' }}>{sym}</span>
-                          <span style={{ color: '#fff' }}>{amt}</span>
-                        </div>
-                      );
-                    })}
+                {balArr.filter((b) => b.balances?.length).map((b) => (
+                  <div key={b.id} style={{ padding: '1rem', background: '#12121f', borderRadius: 8 }}>
+                    <div style={{ color: '#646cff', fontWeight: 600, marginBottom: '0.5rem' }}>{b.label || b.exchange}</div>
+                    {b.balances.map((asset) => (
+                      <div key={asset.asset} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.25rem 0' }}>
+                        <span style={{ color: '#aaa' }}>{asset.asset}</span>
+                        <span style={{ color: '#fff' }}>{Number(asset.total).toLocaleString(undefined, { maximumFractionDigits: 8 })}</span>
+                      </div>
+                    ))}
                   </div>
                 ))}
               </div>

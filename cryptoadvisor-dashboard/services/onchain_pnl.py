@@ -1,249 +1,199 @@
-"""On-chain profit/loss calculator using Etherscan + CoinGecko."""
+"""On-chain activity and value for an Ethereum address, from free keyless sources.
 
-import logging
-from collections import defaultdict
-from datetime import datetime, timezone
-from typing import Any
+What this can honestly compute (Blockscout + market layer prices):
+- per ERC-20 token: amounts received and sent, net flow, the balance now and its value at today's price
+- native ETH: amounts received and sent in normal transactions, balance now and its value
+- gas: every fee the address paid, in ETH, in USD at the ETH price on each transaction's day
+  (Blockscout's historic rate) where known, and in USD at today's price
+What it can't: cost basis. Transfers don't carry the price paid, so realized/unrealized P&L is not
+calculated; the response says so instead of reporting zeros.
+"""
 
-import httpx
+import asyncio
+import re
+import time
 
-from config import COINGECKO_API, ETHERSCAN_APIS
+from cachetools import TTLCache
 
-logger = logging.getLogger(__name__)
+from services import market
+from services.blockchain import blockscout
+
+MAX_PAGES = 10  # 50 items per page: up to 500 transfers and 500 transactions
+_ADDR_RE = re.compile(r"^0x[a-fA-F0-9]{40}$")
+_cache: TTLCache = TTLCache(maxsize=64, ttl=300)
 
 
-async def _fetch_token_transfers(address: str, chain: str = "ethereum") -> list[dict[str, Any]]:
-    """Fetch ERC-20 token transfer events for an address from Etherscan."""
-    api_url = ETHERSCAN_APIS.get(chain)
-    if not api_url:
-        return []
+class PnLError(Exception):
+    def __init__(self, message: str, status: int = 400):
+        super().__init__(message)
+        self.status = status
 
-    params = {
-        "module": "account",
-        "action": "tokentx",
-        "address": address,
-        "startblock": 0,
-        "endblock": 99999999,
-        "sort": "asc",
+
+def _hash(party) -> str:
+    return ((party or {}).get("hash") or "").lower() if isinstance(party, dict) else str(party or "").lower()
+
+
+def summarize(address: str, info: dict, balances: list[dict], transfers: list[dict], txs: list[dict],
+              eth_price: float | None, truncated: dict[str, bool]) -> dict:
+    """Pure aggregation of Blockscout payloads; network-free so it can be tested directly."""
+    me = address.lower()
+    tokens: dict[str, dict] = {}
+    hidden = set()
+
+    def slot(tok: dict) -> dict | None:
+        key = (tok.get("address_hash") or tok.get("address") or "").lower()
+        if not key:
+            return None
+        if not blockscout.trusted(tok):
+            hidden.add(key)
+            return None
+        if key not in tokens:
+            tokens[key] = {"contract": tok.get("address_hash") or tok.get("address"), "symbol": tok.get("symbol") or "?",
+                           "name": tok.get("name") or "", "received": 0.0, "sent": 0.0, "transfers_in": 0,
+                           "transfers_out": 0, "balance": 0.0, "price": blockscout.rate(tok)}
+        return tokens[key]
+
+    for t in transfers:
+        tok = t.get("token") or {}
+        s = slot(tok)
+        if s is None:
+            continue
+        total = t.get("total") or {}
+        amt = blockscout.scaled(total.get("value"), total.get("decimals") or tok.get("decimals"))
+        if amt is None:
+            continue
+        src, dst = _hash(t.get("from")), _hash(t.get("to"))
+        if dst == me and src != me:
+            s["received"] += amt
+            s["transfers_in"] += 1
+        elif src == me and dst != me:
+            s["sent"] += amt
+            s["transfers_out"] += 1
+
+    for b in balances:
+        tok = b.get("token") or {}
+        s = slot(tok)
+        amt = blockscout.scaled(b.get("value"), tok.get("decimals"))
+        if s is not None and amt is not None:
+            s["balance"] = amt
+            s["price"] = blockscout.rate(tok) or s["price"]
+
+    rows = []
+    for s in tokens.values():
+        value = round(s["balance"] * s["price"], 2) if s["price"] is not None else None
+        rows.append({**s, "net_flow": s["received"] - s["sent"], "value_usd": value})
+    rows.sort(key=lambda r: (r["value_usd"] is None, -(r["value_usd"] or 0), r["symbol"]))
+
+    eth_in = eth_out = gas_eth = gas_usd_hist = 0.0
+    hist_count = sent_count = 0
+    times = []
+    for tx in txs:
+        src, dst = _hash(tx.get("from")), _hash(tx.get("to"))
+        val = (blockscout.scaled(tx.get("value"), 18) or 0.0)
+        ok = tx.get("status", "ok") == "ok"
+        if tx.get("timestamp"):
+            times.append(tx["timestamp"])
+        if src == me:
+            sent_count += 1
+            fee = (tx.get("fee") or {}).get("value") if isinstance(tx.get("fee"), dict) else tx.get("fee")
+            fee_eth = blockscout.scaled(fee, 18) or 0.0
+            gas_eth += fee_eth
+            try:
+                hist = float(tx.get("historic_exchange_rate"))
+            except (TypeError, ValueError):
+                hist = None
+            if hist:
+                gas_usd_hist += fee_eth * hist
+                hist_count += 1
+            if ok and dst != me:
+                eth_out += val
+        elif dst == me and ok:
+            eth_in += val
+
+    eth_balance = (blockscout.scaled(info.get("coin_balance"), 18) or 0.0) if info else 0.0
+    if eth_price is None:
+        try:
+            eth_price = float(info.get("exchange_rate")) or None
+        except (TypeError, ValueError):
+            eth_price = None
+    eth_value = round(eth_balance * eth_price, 2) if eth_price is not None else None
+    tokens_value = round(sum(r["value_usd"] or 0 for r in rows), 2)
+
+    notes = [
+        "Cost basis is not available from free on-chain data, so realized and unrealized profit and loss are "
+        "not calculated. Net flow is tokens received minus tokens sent.",
+        "Values use today's prices. Token prices come from Blockscout; tokens without a price show no value "
+        "and are left out of totals.",
+        "ETH flows count normal transactions only; ETH moved by contracts (internal transactions) is not included.",
+    ]
+    if truncated.get("transfers") or truncated.get("transactions"):
+        notes.append(f"This address has more history than the latest {MAX_PAGES * 50} token transfers and "
+                     f"{MAX_PAGES * 50} transactions read here, so flows and gas cover only the most recent activity.")
+    if hidden:
+        notes.append(f"{len(hidden)} token(s) flagged as spam by Blockscout are hidden.")
+    if sent_count and hist_count < sent_count:
+        notes.append(f"{sent_count - hist_count} of {sent_count} fees had no historical ETH price; the "
+                     "historical gas figure leaves them out, the today's-price figure includes them.")
+
+    return {
+        "address": address, "chain": "ethereum", "source": "Blockscout (eth.blockscout.com)",
+        "eth": {"balance": eth_balance, "price": eth_price, "value_usd": eth_value,
+                "received": eth_in, "sent": eth_out, "net_flow": eth_in - eth_out},
+        "gas": {"eth": gas_eth, "usd_at_tx_time": round(gas_usd_hist, 2),
+                "usd_at_today": round(gas_eth * eth_price, 2) if eth_price is not None else None,
+                "transactions_paid": sent_count, "with_historic_price": hist_count},
+        "tokens": rows,
+        "tokens_value_usd": tokens_value,
+        "unpriced_tokens": sum(1 for r in rows if r["value_usd"] is None),
+        "total_value_usd": round((eth_value or 0) + tokens_value, 2),
+        "transactions_read": len(txs), "transfers_read": len(transfers),
+        "first_activity": min(times) if times and not truncated.get("transactions") else None,
+        "last_activity": max(times) if times else None,
+        "truncated": truncated,
+        "pnl_available": False,
+        "notes": notes,
+        "as_of": time.time(),
     }
+
+
+async def _info(address: str, client) -> dict:
+    """Address summary (ETH balance). This endpoint is the slowest; fall back to public RPC for the balance."""
     try:
-        async with httpx.AsyncClient(timeout=20.0) as client:
-            resp = await client.get(api_url, params=params)
-            resp.raise_for_status()
-            data = resp.json()
-            if data.get("status") == "1":
-                return data.get("result", [])
-            return []
-    except Exception as exc:
-        logger.warning("Error fetching token transfers for %s on %s: %s", address, chain, exc)
-        return []
+        return await blockscout.get(f"/addresses/{address}", client=client)
+    except blockscout.BlockscoutError:
+        from services.wallet_balances import BalanceError, evm_native
+
+        try:
+            wei = round(await evm_native(client, "ethereum", address) * 1e18)
+        except BalanceError:
+            raise blockscout.BlockscoutError("Could not read the ETH balance")
+        return {"coin_balance": str(wei)}
 
 
-async def _fetch_normal_txs(address: str, chain: str = "ethereum") -> list[dict[str, Any]]:
-    """Fetch normal (ETH) transactions for an address."""
-    api_url = ETHERSCAN_APIS.get(chain)
-    if not api_url:
-        return []
-
-    params = {
-        "module": "account",
-        "action": "txlist",
-        "address": address,
-        "startblock": 0,
-        "endblock": 99999999,
-        "sort": "asc",
-    }
+async def analyze(address: str) -> dict:
+    address = (address or "").strip()
+    if not _ADDR_RE.match(address):
+        raise PnLError("Enter an Ethereum address (0x followed by 40 hex characters)")
+    key = address.lower()
+    if key in _cache:
+        return _cache[key]
     try:
-        async with httpx.AsyncClient(timeout=20.0) as client:
-            resp = await client.get(api_url, params=params)
-            resp.raise_for_status()
-            data = resp.json()
-            if data.get("status") == "1":
-                return data.get("result", [])
-            return []
-    except Exception as exc:
-        logger.warning("Error fetching normal txs for %s: %s", address, exc)
-        return []
-
-
-async def _fetch_current_prices(symbols: list[str]) -> dict[str, float]:
-    """Best-effort price lookup via CoinGecko search.
-
-    Maps token symbols to USD prices. Missing tokens return 0.
-    """
-    if not symbols:
-        return {}
-
-    # CoinGecko /simple/price accepts ids, not symbols.
-    # We try to find ids by searching; fall back to 0 for unknowns.
-    prices: dict[str, float] = {}
+        async with blockscout.client() as c:
+            info, (balances, _), (transfers, t_trunc), (txs, x_trunc) = await asyncio.gather(
+                _info(address, c),
+                blockscout.paged(f"/addresses/{address}/tokens", {"type": "ERC-20"}, 4, c),
+                blockscout.paged(f"/addresses/{address}/token-transfers", {"type": "ERC-20"}, MAX_PAGES, c),
+                blockscout.paged(f"/addresses/{address}/transactions", None, MAX_PAGES, c),
+            )
+    except blockscout.BlockscoutError as exc:
+        raise PnLError(f"{exc}. On-chain data is unavailable right now; try again shortly.", 502)
+    eth_price = None
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            for symbol in symbols[:20]:  # Limit to avoid rate-limiting
-                try:
-                    resp = await client.get(
-                        f"{COINGECKO_API}/search",
-                        params={"query": symbol},
-                    )
-                    resp.raise_for_status()
-                    coins = resp.json().get("coins", [])
-                    if coins:
-                        coin_id = coins[0]["id"]
-                        price_resp = await client.get(
-                            f"{COINGECKO_API}/simple/price",
-                            params={"ids": coin_id, "vs_currencies": "usd"},
-                        )
-                        price_resp.raise_for_status()
-                        price_data = price_resp.json()
-                        prices[symbol.upper()] = price_data.get(coin_id, {}).get("usd", 0)
-                    else:
-                        prices[symbol.upper()] = 0
-                except Exception:
-                    prices[symbol.upper()] = 0
-    except Exception as exc:
-        logger.warning("Error fetching current prices: %s", exc)
-
-    return prices
-
-
-async def calculate_pnl(address: str, chain: str = "ethereum") -> dict[str, Any]:
-    """Calculate profit/loss for all ERC-20 tokens held or traded by an address.
-
-    Groups transfers by token, computes average cost basis, and estimates
-    realized + unrealized P&L using current CoinGecko prices.
-    """
-    try:
-        transfers = await _fetch_token_transfers(address, chain)
-        address_lower = address.lower()
-
-        # Group transfers by token symbol
-        token_data: dict[str, dict[str, Any]] = defaultdict(lambda: {
-            "symbol": "",
-            "token_name": "",
-            "decimals": 18,
-            "total_bought": 0.0,
-            "total_sold": 0.0,
-            "cost_basis_sum": 0.0,  # sum of (amount * estimated price at time)
-            "revenue_sum": 0.0,
-        })
-
-        for tx in transfers:
-            symbol = tx.get("tokenSymbol", "UNKNOWN")
-            decimals = int(tx.get("tokenDecimal", 18))
-            raw_value = int(tx.get("value", 0))
-            amount = raw_value / (10 ** decimals) if decimals > 0 else raw_value
-
-            entry = token_data[symbol]
-            entry["symbol"] = symbol
-            entry["token_name"] = tx.get("tokenName", symbol)
-            entry["decimals"] = decimals
-
-            if tx.get("to", "").lower() == address_lower:
-                # Incoming = buy
-                entry["total_bought"] += amount
-            elif tx.get("from", "").lower() == address_lower:
-                # Outgoing = sell
-                entry["total_sold"] += amount
-
-        # Fetch current prices for all tokens
-        symbols = list(token_data.keys())
-        current_prices = await _fetch_current_prices(symbols)
-
-        tokens: list[dict[str, Any]] = []
-        total_unrealized = 0.0
-        total_realized = 0.0
-
-        for symbol, data in token_data.items():
-            current_price = current_prices.get(symbol.upper(), 0)
-            net_held = data["total_bought"] - data["total_sold"]
-
-            # Without historical price data, we approximate:
-            # avg_buy_price ~ 0 (unknown), so unrealized = net_held * current_price
-            unrealized_pnl = net_held * current_price if net_held > 0 else 0
-            realized_pnl = data["total_sold"] * current_price  # Rough estimate
-
-            tokens.append({
-                "symbol": symbol,
-                "token_name": data["token_name"],
-                "total_bought": round(data["total_bought"], 6),
-                "total_sold": round(data["total_sold"], 6),
-                "net_held": round(net_held, 6),
-                "avg_buy_price": 0,  # Requires historical price data to compute accurately
-                "current_price": current_price,
-                "realized_pnl": round(realized_pnl, 2),
-                "unrealized_pnl": round(unrealized_pnl, 2),
-            })
-
-            total_unrealized += unrealized_pnl
-            total_realized += realized_pnl
-
-        # Sort by unrealized P&L descending
-        tokens.sort(key=lambda t: t["unrealized_pnl"], reverse=True)
-
-        return {
-            "address": address,
-            "chain": chain,
-            "tokens": tokens,
-            "total_realized_pnl": round(total_realized, 2),
-            "total_unrealized_pnl": round(total_unrealized, 2),
-            "token_count": len(tokens),
-            "note": "P&L is approximate — historical buy prices are not available from free APIs.",
-        }
-
-    except Exception as exc:
-        logger.error("Error calculating PnL for %s: %s", address, exc)
-        return {
-            "address": address,
-            "chain": chain,
-            "tokens": [],
-            "total_realized_pnl": 0,
-            "total_unrealized_pnl": 0,
-            "error": str(exc),
-        }
-
-
-async def get_transaction_summary(address: str, chain: str = "ethereum") -> dict[str, Any]:
-    """Return high-level transaction statistics for an address."""
-    try:
-        txs = await _fetch_normal_txs(address, chain)
-        if not txs:
-            return {
-                "address": address,
-                "chain": chain,
-                "total_transactions": 0,
-                "total_gas_spent_eth": 0,
-                "first_tx_date": None,
-                "last_tx_date": None,
-            }
-
-        total_gas_wei = 0
-        first_ts = int(txs[0].get("timeStamp", 0))
-        last_ts = int(txs[-1].get("timeStamp", 0))
-
-        for tx in txs:
-            gas_used = int(tx.get("gasUsed", 0))
-            gas_price = int(tx.get("gasPrice", 0))
-            total_gas_wei += gas_used * gas_price
-
-        total_gas_eth = total_gas_wei / 1e18
-
-        return {
-            "address": address,
-            "chain": chain,
-            "total_transactions": len(txs),
-            "total_gas_spent_eth": round(total_gas_eth, 6),
-            "first_tx_date": datetime.fromtimestamp(first_ts, tz=timezone.utc).isoformat() if first_ts else None,
-            "last_tx_date": datetime.fromtimestamp(last_ts, tz=timezone.utc).isoformat() if last_ts else None,
-        }
-
-    except Exception as exc:
-        logger.error("Error getting transaction summary for %s: %s", address, exc)
-        return {
-            "address": address,
-            "chain": chain,
-            "total_transactions": 0,
-            "total_gas_spent_eth": 0,
-            "first_tx_date": None,
-            "last_tx_date": None,
-            "error": str(exc),
-        }
+        q = (await market.quotes(["crypto:ETH"])).get("crypto:ETH")
+        eth_price = q.price if q and q.price else None
+    except Exception:  # noqa: BLE001 - fall back to Blockscout's ETH rate
+        pass
+    out = summarize(address, info, balances, transfers, txs, eth_price,
+                    {"transfers": t_trunc, "transactions": x_trunc})
+    _cache[key] = out
+    return out

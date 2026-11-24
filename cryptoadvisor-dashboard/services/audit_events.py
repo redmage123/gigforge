@@ -56,12 +56,16 @@ def from_request(request, action: str, **kw) -> None:
 
 
 def query(*, firm_id: str | None = None, actor: str | None = None, action: str | None = None,
-          since: str | None = None, until: str | None = None, limit: int = 200, before_id: int | None = None) -> list[dict]:
+          since: str | None = None, until: str | None = None, limit: int = 200, before_id: int | None = None,
+          action_prefix: str | None = None) -> list[dict]:
     where, args = [], []
     for col, val in (("firm_id", firm_id), ("actor", actor), ("action", action)):
         if val:
             where.append(f"{col} = %s")
             args.append(val)
+    if action_prefix:  # a category such as "auth.login" or "trade"; LIKE wildcards in it are literal
+        where.append("action LIKE %s ESCAPE '\\'")
+        args.append(action_prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%")
     if since:
         where.append("at >= %s")
         args.append(since)

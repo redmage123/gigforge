@@ -70,6 +70,14 @@ No. Each imported trade carries the broker's own id and is skipped if it has alr
 
 Crypto prices are live. Stocks, ETFs, futures and forex may be delayed by about 15 minutes.
 
+### What does the time scale on an alert mean?
+
+**Live price** alerts fire as soon as a quote reaches your level (checked every minute). With a candle time scale, for example 30-minute, the alert fires only when a 30-minute candle **closes** at or past your level, so a brief spike that reverses doesn't trigger it. RSI and Stochastic RSI alerts always use a candle time scale.
+
+### Can I get alerts on WhatsApp?
+
+Yes. Open **WhatsApp** in the user menu and select **Link WhatsApp**, then send the code it shows from your phone. You choose whether alerts, In-Play hits and a daily briefing are sent, and you can chat with the assistant there. Reply STOP at any time to pause messages. Telegram is no longer offered.
+
 ### Why don't my returns look right?
 
 Usually because deposits or withdrawals are not recorded. Add them under **Performance → Cash movements**; without them, money you added looks like a gain.
@@ -84,7 +92,7 @@ The switcher in the top bar is on a combined view ("All portfolios" or a whole f
 
 ### Can I get my data out?
 
-Yes. **Data Export** (user menu) downloads everything as a JSON file. The tax report and the firm audit trail can be downloaded as CSV, and statements as PDF.
+Yes. **Data Export** (user menu) downloads everything held about you as a JSON file (passwords, keys and tokens are never included). The tax report and the firm audit trail can be downloaded as CSV, and statements as PDF.
 
 ## Sharing and firms
 
@@ -134,4 +142,4 @@ Not yet. The technical controls are in place and the formal audit is being prepa
 
 ### Who are your service providers?
 
-Hosting (Hetzner), network, TLS and cookie-free page-load analytics (Cloudflare), AI (Anthropic), market data (Binance, Yahoo Finance, CoinGecko), and, only if you use them, Google or Microsoft sign-in, Alpaca, Plaid and SnapTrade.
+Hosting (Hetzner), network, TLS and cookie-free page-load analytics (Cloudflare), AI (Anthropic), market data (Binance, Yahoo Finance, CoinGecko), public blockchain data (Blockscout, Blockstream, mempool.space, public RPC nodes) and news feeds (Google News, CoinDesk, Cointelegraph), and, only if you use them, WhatsApp (Meta), Google or Microsoft sign-in, Alpaca, Plaid and SnapTrade.

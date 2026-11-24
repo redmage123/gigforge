@@ -1,115 +1,155 @@
-"""Liquidation tracking service."""
+"""Futures liquidations, collected live from Binance's free public liquidation stream.
 
+Binance no longer serves liquidation history over public REST, and there is no free, key-less
+history source. Its USD-M futures WebSocket stream `!forceOrder@arr` is free, so this module listens
+to it in-process (started lazily by the first page view) and keeps a bounded, rolling in-memory
+window. Consequences the page states plainly:
+
+  * data covers only the time since this app process started collecting, up to WINDOW_HOURS;
+  * a restart empties it, and events during a dropped connection are missed;
+  * Binance pushes at most one liquidation per symbol per second (the latest), so totals are a
+    lower bound, not every liquidation.
+"""
+
+import asyncio
+import json
+import logging
 import time
-from datetime import datetime, timezone
+from collections import deque
 
-import httpx
-from cachetools import TTLCache
+logger = logging.getLogger(__name__)
 
-_cache = TTLCache(maxsize=16, ttl=10)
-_TIMEOUT = 10.0
+# Binance moved market streams under /market; the legacy /ws path is kept as a fallback.
+STREAM_URLS = (
+    "wss://fstream.binance.com/market/ws/!forceOrder@arr",
+    "wss://fstream.binance.com/ws/!forceOrder@arr",
+)
+WINDOW_HOURS = 24
+MAX_EVENTS = 50_000  # memory bound (a busy day is a few thousand events)
+SOURCE = "Binance USD-M futures liquidation stream"
 
-# CoinGlass public API (no key required for basic data)
-COINGLASS_URL = "https://open-api.coinglass.com/public/v2/liquidation/info"
-BINANCE_FUTURES_URL = "https://fapi.binance.com/fapi/v1/allForceOrders"
+_events: deque = deque(maxlen=MAX_EVENTS)
+_state = {"task": None, "started_at": None, "connected": False, "last_error": None, "reconnects": 0}
 
 
-async def get_recent_liquidations() -> list[dict]:
-    """Fetch recent liquidation events from Binance futures or CoinGlass."""
-    cache_key = "recent_liquidations"
-    if cache_key in _cache:
-        return _cache[cache_key]
+def parse_event(msg: dict) -> dict | None:
+    """One stream message -> {symbol, side, quantity, price, usd_value, time_ms}, or None if malformed.
 
-    liquidations: list[dict] = []
-
-    # Try CoinGlass public endpoint first
+    A SELL order liquidates a long position; a BUY order liquidates a short.
+    """
+    o = msg.get("o") if isinstance(msg, dict) else None
+    if not isinstance(o, dict):
+        return None
     try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            resp = await client.get(COINGLASS_URL)
-            if resp.status_code == 200:
-                data = resp.json()
-                if data.get("code") == "0" and data.get("data"):
-                    for item in data["data"]:
-                        liquidations.append({
-                            "symbol": item.get("symbol", "UNKNOWN"),
-                            "side": "long" if item.get("longVolUsd", 0) > item.get("shortVolUsd", 0) else "short",
-                            "quantity": float(item.get("volUsd", 0)),
-                            "price": 0.0,
-                            "time": datetime.now(timezone.utc).isoformat(),
-                            "usd_value": float(item.get("volUsd", 0)),
-                        })
-                    if liquidations:
-                        _cache[cache_key] = liquidations
-                        return liquidations
-    except Exception:
-        pass
-
-    # Fallback: Binance futures forced liquidation orders
-    try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            resp = await client.get(f"{BINANCE_FUTURES_URL}?limit=50")
-            resp.raise_for_status()
-            data = resp.json()
-            for order in data:
-                price = float(order.get("price", 0))
-                qty = float(order.get("origQty", 0))
-                usd_value = price * qty
-                side = "long" if order.get("side") == "SELL" else "short"
-                liquidations.append({
-                    "symbol": order.get("symbol", "UNKNOWN"),
-                    "side": side,
-                    "quantity": qty,
-                    "price": price,
-                    "time": datetime.fromtimestamp(
-                        order.get("time", int(time.time() * 1000)) / 1000, tz=timezone.utc
-                    ).isoformat(),
-                    "usd_value": round(usd_value, 2),
-                })
-    except Exception as e:
-        if not liquidations:
-            return [{"error": f"Failed to fetch liquidations: {e}"}]
-
-    _cache[cache_key] = liquidations
-    return liquidations
+        qty = float(o.get("z") or o.get("q") or 0)  # z = filled quantity
+        price = float(o.get("ap") or 0) or float(o.get("p") or 0)  # ap = average fill price
+        ts = int(o.get("T") or msg.get("E") or 0)
+    except (TypeError, ValueError):
+        return None
+    side = {"SELL": "long", "BUY": "short"}.get(str(o.get("S", "")).upper())
+    if not side or qty <= 0 or price <= 0 or not o.get("s"):
+        return None
+    return {"symbol": o["s"], "side": side, "quantity": qty, "price": price,
+            "usd_value": round(qty * price, 2), "time_ms": ts}
 
 
-async def get_liquidation_summary() -> dict:
-    """Aggregate liquidation data into a summary."""
-    cache_key = "liquidation_summary"
-    if cache_key in _cache:
-        return _cache[cache_key]
+def _prune(now: float | None = None) -> None:
+    cutoff = ((now or time.time()) - WINDOW_HOURS * 3600) * 1000
+    while _events and _events[0]["time_ms"] < cutoff:
+        _events.popleft()
 
-    liquidations = await get_recent_liquidations()
-    if not liquidations or (len(liquidations) == 1 and "error" in liquidations[0]):
-        return {
-            "total_long_liquidations": 0,
-            "total_short_liquidations": 0,
-            "largest_single": None,
-            "most_liquidated_coin": None,
-            "time_period": "recent",
-            "error": liquidations[0].get("error") if liquidations else "No data",
-        }
 
-    total_long = sum(l["usd_value"] for l in liquidations if l["side"] == "long")
-    total_short = sum(l["usd_value"] for l in liquidations if l["side"] == "short")
+def record(event: dict) -> None:
+    _events.append(event)
 
-    largest = max(liquidations, key=lambda x: x.get("usd_value", 0))
 
-    # Count liquidations per coin
-    coin_counts: dict[str, float] = {}
-    for l in liquidations:
-        sym = l["symbol"]
-        coin_counts[sym] = coin_counts.get(sym, 0) + l.get("usd_value", 0)
-    most_liquidated = max(coin_counts, key=coin_counts.get) if coin_counts else None
+async def _collect() -> None:
+    import websockets  # declared dependency; imported here so tests never need a socket
 
-    result = {
-        "total_long_liquidations": round(total_long, 2),
-        "total_short_liquidations": round(total_short, 2),
-        "largest_single": largest,
-        "most_liquidated_coin": most_liquidated,
-        "time_period": "last 50 orders",
-        "total_count": len(liquidations),
-        "long_short_ratio": round(total_long / total_short, 2) if total_short > 0 else float("inf"),
+    delay, i = 5, 0
+    while True:
+        url = STREAM_URLS[i % len(STREAM_URLS)]
+        try:
+            async with websockets.connect(url, open_timeout=15, ping_interval=60) as ws:
+                _state["connected"], _state["last_error"] = True, None
+                _state["started_at"] = _state["started_at"] or time.time()
+                delay = 5
+                async for raw in ws:
+                    try:
+                        ev = parse_event(json.loads(raw))
+                    except ValueError:
+                        ev = None
+                    if ev:
+                        record(ev)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # network errors, closed sockets: reconnect with backoff
+            _state["last_error"] = f"{exc.__class__.__name__}: {exc}"[:200]
+            logger.warning("liquidations stream %s failed: %s", url, exc)
+        _state["connected"] = False
+        _state["reconnects"] += 1
+        i += 1
+        await asyncio.sleep(delay)
+        delay = min(delay * 2, 120)
+
+
+def ensure_collector() -> None:
+    """Start the stream listener on first use (idempotent; restarts it if it ever died)."""
+    task = _state["task"]
+    if task is None or task.done():
+        _state["task"] = asyncio.get_running_loop().create_task(_collect())
+
+
+def status(now: float | None = None) -> dict:
+    now = now or time.time()
+    started = _state["started_at"]
+    covered_from = max(started, now - WINDOW_HOURS * 3600) if started else None
+    return {
+        "source": SOURCE,
+        "collecting": bool(_state["connected"]),
+        "collecting_since": started,
+        "window_start": covered_from,
+        "window_hours": WINDOW_HOURS,
+        "covered_hours": round((now - covered_from) / 3600, 2) if covered_from else 0.0,
+        "last_error": _state["last_error"],
+        "reconnects": _state["reconnects"],
+        "sampled": True,  # at most one event per symbol per second
     }
-    _cache[cache_key] = result
-    return result
+
+
+def recent(limit: int = 100) -> list[dict]:
+    _prune()
+    return sorted(_events, key=lambda e: e["time_ms"], reverse=True)[:limit]
+
+
+def summarize(events) -> dict:
+    """Totals over the given events (pure)."""
+    events = list(events)
+    longs = sum(e["usd_value"] for e in events if e["side"] == "long")
+    shorts = sum(e["usd_value"] for e in events if e["side"] == "short")
+    by_symbol: dict[str, float] = {}
+    for e in events:
+        by_symbol[e["symbol"]] = by_symbol.get(e["symbol"], 0.0) + e["usd_value"]
+    top = sorted(by_symbol.items(), key=lambda kv: kv[1], reverse=True)
+    largest = max(events, key=lambda e: e["usd_value"]) if events else None
+    total = longs + shorts
+    return {
+        "count": len(events),
+        "total_usd": round(total, 2),
+        "total_long_usd": round(longs, 2),
+        "total_short_usd": round(shorts, 2),
+        "long_pct": round(longs / total * 100, 2) if total else None,
+        "largest": largest,
+        "most_liquidated_symbol": top[0][0] if top else None,
+        "by_symbol": [{"symbol": s, "usd_value": round(v, 2)} for s, v in top[:10]],
+    }
+
+
+def summary() -> dict:
+    _prune()
+    return summarize(_events)
+
+
+def _reset_for_tests() -> None:
+    _events.clear()
+    _state.update({"task": None, "started_at": None, "connected": False, "last_error": None, "reconnects": 0})

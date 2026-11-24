@@ -3073,3 +3073,6 @@ th {
 @media (max-width: 700px) {
     .dash-tile, .dash-s, .dash-m, .dash-l { grid-column: 1 / -1; }
 }
+.help-figure { margin: 1rem 0 1.25rem; }
+.help-figure img { display: block; max-width: 100%; height: auto; border: 1px solid var(--border); border-radius: 8px; }
+.help-figure figcaption { font-size: 0.8rem; color: var(--text-secondary, #94a3b8); margin-top: 0.35rem; }

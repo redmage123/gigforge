@@ -38,7 +38,6 @@ const DcaPlans = lazy(() => import('./pages/DcaPlans'))
 const AiPortfolioBuilder = lazy(() => import('./pages/AiPortfolioBuilder'))
 const PatternRecognition = lazy(() => import('./pages/PatternRecognition'))
 const TradingCoach = lazy(() => import('./pages/TradingCoach'))
-const TelegramSetup = lazy(() => import('./pages/TelegramSetup'))
 const WhatsAppSetup = lazy(() => import('./pages/WhatsAppSetup'))
 const CsvImport = lazy(() => import('./pages/CsvImport'))
 const SharePortfolio = lazy(() => import('./pages/SharePortfolio'))
@@ -57,6 +56,7 @@ const Allocation = lazy(() => import('./pages/Allocation'))
 const Firms = lazy(() => import('./pages/Firms'))
 const Firm = lazy(() => import('./pages/Firm'))
 const Join = lazy(() => import('./pages/Join'))
+const SharedPortfolioView = lazy(() => import('./pages/SharedPortfolioView'))
 const Connections = lazy(() => import('./pages/Connections'))
 
 export const AuthContext = createContext(null)
@@ -144,6 +144,7 @@ function App() {
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
             <Route path="/join/:token" element={<Join />} />
+            <Route path="/shared/:token" element={<SharedPortfolioView />} />
             <Route path="/" element={<ProtectedRoute><PortfolioProvider><Layout /></PortfolioProvider></ProtectedRoute>}>
               <Route index element={<Dashboard />} />
               <Route path="technical" element={<Technical />} />
@@ -180,7 +181,7 @@ function App() {
               <Route path="ai-portfolio" element={<AiPortfolioBuilder />} />
               <Route path="pattern-recognition" element={<PatternRecognition />} />
               <Route path="trading-coach" element={<TradingCoach />} />
-              <Route path="telegram-setup" element={<TelegramSetup />} />
+              <Route path="telegram-setup" element={<Navigate to="/whatsapp" replace />} />
               <Route path="whatsapp" element={<WhatsAppSetup />} />
               <Route path="csv-import" element={<CsvImport />} />
               <Route path="share-portfolio" element={<SharePortfolio />} />

@@ -1,14 +1,18 @@
-"""DCA (Dollar-Cost Averaging) automation scheduler service."""
+"""DCA (Dollar-Cost Averaging) plan tracker.
 
-import json
+The app holds no trading permissions and places no orders: when a plan is due, the hourly scheduler
+only records a simulated purchase in the plan's log (status "simulated").
+"""
+
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from config import DATA_DIR
 from services import store
 
 DCA_DIR = DATA_DIR / "dca_plans"
+FREQUENCY_DAYS = {"daily": 1, "weekly": 7, "monthly": 30}
 
 
 def _ensure_dir() -> None:
@@ -37,7 +41,7 @@ async def create_dca_plan(username: str, plan: dict) -> dict:
         coin: str,                    # e.g. "BTC"
         exchange: str,                # e.g. "binance"
         amount_usd: float,            # e.g. 100.0
-        frequency: str,               # "daily", "weekly", "monthly"
+        frequency: str,               # one of FREQUENCY_DAYS
         start_date: str               # e.g. "2026-03-10"
     }
     """
@@ -64,9 +68,32 @@ async def create_dca_plan(username: str, plan: dict) -> dict:
     return new_plan
 
 
+def next_execution(plan: dict, now: datetime | None = None) -> str | None:
+    """When the scheduler will next log this plan's (simulated) buy, as an ISO timestamp.
+
+    The scheduler checks hourly, so a plan that is already due runs within the hour.
+    """
+    if plan.get("status") != "active":
+        return None
+    now = now or datetime.now(timezone.utc)
+    try:
+        start = datetime.strptime(plan["start_date"], "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    except (KeyError, ValueError, TypeError):
+        return None
+    last = plan.get("last_executed")
+    if not last:
+        return max(start, now).isoformat()
+    try:
+        last_dt = datetime.fromisoformat(last)
+    except (ValueError, TypeError):
+        return now.isoformat()
+    due = last_dt + timedelta(days=FREQUENCY_DAYS.get(plan.get("frequency"), 7))
+    return max(due, now).isoformat()
+
+
 def get_dca_plans(username: str) -> list[dict]:
-    """List all DCA plans for a user."""
-    return _load_plans(username)
+    """List all DCA plans for a user, each with its computed next (simulated) execution."""
+    return [{**p, "next_execution": next_execution(p)} for p in _load_plans(username)]
 
 
 def delete_dca_plan(username: str, plan_id: str) -> bool:
@@ -83,20 +110,15 @@ def delete_dca_plan(username: str, plan_id: str) -> bool:
 
 
 async def execute_dca_buy(plan: dict) -> dict:
-    """
-    Placeholder for executing a DCA buy.
-
-    In production this would call the exchange service to place a market order.
-    For now, logs the intended buy.
-    """
+    """Record a simulated DCA buy. No order is sent to any exchange."""
     now = datetime.now(timezone.utc)
     execution = {
         "timestamp": now.isoformat(),
         "coin": plan["coin"],
         "exchange": plan["exchange"],
         "amount_usd": plan["amount_usd"],
-        "status": "simulated",  # Would be "executed" with real exchange integration
-        "note": "Placeholder: actual exchange execution requires exchange API keys",
+        "status": "simulated",
+        "note": "Simulated: AssetAdvisor does not place orders",
     }
     return execution
 
@@ -118,17 +140,7 @@ def _is_due(plan: dict) -> bool:
     except (ValueError, TypeError):
         return True
 
-    freq = plan.get("frequency", "weekly")
-    elapsed_days = (now - last_dt).days
-
-    if freq == "daily" and elapsed_days >= 1:
-        return True
-    if freq == "weekly" and elapsed_days >= 7:
-        return True
-    if freq == "monthly" and elapsed_days >= 30:
-        return True
-
-    return False
+    return (now - last_dt).days >= FREQUENCY_DAYS.get(plan.get("frequency", "weekly"), 7)
 
 
 async def check_and_execute_dcas() -> None:

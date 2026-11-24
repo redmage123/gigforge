@@ -53,7 +53,46 @@ async def get_news(limit: int = 10) -> list[dict]:
         except Exception:
             pass
 
+    # Free crypto news RSS feeds (Reddit refuses many server addresses)
+    if len(articles) < limit:
+        import time
+
+        global _rss_cache
+        at, cached = _rss_cache
+        if not cached or time.time() - at > 900:
+            cached = await _rss_articles()
+            if cached:
+                _rss_cache = (time.time(), cached)
+        seen = {a["title"] for a in articles}
+        for a in cached:                      # the same story often runs on several feeds
+            if a["title"] not in seen:
+                articles.append(a)
+                seen.add(a["title"])
+
     return articles[:limit]
+
+
+RSS_FEEDS = (("CoinDesk", "https://www.coindesk.com/arc/outboundfeeds/rss/"), ("Cointelegraph", "https://cointelegraph.com/rss"))
+_rss_cache: tuple[float, list[dict]] = (0.0, [])
+
+
+async def _rss_articles(per_feed: int = 10) -> list[dict]:
+    import feedparser
+
+    out = []
+    async with httpx.AsyncClient(timeout=15, follow_redirects=True, headers={"User-Agent": "Mozilla/5.0 AssetAdvisor"}) as client:
+        for source, url in RSS_FEEDS:
+            try:
+                r = await client.get(url)
+                r.raise_for_status()
+            except httpx.HTTPError:
+                continue
+            for e in feedparser.parse(r.text).entries[:per_feed]:
+                title = e.get("title", "")
+                if title:
+                    out.append({"title": title, "url": e.get("link", ""), "source": source,
+                                "published": e.get("published", ""), "sentiment": _score_sentiment(title)})
+    return out
 
 
 def _score_sentiment(text: str) -> str:

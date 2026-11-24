@@ -8,6 +8,14 @@ const PROGRESS_STEPS = [
   'Evaluating risks...',
 ]
 
+// The full report states "overall risk score: N/10" in prose; pick it out for the gauge
+function scoreFromReport(text) {
+  const m = /risk score[^0-9]{0,40}(\d+(?:\.\d+)?)\s*(?:\/|out of)\s*10\b/i.exec(text || '')
+  if (!m) return null
+  const value = Number(m[1])
+  return value >= 0 && value <= 10 ? { value, max: 10 } : null
+}
+
 function getScoreColor(score) {
   if (score < 30) return '#4ade80'
   if (score < 60) return '#facc15'
@@ -95,11 +103,12 @@ const styles = {
   },
 }
 
-function RiskGauge({ score }) {
-  const color = getScoreColor(score)
+function RiskGauge({ score, max = 100 }) {
+  const pct = (score / max) * 100
+  const color = getScoreColor(pct)
   const radius = 70
   const circumference = Math.PI * radius
-  const offset = circumference - (score / 100) * circumference
+  const offset = circumference - (pct / 100) * circumference
 
   return (
     <svg width="180" height="110" viewBox="0 0 180 110">
@@ -124,7 +133,7 @@ function RiskGauge({ score }) {
         {score}
       </text>
       <text x="90" y="105" textAnchor="middle" fill="#64748b" fontSize="12">
-        / 100
+        / {max}
       </text>
     </svg>
   )
@@ -151,10 +160,9 @@ export default function AiRiskReport() {
 
     try {
       const res = await api.post('/api/ai/risk/assessment', {})
-      const text = typeof res === 'string' ? res : res.report || res.analysis || res.content || JSON.stringify(res, null, 2)
-      const riskScore = res.score || res.risk_score || null
+      const text = typeof res === 'string' ? res : res.report || res.analysis || 'No report returned.'
       setReport(text)
-      if (riskScore != null) setScore(riskScore)
+      setScore(scoreFromReport(text))
     } catch (err) {
       setError(err.message || 'Failed to generate report')
     } finally {
@@ -167,8 +175,15 @@ export default function AiRiskReport() {
     setLoadingScore(true)
     setError('')
     try {
+      setScore(null)
       const res = await api.post('/api/ai/risk/score', {})
-      setScore(res.score || res.risk_score || res)
+      // {overall_score: 1-100, risk_level, top_risks}; raw_response means the AI reply could not be read
+      const value = Number(res.overall_score ?? res.score ?? res.risk_score)
+      if (res.raw_response || !Number.isFinite(value)) {
+        const raw = String(res.raw_response || '')
+        throw new Error(raw.startsWith('Error:') ? raw : 'The AI did not return a usable risk score. Try again.')
+      }
+      setScore({ value: Math.min(100, Math.max(0, value)), max: 100, risks: Array.isArray(res.top_risks) ? res.top_risks : [] })
     } catch (err) {
       setError(err.message || 'Failed to get risk score')
     } finally {
@@ -176,7 +191,8 @@ export default function AiRiskReport() {
     }
   }
 
-  const riskLevel = score != null ? getRiskLevel(score) : null
+  const pct = score ? (score.value / score.max) * 100 : null
+  const riskLevel = score ? getRiskLevel(pct) : null
 
   return (
     <div>
@@ -224,9 +240,9 @@ export default function AiRiskReport() {
         </div>
       )}
 
-      {score != null && !loading && (
+      {score && !loading && (
         <div style={styles.scoreCard}>
-          <RiskGauge score={score} />
+          <RiskGauge score={score.value} max={score.max} />
           <div style={{ textAlign: 'center' }}>
             <div
               style={{
@@ -239,6 +255,11 @@ export default function AiRiskReport() {
               {riskLevel.label} Risk
             </div>
           </div>
+          {score.risks?.length > 0 && (
+            <ul style={{ color: '#e2e8f0', fontSize: '0.9rem', margin: 0, paddingLeft: '1.2rem', lineHeight: 1.6 }}>
+              {score.risks.map((r, i) => <li key={i}>{String(r)}</li>)}
+            </ul>
+          )}
         </div>
       )}
 

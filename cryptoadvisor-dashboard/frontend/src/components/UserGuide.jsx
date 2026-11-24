@@ -23,7 +23,7 @@ const TOUR_STEPS = [
   {
     id: 'topbar',
     title: 'User Menu & Settings',
-    body: 'Account settings, password, two-factor authentication, Telegram setup, data export and the audit log live in the user menu.',
+    body: 'Account settings, password, active sessions, WhatsApp, data export, the audit log and Help & Docs live in the user menu.',
     position: 'bottom-left',
     target: '.topbar-right',
     context: 'The user is looking at the top bar user menu dropdown.',
@@ -65,7 +65,7 @@ const TOUR_STEPS = [
   {
     id: 'alerts',
     title: 'Price Alerts',
-    body: 'Set price alerts, or describe one in plain words with the Smart Alert Creator. Alerts show up in your notifications and on Telegram if you connect it.',
+    body: 'Set alerts on price, RSI or Stochastic RSI, live or on a candle close (for example the 30-minute close), or describe one in plain words with the Smart Alert Creator. Alerts show up in your notifications and on WhatsApp if you link it.',
     position: 'center',
     target: null,
     route: '/alerts',

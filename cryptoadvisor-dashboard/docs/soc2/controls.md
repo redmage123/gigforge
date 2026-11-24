@@ -71,7 +71,7 @@ Status: **Implemented** (in production, evidence available) · **Partial** · **
 | Named security owner; policies approved by management; annual review | **Gap** (drafts in policies.md) |
 | Security awareness training for staff | **Gap** |
 | Risk assessment (annual) | **Gap** (template in policies.md §2) |
-| Vendor inventory and reviews (Hetzner, Cloudflare, Anthropic, Plaid, SnapTrade, Alpaca, Google/Microsoft) | Partial (inventory in system-description.md) |
+| Vendor inventory and reviews (Hetzner, Cloudflare, Anthropic, Meta/WhatsApp, Plaid, SnapTrade, Alpaca, Google/Microsoft, Blockscout and other public data sources) | Partial (inventory in system-description.md) |
 | Customer terms, privacy policy, security page | **Gap** |
 
 ## Dependency scan (2026-11-17)

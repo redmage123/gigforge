@@ -8,6 +8,21 @@ from services.crypto_utils import encrypt, decrypt
 from services.user_data import load_user_data, save_user_data
 
 
+SUPPORTED = ("binance", "coinbase")
+
+
+def _readable(exc: Exception) -> str:
+    """Error text safe to show: never echoes keys or signed URLs."""
+    if isinstance(exc, httpx.HTTPStatusError):
+        code = exc.response.status_code
+        if code in (401, 403):
+            return f"The exchange rejected the API key ({code}). Check the key, secret and its read permission."
+        return f"The exchange returned HTTP {code}"
+    if isinstance(exc, httpx.HTTPError):
+        return f"Could not reach the exchange ({exc.__class__.__name__})"
+    return f"Balance check failed ({exc.__class__.__name__})"
+
+
 def get_exchanges(username: str) -> list[dict]:
     """Get configured exchanges (keys hidden)."""
     exchanges = load_user_data(username, "exchanges")
@@ -52,17 +67,23 @@ async def get_exchange_balances(username: str) -> list[dict]:
                 balances = await _coinbase_balances(key, secret)
             else:
                 balances = []
+            supported = ex["name"] in SUPPORTED
             results.append({
+                "id": i,
                 "exchange": ex["name"],
                 "label": ex.get("label", ex["name"]),
                 "balances": balances,
+                "status": "connected" if supported else "unsupported",
+                **({} if supported else {"error": f"Balances from {ex['name']} are not supported"}),
             })
         except Exception as e:
             results.append({
+                "id": i,
                 "exchange": ex["name"],
                 "label": ex.get("label", ex["name"]),
                 "balances": [],
-                "error": str(e),
+                "status": "error",
+                "error": _readable(e),
             })
     return results
 

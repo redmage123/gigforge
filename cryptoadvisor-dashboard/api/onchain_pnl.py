@@ -1,46 +1,36 @@
-"""On-chain profit and loss endpoints."""
+"""On-chain activity, value and gas for an Ethereum address (keyless Blockscout data)."""
 
-from fastapi import APIRouter, Request, Query
+from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse
 
+from services.onchain_pnl import PnLError, analyze
+
 router = APIRouter()
+
+UNSUPPORTED = ("Only Ethereum mainnet is supported. The free, keyless explorers for other chains "
+               "block automated requests.")
 
 
 @router.get("/")
 async def token_pnl(
-    request: Request,
-    address: str = Query(..., description="Wallet address"),
-    chain: str = Query(None, description="Optional chain filter"),
+    address: str = Query(..., max_length=64, description="Ethereum address"),
+    chain: str = Query("ethereum", description="Only ethereum is supported"),
 ):
+    if chain != "ethereum":
+        return JSONResponse({"detail": UNSUPPORTED}, status_code=400)
     try:
-        username = request.state.user.get("sub", "")
-        # Placeholder: calculate per-token P&L from on-chain transactions
-        return {
-            "address": address,
-            "chain": chain,
-            "tokens": [],
-            "total_realized_pnl": 0.0,
-            "total_unrealized_pnl": 0.0,
-        }
-    except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
+        return await analyze(address)
+    except PnLError as exc:
+        return JSONResponse({"detail": str(exc)}, status_code=exc.status)
 
 
 @router.get("/summary")
-async def transaction_summary(
-    request: Request,
-    address: str = Query(..., description="Wallet address"),
-):
+async def transaction_summary(address: str = Query(..., max_length=64)):
+    """Short form: totals and gas, without the token table."""
     try:
-        username = request.state.user.get("sub", "")
-        # Placeholder: summarize on-chain transaction history
-        return {
-            "address": address,
-            "transaction_count": 0,
-            "total_gas_spent_usd": 0.0,
-            "first_transaction": None,
-            "last_transaction": None,
-            "chains_active": [],
-        }
-    except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
+        d = await analyze(address)
+    except PnLError as exc:
+        return JSONResponse({"detail": str(exc)}, status_code=exc.status)
+    return {"address": d["address"], "chain": d["chain"], "transactions_read": d["transactions_read"],
+            "gas": d["gas"], "total_value_usd": d["total_value_usd"], "first_activity": d["first_activity"],
+            "last_activity": d["last_activity"], "truncated": d["truncated"], "notes": d["notes"]}

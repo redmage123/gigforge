@@ -1,180 +1,191 @@
-"""Portfolio backtesting service using CoinGecko historical data."""
+"""Buy-and-hold backtester over daily candles from the market layer.
 
-from datetime import datetime, timezone
+"What if I had bought X instead of Y on <date>" and an N-instrument comparison (each instrument on
+its own plus an equal-weight basket). Entry is the open of the first daily bar on or after the start
+date; values are marked at each daily close. No fees, slippage, dividends or rebalancing.
+"""
+
+import math
+from datetime import date, datetime, timezone
 
 import httpx
-from cachetools import TTLCache
 
-from config import COINGECKO_API
+from services import market
+from services.market import registry
+from services.market.models import Instrument, make_id
 
-_cache = TTLCache(maxsize=32, ttl=300)
-_TIMEOUT = 15.0
-
-# CoinGecko ID mapping for common tickers
-COIN_ID_MAP: dict[str, str] = {
-    "BTC": "bitcoin", "ETH": "ethereum", "SOL": "solana", "ADA": "cardano",
-    "DOT": "polkadot", "AVAX": "avalanche-2", "MATIC": "matic-network",
-    "LINK": "chainlink", "UNI": "uniswap", "AAVE": "aave", "ARB": "arbitrum",
-    "OP": "optimism", "DOGE": "dogecoin", "XRP": "ripple", "BNB": "binancecoin",
-    "ATOM": "cosmos", "NEAR": "near", "FTM": "fantom", "APT": "aptos",
-    "SUI": "sui", "SEI": "sei-network", "TIA": "celestia", "INJ": "injective-protocol",
-}
+# Binance serves at most 1000 daily klines per request; Yahoo daily history goes back much further
+MAX_CRYPTO_DAYS = 1000
+MAX_OTHER_DAYS = 3650
 
 
-def _resolve_coin_id(coin: str) -> str:
-    """Resolve a coin ticker or name to a CoinGecko ID."""
-    upper = coin.upper()
-    if upper in COIN_ID_MAP:
-        return COIN_ID_MAP[upper]
-    # Assume it's already a CoinGecko ID
-    return coin.lower()
+class BacktestError(Exception):
+    """A request we can't run, with a message fit to show the user."""
+
+    def __init__(self, message: str, status: int = 400):
+        super().__init__(message)
+        self.status = status
 
 
-async def _fetch_historical_prices(coin_id: str, start_ts: int, end_ts: int) -> list[list]:
-    """Fetch historical price data from CoinGecko market_chart/range endpoint."""
-    cache_key = f"hist_{coin_id}_{start_ts}_{end_ts}"
-    if cache_key in _cache:
-        return _cache[cache_key]
+async def resolve(ref: str) -> Instrument:
+    """Instrument id ("crypto:BTC", "stock:AAPL"), legacy CoinGecko id ("bitcoin") or crypto ticker ("BTC")."""
+    await registry.ensure_loaded()
+    ref = (ref or "").strip()
+    if not ref:
+        raise BacktestError("Pick an instrument")
+    if ":" in ref:
+        inst = registry.get(ref)
+    else:
+        inst = registry.get(registry.from_coingecko_id(ref.lower()) or make_id("crypto", ref))
+    if not inst:
+        raise BacktestError(f"Unknown instrument: {ref}")
+    if inst.currency != "USD":
+        raise BacktestError(f"{inst.symbol} is priced in {inst.currency}; backtests support USD-priced instruments only")
+    return inst
 
-    url = f"{COINGECKO_API}/coins/{coin_id}/market_chart/range"
-    params = {"vs_currency": "usd", "from": start_ts, "to": end_ts}
 
+def _day(ms: int) -> str:
+    return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
+
+
+async def history(inst: Instrument, start: date, today: date | None = None) -> list[tuple[str, float, float]]:
+    """(date, open, close) daily rows from `start` (or as far back as the provider goes) to today."""
+    today = today or datetime.now(timezone.utc).date()
+    span = (today - start).days + 1
+    if span < 2:
+        raise BacktestError("Start date must be in the past (at least one full day ago)")
+    cap = MAX_CRYPTO_DAYS if inst.asset_class == "crypto" else MAX_OTHER_DAYS
     try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            resp = await client.get(url, params=params)
-            resp.raise_for_status()
-            data = resp.json()
-            prices = data.get("prices", [])
-            _cache[cache_key] = prices
-            return prices
-    except Exception as e:
-        raise RuntimeError(f"Failed to fetch prices for {coin_id}: {e}") from e
+        candles = await market.candles(inst.id, "1d", min(span + 5, cap))
+    except LookupError:
+        raise BacktestError(f"No daily price history is available for {inst.symbol}")
+    except (httpx.HTTPError, RuntimeError, ValueError) as exc:
+        raise BacktestError(f"Price history for {inst.symbol} is unavailable right now ({type(exc).__name__}). Try again shortly.", 502)
+    first = start.isoformat()
+    rows = [(_day(c.open_time), c.open, c.close) for c in candles if c.close > 0 and c.open > 0]
+    rows = [r for r in rows if r[0] >= first]
+    if len(rows) < 2:
+        raise BacktestError(f"Not enough price history for {inst.symbol} since {first}")
+    return rows
 
 
-async def backtest_portfolio(scenario: dict) -> dict:
-    """
-    Backtest a portfolio scenario.
-
-    scenario: {
-        original_coin: str,      # e.g. "BTC"
-        alternative_coin: str,   # e.g. "ETH"
-        start_date: str,         # e.g. "2025-01-01"
-        amount_usd: float        # e.g. 10000
-    }
-    """
-    original_id = _resolve_coin_id(scenario["original_coin"])
-    alt_id = _resolve_coin_id(scenario["alternative_coin"])
-    amount = float(scenario["amount_usd"])
-
-    start_dt = datetime.strptime(scenario["start_date"], "%Y-%m-%d").replace(tzinfo=timezone.utc)
-    start_ts = int(start_dt.timestamp())
-    end_ts = int(datetime.now(timezone.utc).timestamp())
-
-    try:
-        original_prices = await _fetch_historical_prices(original_id, start_ts, end_ts)
-        alt_prices = await _fetch_historical_prices(alt_id, start_ts, end_ts)
-    except RuntimeError as e:
-        return {"error": str(e)}
-
-    if not original_prices or not alt_prices:
-        return {"error": "Insufficient price data for one or both coins"}
-
-    # Calculate how many coins you'd buy at start
-    original_start_price = original_prices[0][1]
-    alt_start_price = alt_prices[0][1]
-
-    original_coins = amount / original_start_price
-    alt_coins = amount / alt_start_price
-
-    # Current values
-    original_end_price = original_prices[-1][1]
-    alt_end_price = alt_prices[-1][1]
-
-    original_value_now = original_coins * original_end_price
-    alt_value_now = alt_coins * alt_end_price
-    difference = alt_value_now - original_value_now
-    pct_difference = ((alt_value_now - original_value_now) / original_value_now) * 100
-
-    # Daily value series (sample to ~daily intervals)
-    def build_series(prices: list[list], coins_held: float) -> list[dict]:
-        series = []
-        last_date = ""
-        for ts_ms, price in prices:
-            date_str = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
-            if date_str != last_date:
-                series.append({"date": date_str, "price": round(price, 2), "value": round(coins_held * price, 2)})
-                last_date = date_str
-        return series
-
+def stats(rows: list[tuple[str, float, float]], amount: float, periods_per_year: int) -> dict:
+    """Buy `amount` at the first open, hold. Value series and summary statistics."""
+    entry = rows[0][1]
+    units = amount / entry
+    series = [{"date": d, "price": c, "value": round(units * c, 2)} for d, _, c in rows]
+    values = [units * c for _, _, c in rows]
+    peak, mdd = amount, 0.0
+    for v in values:
+        peak = max(peak, v)
+        mdd = max(mdd, (peak - v) / peak if peak else 0.0)
+    final = values[-1]
+    days = (date.fromisoformat(rows[-1][0]) - date.fromisoformat(rows[0][0])).days
+    cagr = ((final / amount) ** (365.0 / days) - 1) * 100 if days >= 365 and final > 0 else None
+    rets = [math.log(values[i] / values[i - 1]) for i in range(1, len(values)) if values[i - 1] > 0 and values[i] > 0]
+    vol = None
+    if len(rets) >= 2:
+        mean = sum(rets) / len(rets)
+        vol = math.sqrt(sum((r - mean) ** 2 for r in rets) / (len(rets) - 1)) * math.sqrt(periods_per_year) * 100
     return {
-        "original_coin": scenario["original_coin"],
-        "alternative_coin": scenario["alternative_coin"],
-        "start_date": scenario["start_date"],
-        "amount_usd": amount,
-        "original_value_now": round(original_value_now, 2),
-        "alternative_value_now": round(alt_value_now, 2),
-        "difference": round(difference, 2),
-        "pct_difference": round(pct_difference, 2),
-        "winner": scenario["alternative_coin"] if difference > 0 else scenario["original_coin"],
-        "original_series": build_series(original_prices, original_coins),
-        "alternative_series": build_series(alt_prices, alt_coins),
+        "start_date": rows[0][0], "end_date": rows[-1][0], "entry_price": entry, "end_price": rows[-1][2],
+        "units": units, "invested": round(amount, 2), "final_value": round(final, 2),
+        "profit_usd": round(final - amount, 2), "total_return_pct": round((final / amount - 1) * 100, 2),
+        "max_drawdown_pct": round(mdd * 100, 2), "cagr_pct": round(cagr, 2) if cagr is not None else None,
+        "volatility_pct": round(vol, 2) if vol is not None else None, "series": series,
     }
 
 
-async def compare_strategies(coins: list[str], start_date: str, amount: float) -> dict:
-    """
-    Compare equal allocation across N coins vs holding each individually.
+def _ppy(inst: Instrument) -> int:
+    return 365 if inst.sessions == "24/7" else 252
 
-    Returns performance of each coin and a combined equal-weight portfolio.
-    """
-    start_dt = datetime.strptime(start_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-    start_ts = int(start_dt.timestamp())
-    end_ts = int(datetime.now(timezone.utc).timestamp())
 
-    per_coin_amount = amount / len(coins)
-    results: list[dict] = []
-    total_portfolio_value = 0.0
+def _label(inst: Instrument) -> dict:
+    return {"instrument_id": inst.id, "symbol": inst.symbol, "name": inst.name, "asset_class": inst.asset_class}
 
-    for coin in coins:
-        coin_id = _resolve_coin_id(coin)
-        try:
-            prices = await _fetch_historical_prices(coin_id, start_ts, end_ts)
-            if not prices:
-                results.append({"coin": coin, "error": "No price data"})
-                continue
 
-            start_price = prices[0][1]
-            end_price = prices[-1][1]
-            coins_held = per_coin_amount / start_price
-            current_value = coins_held * end_price
-            pct_return = ((current_value - per_coin_amount) / per_coin_amount) * 100
-            total_portfolio_value += current_value
+def _notes(requested: str, effective: str) -> list[str]:
+    notes = ["Buy and hold from the first daily open on or after the start date. Fees, slippage, "
+             "dividends and taxes are not included."]
+    if effective > requested:
+        notes.append(f"Price history for the selection starts on {effective}, so the backtest starts there "
+                     f"instead of {requested}.")
+    return notes
 
-            results.append({
-                "coin": coin,
-                "start_price": round(start_price, 4),
-                "end_price": round(end_price, 4),
-                "invested": round(per_coin_amount, 2),
-                "current_value": round(current_value, 2),
-                "pct_return": round(pct_return, 2),
-            })
-        except RuntimeError as e:
-            results.append({"coin": coin, "error": str(e)})
 
-    portfolio_return = ((total_portfolio_value - amount) / amount) * 100 if amount > 0 else 0
+def _validate(amount: float) -> float:
+    amount = float(amount)
+    if not math.isfinite(amount) or amount <= 0:
+        raise BacktestError("Amount must be greater than zero")
+    return amount
 
-    # Find best/worst performers
-    valid = [r for r in results if "error" not in r]
-    best = max(valid, key=lambda x: x["pct_return"]) if valid else None
-    worst = min(valid, key=lambda x: x["pct_return"]) if valid else None
 
+async def backtest_portfolio(original: str, alternative: str, start: date, amount: float,
+                             today: date | None = None) -> dict:
+    """What if `amount` had gone into `alternative` instead of `original` on `start`."""
+    amount = _validate(amount)
+    a, b = await resolve(original), await resolve(alternative)
+    ra, rb = await history(a, start, today), await history(b, start, today)
+    common = max(ra[0][0], rb[0][0])  # both legs start the same day for a fair comparison
+    ra, rb = [r for r in ra if r[0] >= common], [r for r in rb if r[0] >= common]
+    if len(ra) < 2 or len(rb) < 2:
+        raise BacktestError("The two instruments do not have enough overlapping price history")
+    sa, sb = {**_label(a), **stats(ra, amount, _ppy(a))}, {**_label(b), **stats(rb, amount, _ppy(b))}
+    diff = sb["final_value"] - sa["final_value"]
     return {
-        "start_date": start_date,
-        "total_invested": amount,
-        "per_coin_invested": round(per_coin_amount, 2),
-        "total_portfolio_value": round(total_portfolio_value, 2),
-        "portfolio_return_pct": round(portfolio_return, 2),
-        "best_performer": best,
-        "worst_performer": worst,
-        "individual_results": results,
+        "start_date": start.isoformat(), "effective_start": common, "amount_usd": amount,
+        "original": sa, "alternative": sb,
+        "difference_usd": round(diff, 2),
+        "difference_pct": round(diff / sa["final_value"] * 100, 2) if sa["final_value"] else None,
+        "winner": b.id if diff > 0 else a.id if diff < 0 else None,
+        "notes": _notes(start.isoformat(), common),
+    }
+
+
+async def compare(refs: list[str], start: date, amount: float, today: date | None = None) -> dict:
+    """Each instrument bought with the full amount, plus an equal-weight basket (bought once, never rebalanced)."""
+    amount = _validate(amount)
+    insts: list[Instrument] = []
+    for ref in refs:
+        inst = await resolve(ref)
+        if inst.id not in {i.id for i in insts}:
+            insts.append(inst)
+    if not 2 <= len(insts) <= 10:
+        raise BacktestError("Pick between 2 and 10 different instruments to compare")
+    rows = {i.id: await history(i, start, today) for i in insts}
+    common = max(r[0][0] for r in rows.values())
+    rows = {k: [r for r in v if r[0] >= common] for k, v in rows.items()}
+    if any(len(v) < 2 for v in rows.values()):
+        raise BacktestError("The selected instruments do not have enough overlapping price history")
+
+    results = [{**_label(i), **stats(rows[i.id], amount, _ppy(i))} for i in insts]
+
+    # Basket: amount / N in each, valued on every date any leg trades; a leg that is closed that day
+    # (weekend for stocks) carries its last close forward.
+    per = amount / len(insts)
+    units = {i.id: per / rows[i.id][0][1] for i in insts}
+    closes = {k: {d: c for d, _, c in v} for k, v in rows.items()}
+    last: dict[str, float] = {k: v[0][1] for k, v in rows.items()}  # entry price until the first close
+    basket_rows = []
+    for d in sorted({d for v in closes.values() for d in v}):
+        for k in closes:
+            if d in closes[k]:
+                last[k] = closes[k][d]
+        nav = sum(units[k] * last[k] for k in units)
+        basket_rows.append((d, nav / amount, nav / amount))  # price index starting near 1.0
+    basket_rows[0] = (basket_rows[0][0], 1.0, basket_rows[0][2])  # bought at the entry opens: index 1.0
+    ppy = 365 if all(i.sessions == "24/7" for i in insts) else 252
+    basket = {"instrument_id": None, "symbol": "Equal weight", "name": f"Equal-weight basket of {len(insts)}",
+              **stats(basket_rows, amount, ppy)}
+    basket.pop("entry_price"), basket.pop("end_price"), basket.pop("units")
+
+    best = max(results, key=lambda r: r["total_return_pct"])
+    worst = min(results, key=lambda r: r["total_return_pct"])
+    return {
+        "start_date": start.isoformat(), "effective_start": common, "amount_usd": amount,
+        "results": results, "portfolio": basket,
+        "best_performer": best["instrument_id"], "worst_performer": worst["instrument_id"],
+        "notes": _notes(start.isoformat(), common) + [
+            "Each instrument row invests the full amount. The equal-weight basket splits it evenly "
+            "and is not rebalanced."],
     }

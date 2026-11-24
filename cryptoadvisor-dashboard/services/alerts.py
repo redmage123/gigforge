@@ -133,14 +133,16 @@ def _fire(username: str, alert: dict, value: float, when: float, candle_time: fl
     if candle_time is not None:
         alert["triggered_candle"] = candle_time
     shown = f"{value:,.{decimals}f}" if alert["metric"] == "price" else f"{value:.1f}"
+    target = alert["target_price"]
+    level = f"{target:,.{decimals}f}" if alert["metric"] == "price" else f"{target:g}"
     if alert["timeframe"] == LIVE:
         title = f"Price Alert: {name}"
-        body = f"{name} is {shown} ({alert['direction']} {alert['target_price']:,})"
+        body = f"{name} is {shown} ({alert['direction']} {level})"
     else:
         tf = CANDLE_NAMES[alert["timeframe"]]
         what = "closed at" if alert["metric"] == "price" else f"{METRICS[alert['metric']]} closed at"
         title = f"{METRICS[alert['metric']].split(' (')[0]} Alert ({tf}): {name}"
-        body = f"{name} {tf} candle {what} {shown} ({alert['direction']} {alert['target_price']:,})"
+        body = f"{name} {tf} candle {what} {shown} ({alert['direction']} {level})"
     add_notification(username, title, body, category="alert")
     _deliver_elsewhere(username, title, body)
 

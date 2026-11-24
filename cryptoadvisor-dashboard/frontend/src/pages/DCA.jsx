@@ -26,7 +26,7 @@ export default function DCA() {
         coin,
         frequency,
         amount: parseFloat(amount),
-        period: parseInt(period),
+        days: parseInt(period, 10),
       });
       setResult(res);
     } catch (err) {
@@ -57,12 +57,13 @@ export default function DCA() {
     fontWeight: 600,
   };
 
-  const chartData = result && (result.chart_data || result.history) ? {
-    labels: (result.chart_data || result.history).map((p) => p.date || p.label || ''),
+  const points = result?.chart_data || [];
+  const chartData = points.length ? {
+    labels: points.map((p) => p.date),
     datasets: [
       {
         label: 'DCA Value',
-        data: (result.chart_data || result.history).map((p) => p.dca_value || p.value),
+        data: points.map((p) => p.value),
         borderColor: '#646cff',
         backgroundColor: '#646cff22',
         fill: true,
@@ -70,11 +71,19 @@ export default function DCA() {
       },
       {
         label: 'Lump Sum Value',
-        data: (result.chart_data || result.history).map((p) => p.lump_sum_value || p.lump_sum),
+        data: points.map((p) => p.lump_sum_value),
         borderColor: '#f87171',
         borderDash: [5, 5],
         fill: false,
         tension: 0.3,
+      },
+      {
+        label: 'Amount Invested (DCA)',
+        data: points.map((p) => p.invested),
+        borderColor: '#888',
+        stepped: true,
+        pointRadius: 0,
+        fill: false,
       },
     ],
   } : null;
@@ -82,6 +91,7 @@ export default function DCA() {
   const chartOpts = {
     responsive: true,
     maintainAspectRatio: false,
+    elements: { point: { radius: 0 } },
     plugins: { legend: { labels: { color: '#aaa' } } },
     scales: {
       x: { ticks: { color: '#888', maxTicksLimit: 12 }, grid: { color: '#1a1a2e' } },
@@ -89,7 +99,8 @@ export default function DCA() {
     },
   };
 
-  const roi = result ? ((result.current_value || result.final_value || 0) / (result.total_invested || 1) - 1) * 100 : 0;
+  const roi = result ? Number(result.roi_percent || 0) : 0;
+  const lumpRoi = result ? Number(result.lump_sum_roi || 0) : 0;
 
   return (
     <div>
@@ -118,8 +129,8 @@ export default function DCA() {
             <input type="number" step="any" value={amount} onChange={(e) => setAmount(e.target.value)} style={inputStyle} required />
           </div>
           <div>
-            <label style={{ color: '#888', fontSize: '0.8rem', display: 'block', marginBottom: 4 }}>Period (days)</label>
-            <input type="number" value={period} onChange={(e) => setPeriod(e.target.value)} style={inputStyle} required />
+            <label style={{ color: '#888', fontSize: '0.8rem', display: 'block', marginBottom: 4 }}>Period (days, max 365)</label>
+            <input type="number" min="1" max="365" value={period} onChange={(e) => setPeriod(e.target.value)} style={inputStyle} required />
           </div>
           <button type="submit" disabled={loading} style={btnStyle}>{loading ? 'Running...' : 'Run Backtest'}</button>
         </form>
@@ -132,10 +143,18 @@ export default function DCA() {
         <>
           <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', marginBottom: '1.5rem' }}>
             <StatCard label="Total Invested" value={`$${Number(result.total_invested || 0).toLocaleString()}`} />
-            <StatCard label="Current Value" value={`$${Number(result.current_value || result.final_value || 0).toLocaleString()}`} color="#646cff" />
+            <StatCard label="Current Value" value={`$${Number(result.current_value || 0).toLocaleString()}`} color="#646cff" />
             <StatCard label="ROI" value={`${roi >= 0 ? '+' : ''}${roi.toFixed(2)}%`} color={roi >= 0 ? '#4ade80' : '#f87171'} />
-            <StatCard label="Total Coins" value={result.total_coins || result.total_amount || '--'} />
+            <StatCard label="Lump Sum Value" value={`$${Number(result.lump_sum_value || 0).toLocaleString()}`} />
+            <StatCard label="Lump Sum ROI" value={`${lumpRoi >= 0 ? '+' : ''}${lumpRoi.toFixed(2)}%`} color={lumpRoi >= 0 ? '#4ade80' : '#f87171'} />
+            <StatCard label="Buys" value={result.num_buys} />
+            <StatCard label="Total Coins" value={result.total_coins ?? '--'} />
           </div>
+
+          <p style={{ color: '#888', fontSize: '0.85rem', marginBottom: '1rem' }}>
+            {result.num_buys} {result.frequency} buys of ${Number(result.amount_per_buy).toLocaleString()} from {result.first_buy_date} to {result.last_buy_date}.
+            Lump sum invests the same total (${Number(result.total_invested).toLocaleString()}) on the first day.
+          </p>
 
           {chartData && (
             <Card title="DCA vs Lump Sum">

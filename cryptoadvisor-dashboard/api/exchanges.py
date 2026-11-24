@@ -1,8 +1,10 @@
-"""Exchange API integration endpoints."""
+"""Exchange API integration endpoints. Stored keys are encrypted and never sent back to the browser."""
+
+from typing import Literal
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from services.exchanges import get_exchanges, add_exchange, remove_exchange, get_exchange_balances
 from services.user_data import get_username
 
@@ -10,10 +12,10 @@ router = APIRouter()
 
 
 class ExchangeCreate(BaseModel):
-    name: str  # "binance" or "coinbase"
-    api_key: str
-    api_secret: str
-    label: str = ""
+    name: Literal["binance", "coinbase"]  # the exchanges get_exchange_balances can read
+    api_key: str = Field(min_length=1, max_length=500)
+    api_secret: str = Field(min_length=1, max_length=1000)
+    label: str = Field(default="", max_length=60)
 
 
 @router.get("/")

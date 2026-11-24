@@ -4,7 +4,7 @@ Keys are stored per-user in data/api_keys/{username}.json, each value encrypted.
 Only the masked version (last 4 chars) is ever returned to the frontend.
 """
 
-from services.user_data import load_user_data, save_user_data
+from services.user_data import load_user_data, save_user_data, update_user_data
 from services.crypto_utils import encrypt, decrypt
 
 # Registry of supported integrations
@@ -104,17 +104,6 @@ INTEGRATIONS = [
         ],
     },
     {
-        "id": "telegram",
-        "name": "Telegram Bot",
-        "category": "notifications",
-        "description": "Telegram bot for alerts and notifications",
-        "url": "https://t.me/BotFather",
-        "fields": [
-            {"key": "bot_token", "label": "Bot Token", "type": "password"},
-            {"key": "chat_id", "label": "Chat ID", "type": "text"},
-        ],
-    },
-    {
         "id": "coinmarketcap",
         "name": "CoinMarketCap",
         "category": "market_data",
@@ -145,7 +134,6 @@ CATEGORIES = {
     "market_data": "Market Data",
     "blockchain": "Blockchain & RPC",
     "payments": "Payments",
-    "notifications": "Notifications",
 }
 
 
@@ -186,17 +174,21 @@ def get_user_keys(username: str) -> dict:
 
 
 def save_user_key(username: str, integration_id: str, fields: dict) -> None:
-    """Save (encrypt) API key fields for an integration."""
-    raw = load_user_data(username, "api_keys")
-    if not isinstance(raw, dict):
-        raw = {}
-    encrypted_fields = {}
-    for key, value in fields.items():
-        if value:  # Only save non-empty values
-            encrypted_fields[key] = encrypt(value)
-    if encrypted_fields:
-        raw[integration_id] = encrypted_fields
-    save_user_data(username, "api_keys", raw)
+    """Save (encrypt) API key fields for an integration.
+
+    Fields left blank keep their stored value, so updating one field of a two-field service
+    (Infura, Stripe) doesn't drop the other.
+    """
+    encrypted_fields = {key: encrypt(value) for key, value in fields.items() if value}
+    if not encrypted_fields:
+        return
+
+    def merge(raw):
+        raw = raw if isinstance(raw, dict) else {}
+        current = raw.get(integration_id)
+        raw[integration_id] = {**(current if isinstance(current, dict) else {}), **encrypted_fields}
+        return raw
+    update_user_data(username, "api_keys", merge, default={})
 
 
 def delete_user_key(username: str, integration_id: str) -> bool:

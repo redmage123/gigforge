@@ -32,9 +32,11 @@ For a CSV from an unlisted broker, choose **Other exchange or broker**. You'll s
 
 ## 4. Follow the markets
 
-- **Dashboard**: indices, yields, commodities, crypto and your watchlist. Use the search box at the top to open any instrument.
+- **Dashboard**: indices, yields, commodities, crypto and your watchlist. Select **Customize dashboard** to reorder, resize or hide tiles and build your own Markets tiles. Use the search box at the top to open any instrument.
+- **Charts**: every instrument page has a candlestick chart where you choose the range and the candle size (5 minutes to weekly) separately, with volume, RSI, Stochastic RSI and SurgeX underneath on the same time axis.
 - **In-Play**: every 15 minutes the scanner flags instruments with unusual volume and a large, decisive candle, and finds the news behind the move. Turn on **Phone Alerts** (through the free ntfy app) to be notified on your phone.
-- **Alerts**: get notified when a price crosses a level you choose.
+- **Alerts**: get notified when a price, RSI or Stochastic RSI crosses a level you choose, either live or on a candle close (for example the 30-minute or 1-hour close).
+- **WhatsApp**: link your number in the user menu to get alerts there and chat with the assistant from your phone.
 
 ## 5. Ask the assistant
 

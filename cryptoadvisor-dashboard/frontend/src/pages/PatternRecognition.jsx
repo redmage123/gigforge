@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { api } from '../api/client';
 import Card from '../components/Card';
 import LoadingSpinner from '../components/LoadingSpinner';
+import AiInsightPanel from '../components/AiInsightPanel';
 
 const selectStyle = {
   padding: '0.6rem 1rem',
@@ -32,7 +33,14 @@ const btnSecondary = {
   fontWeight: 600,
 };
 
-const COINS = ['bitcoin', 'ethereum', 'solana', 'cardano', 'polkadot'];
+const INSTRUMENTS = [
+  { id: 'crypto:BTC', label: 'Bitcoin' },
+  { id: 'crypto:ETH', label: 'Ethereum' },
+  { id: 'crypto:SOL', label: 'Solana' },
+  { id: 'stock:AAPL', label: 'Apple (AAPL)' },
+  { id: 'commodity:GC', label: 'Gold futures' },
+];
+const labelOf = (id) => (INSTRUMENTS.find((i) => i.id === id) || {}).label || id;
 
 const confidenceColors = {
   high: { bg: '#1e3a2e', color: '#4ade80' },
@@ -41,8 +49,10 @@ const confidenceColors = {
 };
 
 export default function PatternRecognition() {
-  const [coin, setCoin] = useState('bitcoin');
+  const [coin, setCoin] = useState('crypto:BTC');
+  const [scannedCoin, setScannedCoin] = useState('');
   const [patterns, setPatterns] = useState([]);
+  const [summary, setSummary] = useState('');
   const [loading, setLoading] = useState(false);
   const [scanAllLoading, setScanAllLoading] = useState(false);
   const [scanAllResults, setScanAllResults] = useState(null);
@@ -52,9 +62,12 @@ export default function PatternRecognition() {
     setLoading(true);
     setError('');
     setPatterns([]);
+    setSummary('');
     try {
       const res = await api.post('/api/ai-advanced/pattern-detect', { coin });
-      setPatterns(Array.isArray(res) ? res : res.patterns || res.results || []);
+      setScannedCoin(coin);
+      setPatterns(res.patterns || []);
+      setSummary(res.summary || (res.patterns?.length ? '' : 'No clear chart patterns detected.'));
     } catch (err) {
       setError(err.message);
     } finally {
@@ -68,9 +81,9 @@ export default function PatternRecognition() {
     setScanAllResults(null);
     try {
       const results = {};
-      for (const c of COINS) {
-        const res = await api.post('/api/ai-advanced/pattern-detect', { coin: c });
-        results[c] = Array.isArray(res) ? res : res.patterns || res.results || [];
+      for (const { id } of INSTRUMENTS) {
+        const res = await api.post('/api/ai-advanced/pattern-detect', { coin: id });
+        results[id] = res.patterns || [];
       }
       setScanAllResults(results);
     } catch (err) {
@@ -94,26 +107,32 @@ export default function PatternRecognition() {
       <Card title="Scan for Patterns">
         <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
           <div>
-            <label style={{ color: '#888', fontSize: '0.85rem', display: 'block', marginBottom: 4 }}>Coin</label>
+            <label style={{ color: '#888', fontSize: '0.85rem', display: 'block', marginBottom: 4 }}>Instrument</label>
             <select value={coin} onChange={(e) => setCoin(e.target.value)} style={selectStyle}>
-              {COINS.map((c) => <option key={c} value={c}>{c}</option>)}
+              {INSTRUMENTS.map((i) => <option key={i.id} value={i.id}>{i.label}</option>)}
             </select>
           </div>
           <button onClick={scanPatterns} disabled={loading} style={btnStyle}>
             {loading ? 'Scanning...' : 'Scan for Patterns'}
           </button>
           <button onClick={scanAllCoins} disabled={scanAllLoading} style={btnSecondary}>
-            {scanAllLoading ? 'Scanning All...' : 'Scan All Top Coins'}
+            {scanAllLoading ? 'Scanning All...' : 'Scan All'}
           </button>
         </div>
       </Card>
 
       {(loading || scanAllLoading) && <LoadingSpinner />}
 
-      {/* Single Coin Results */}
+      {summary && !loading && (
+        <div style={{ marginTop: '1.5rem' }}>
+          <AiInsightPanel title={`Pattern Summary: ${labelOf(scannedCoin)}`} content={summary} loading={false} />
+        </div>
+      )}
+
+      {/* Single Instrument Results */}
       {patterns.length > 0 && (
         <div style={{ marginTop: '1.5rem' }}>
-          <h3 style={{ color: '#e0e0e0', marginBottom: '0.75rem' }}>Detected Patterns - {coin}</h3>
+          <h3 style={{ color: '#e0e0e0', marginBottom: '0.75rem' }}>Detected Patterns: {labelOf(scannedCoin)}</h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
             {patterns.map((p, i) => {
               const conf = getConfidence(p.confidence);
@@ -161,10 +180,10 @@ export default function PatternRecognition() {
       {/* Scan All Results */}
       {scanAllResults && (
         <div style={{ marginTop: '1.5rem' }}>
-          <h3 style={{ color: '#e0e0e0', marginBottom: '0.75rem' }}>All Coin Pattern Scan</h3>
+          <h3 style={{ color: '#e0e0e0', marginBottom: '0.75rem' }}>Pattern Scan: All Instruments</h3>
           {Object.entries(scanAllResults).map(([coinName, coinPatterns]) => (
             <div key={coinName} style={{ marginBottom: '1rem' }}>
-              <h4 style={{ color: '#646cff', marginBottom: '0.5rem', textTransform: 'capitalize' }}>{coinName}</h4>
+              <h4 style={{ color: '#646cff', marginBottom: '0.5rem' }}>{labelOf(coinName)}</h4>
               {coinPatterns.length > 0 ? (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
                   {coinPatterns.map((p, i) => {

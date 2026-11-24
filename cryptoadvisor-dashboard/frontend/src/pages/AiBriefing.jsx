@@ -3,6 +3,7 @@ import { api } from '../api/client'
 import AiInsightPanel from '../components/AiInsightPanel'
 
 const COINS = ['bitcoin', 'ethereum', 'solana', 'cardano', 'polkadot', 'avalanche-2', 'chainlink', 'dogecoin']
+const coinName = (c) => (c === 'avalanche-2' ? 'Avalanche' : c.replace(/-/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase()))
 
 const styles = {
   card: {
@@ -153,7 +154,7 @@ export default function AiBriefing() {
         <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1rem' }}>
           <select style={styles.select} value={coin} onChange={(e) => setCoin(e.target.value)}>
             {COINS.map((c) => (
-              <option key={c} value={c}>{c.replace(/-/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())}</option>
+              <option key={c} value={c}>{coinName(c)}</option>
             ))}
           </select>
           <button style={styles.commentaryBtn} onClick={fetchCommentary} disabled={loadingCommentary}>
@@ -165,7 +166,7 @@ export default function AiBriefing() {
 
         {(commentary || loadingCommentary) && (
           <AiInsightPanel
-            title={`${coin.replace(/-/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())} Commentary`}
+            title={`${coinName(coin)} Commentary`}
             content={commentary}
             loading={loadingCommentary}
             onRefresh={fetchCommentary}

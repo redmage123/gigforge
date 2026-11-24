@@ -25,6 +25,8 @@ const CATEGORY_COLORS = {
   general: '#636e72',
 }
 
+const MIN_FACT_LENGTH = 5 // same rule as the API (api/memory.py)
+
 function Memory() {
   const [facts, setFacts] = useState([])
   const [stats, setStats] = useState(null)
@@ -37,6 +39,7 @@ function Memory() {
   const [editText, setEditText] = useState('')
   const [editCategory, setEditCategory] = useState('')
   const [loading, setLoading] = useState(true)
+  const [notice, setNotice] = useState('')
 
   const load = async () => {
     setLoading(true)
@@ -70,37 +73,45 @@ function Memory() {
 
   const handleAdd = async () => {
     if (!newFact.trim()) return
+    // The API rejects facts shorter than 5 characters: say so instead of dropping them silently
+    if (newFact.trim().length < MIN_FACT_LENGTH) {
+      setNotice(`A fact needs at least ${MIN_FACT_LENGTH} characters.`)
+      return
+    }
+    setNotice('')
     try {
       await api.post('/api/memory/', { fact: newFact.trim(), category: newCategory })
       setNewFact('')
       setNewCategory('general')
       load()
     } catch (e) {
-      console.error('Failed to add fact:', e)
+      setNotice(`Could not save the fact: ${e.message}`)
     }
   }
 
   const handleDelete = async (id) => {
     if (!confirm('Delete this fact?')) return
     try {
-      await api.delete(`/api/memory/${id}`)
+      await api.del(`/api/memory/${id}`)
+      setNotice('')
       load()
       if (searchResults) {
         setSearchResults(searchResults.filter(f => f.id !== id))
       }
     } catch (e) {
-      console.error('Failed to delete:', e)
+      setNotice(`Could not delete the fact: ${e.message}`)
     }
   }
 
   const handleDeleteAll = async () => {
     if (!confirm('Delete ALL your stored facts? This cannot be undone.')) return
     try {
-      await api.delete('/api/memory/')
+      await api.del('/api/memory/')
+      setNotice('')
       load()
       setSearchResults(null)
     } catch (e) {
-      console.error('Failed to clear:', e)
+      setNotice(`Could not delete your facts: ${e.message}`)
     }
   }
 
@@ -112,15 +123,20 @@ function Memory() {
 
   const saveEdit = async () => {
     if (!editText.trim()) return
+    if (editText.trim().length < MIN_FACT_LENGTH) {
+      setNotice(`A fact needs at least ${MIN_FACT_LENGTH} characters.`)
+      return
+    }
     try {
       await api.put(`/api/memory/${editingId}`, {
         fact: editText.trim(),
         category: editCategory,
       })
       setEditingId(null)
+      setNotice('')
       load()
     } catch (e) {
-      console.error('Failed to update:', e)
+      setNotice(`Could not update the fact: ${e.message}`)
     }
   }
 
@@ -226,6 +242,7 @@ function Memory() {
             Add
           </button>
         </div>
+        {notice && <p role="alert" style={{ color: '#ff6b6b', margin: '0.5rem 0 0', fontSize: '0.9rem' }}>{notice}</p>}
       </div>
 
       {/* Facts list */}

@@ -34,6 +34,8 @@ All user records (users, portfolios, trades, cash, statements, settings) are in 
 | `MICROSOFT_OIDC_CLIENT_ID`, `MICROSOFT_OIDC_CLIENT_SECRET` | Microsoft sign-in (button hidden when unset) |
 | `PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_ENV` | Plaid broker connections ("Coming soon" when unset) |
 | `SNAPTRADE_CLIENT_ID`, `SNAPTRADE_CONSUMER_KEY` | SnapTrade broker connections ("Coming soon" when unset) |
+| `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_DISPLAY_NUMBER`, `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN` | WhatsApp (Meta Cloud API). All but the verify token are required; the WhatsApp page says "not available" when unset |
+| `WHATSAPP_ALERT_TEMPLATE`, `WHATSAPP_TEMPLATE_LANG` | Optional approved template (one body variable) for alerts sent more than 24 hours after the user last wrote |
 
 Any change to the env file needs the container recreated (section 4); `docker restart` does not reload it.
 
@@ -54,7 +56,8 @@ Expected: both containers `Up`, HTTP `200`, the last backup line ends `restore-t
 
 | Job | Interval | What it does |
 |---|---|---|
-| alert_checker | 1 min | Price alerts |
+| alert_checker | 1 min | Alerts: live-price alerts against quotes; candle alerts (price, RSI, Stoch RSI) when a candle of their time scale closes |
+| whatsapp_briefings | 1 h | Sends the daily briefing on WhatsApp to users at their chosen local hour |
 | session_cleanup | 24 h | Deletes session records that ended more than 30 days ago |
 | in_play_scanner | 15 min | In-Play scan and news catalysts |
 | news_scanner | 15 min | News ingestion |
@@ -301,6 +304,16 @@ Check the app log for `broker` errors. For Alpaca, check https://status.alpaca.m
 
 Set the variables in section 1 and recreate the app. The "Coming soon" note on Broker Connections is replaced by the connect buttons. Start Plaid with `PLAID_ENV=sandbox` and test before switching to `production`.
 
+### WhatsApp
+
+1. In Meta for Developers create a Business app and add the WhatsApp product. For development the test number is free and can message up to 5 verified phones.
+2. Create a permanent system-user token with `whatsapp_business_messaging`. Note the phone number id and the business number.
+3. Set `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_DISPLAY_NUMBER`, `WHATSAPP_APP_SECRET` (App settings, Basic) and any string as `WHATSAPP_VERIFY_TOKEN`; recreate the app.
+4. Webhook (WhatsApp, Configuration): callback `https://assetadvisor.ai-elevate.ai/api/whatsapp/webhook`, the same verify token; subscribe to `messages`. Every call is checked against the app secret signature.
+5. Optional: get a Utility template approved with one body variable (for example "AssetAdvisor alert: {{1}}") and set `WHATSAPP_ALERT_TEMPLATE`, so alerts reach users outside the 24-hour window. Production messages are billed by Meta per template message; replies inside 24 hours are free.
+
+Users link by sending `LINK <code>` from their own phone; STOP pauses, START resumes, UNLINK disconnects. Telegram was removed in favor of WhatsApp (old Telegram settings are no longer used).
+
 ### SAML for a firm
 
 Firm admins do this themselves on their firm page. Support: the service provider metadata URL is `https://assetadvisor.ai-elevate.ai/api/sso/saml/<firm-slug>/metadata`.
@@ -309,7 +322,9 @@ Firm admins do this themselves on their firm page. Support: the service provider
 
 Tracked in `docs/soc2/controls.md`:
 
-- Multi-factor authentication for sign-in (deferred).
+- Multi-factor authentication for sign-in (deferred; the Settings 2FA control is hidden until it is built).
+- Browser push notifications are not implemented (the setting was removed); alerts go to the bell and WhatsApp.
+- Liquidations data is collected in memory from Binance's public stream and resets on restart (24-hour window).
 - Dedicated host, disk encryption, off-site encrypted backups (`docs/soc2/hosting-plan.md`).
 - Centralized log retention and uptime monitoring.
 - Pull-request review before deploys; staging environment.

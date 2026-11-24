@@ -127,7 +127,7 @@ async def test_phone(request: Request):
     if not cfg.get("ntfy_topic"):
         return JSONResponse({"error": "Save an ntfy topic first"}, status_code=400)
     ok = await in_play_push.send_ntfy(
-        cfg, "AssetAdvisor test", "Phone alerts are working. In-play coins will arrive here.", "white_check_mark", "default"
+        cfg, "AssetAdvisor test", "Phone alerts are working. In-play instruments will arrive here.", "white_check_mark", "default"
     )
     if not ok:
         return JSONResponse({"error": "ntfy did not accept the message"}, status_code=502)

@@ -44,6 +44,9 @@ function parseMarkdown(md) {
       i = j + 1
       continue
     }
+    // A screenshot on its own line: ![description](img/name.png)
+    const img = line.match(/^!\[([^\]]*)\]\(img\/([a-z0-9-]+\.(?:png|jpg))\)\s*$/)
+    if (img) { blocks.push({ type: 'img', alt: img[1], src: `/api/help/img/${img[2]}` }); i++; continue }
     const h = line.match(/^(#{1,3}) (.*)/)
     if (h) { blocks.push({ type: 'h', level: h[1].length, text: h[2], id: slugify(h[2]) }); i++; continue }
     if (isTableRow(line)) {
@@ -82,6 +85,13 @@ function Block({ b, k }) {
       const Tag = `h${b.level + 1}` // the page title is the h1
       return <Tag id={b.id} className={`help-h${b.level}`}>{inline(b.text, k)}</Tag>
     }
+    case 'img':
+      return (
+        <figure className="help-figure">
+          <img src={b.src} alt={b.alt} loading="lazy" />
+          <figcaption>{b.alt}</figcaption>
+        </figure>
+      )
     case 'code': return <pre className="help-pre"><code>{b.text}</code></pre>
     case 'table':
       return (

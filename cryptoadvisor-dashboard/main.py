@@ -76,7 +76,6 @@ from api.wallet_health import router as wallet_health_router
 from api.rugpull import router as rugpull_router
 from api.multisig import router as multisig_router
 from api.ai_advanced import router as ai_advanced_router
-from api.telegram_config import router as telegram_config_router
 from api.csv_import import router as csv_import_router
 from api.share import router as share_router
 from api.pwa import router as pwa_router
@@ -101,6 +100,7 @@ from api.brokers import router as brokers_router
 from api.help import router as help_router
 from api.dashboard_layout import router as dashboard_layout_router
 from api.whatsapp import router as whatsapp_router
+from api.account_data import router as account_data_router
 from api.carbon_desk import router as carbon_desk_router, ws_router as carbon_desk_ws_router
 
 # Auth router (JSON API)
@@ -245,7 +245,6 @@ app.include_router(wallet_health_router, prefix="/api/wallet-health", tags=["wal
 app.include_router(rugpull_router, prefix="/api/rugpull", tags=["rugpull"])
 app.include_router(multisig_router, prefix="/api/multisig", tags=["multisig"])
 app.include_router(ai_advanced_router, prefix="/api/ai-advanced", tags=["ai-advanced"])
-app.include_router(telegram_config_router, prefix="/api/telegram", tags=["telegram"])
 app.include_router(csv_import_router, prefix="/api/csv-import", tags=["csv-import"])
 app.include_router(share_router, prefix="/api/share", tags=["share"])
 app.include_router(pwa_router, tags=["pwa"])
@@ -270,6 +269,7 @@ app.include_router(brokers_router, prefix="/api/brokers", tags=["brokers"])
 app.include_router(help_router, prefix="/api/help", tags=["help"])
 app.include_router(dashboard_layout_router, prefix="/api/dashboard/layout", tags=["dashboard"])
 app.include_router(whatsapp_router, prefix="/api/whatsapp", tags=["whatsapp"])
+app.include_router(account_data_router, prefix="/api/account", tags=["account"])
 app.include_router(carbon_desk_router, prefix="/api/carbon-desk", tags=["carbon-desk"])
 app.include_router(carbon_desk_ws_router, tags=["carbon-desk"])
 

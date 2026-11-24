@@ -46,6 +46,7 @@ const navSections = [
       { path: '/tax', label: 'Tax Report', icon: '\uD83D\uDCDD' },
       { path: '/converter', label: 'Converter', icon: '\uD83D\uDCB1' },
       { path: '/exchanges', label: 'Exchanges', icon: '\uD83C\uDFE2' },
+      { path: '/help/user-guide', label: 'User Guide', icon: '\uD83D\uDCD8' },
       { path: '/help', label: 'Help & Docs', icon: '\uD83D\uDCD6' },
     ],
   },
@@ -178,7 +179,7 @@ function Sidebar() {
                     <li key={`pin-${path}`}>
                       <NavLink
                         to={path}
-                        end={path === '/'}
+                        end={path === '/' || path === '/help'}
                         className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
                         onClick={closeSidebar}
                       >
@@ -240,7 +241,7 @@ function Sidebar() {
                         ) : (
                           <NavLink
                             to={item.path}
-                            end={item.path === '/'}
+                            end={item.path === '/' || item.path === '/help'}
                             className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
                             onClick={closeSidebar}
                           >

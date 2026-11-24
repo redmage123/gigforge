@@ -130,7 +130,7 @@ Pages are grouped into four sections:
 |---|---|
 | **Markets** | Dashboard, In-Play, Technical, Sentiment, Correlation, Order Book, Liquidations, Carbon Desk |
 | **Portfolio** | Portfolio, Performance, Allocation, Manage Portfolios, Trades, Broker Connections, Import Trades (CSV), Backtest, Share, Crypto Wallets, On-chain P&L, Firm Accounts |
-| **Tools** | Alerts, DCA Calculator, DCA Plans, Tax Report, Converter, Exchanges, Help & Docs |
+| **Tools** | Alerts, DCA Calculator, DCA Plans, Tax Report, Converter, Exchanges, User Guide, Help & Docs |
 | **AI Assistant** | Market Briefing, Risk Report, Tax Optimizer, Portfolio Builder, Pattern Recognition, Trading Coach, AI Memory, Search |
 
 Select a group name to fold it up or open it again. The page you are on is highlighted.
@@ -183,6 +183,7 @@ Select your name in the top bar. The top of the menu shows your name and account
 | **Audit Log** | Your own account activity |
 | **Setup Wizard** | The setup wizard, to run through it again |
 | **Interactive Guide** | The interactive tour |
+| **User Guide** | Opens this guide |
 | **Help & Docs** | The Quick Start, this User Guide and the FAQ, to read online or download |
 
 **Logout** at the bottom signs you out on this device. Your session ends on the server too, so a copy of it stops working at once.
@@ -1774,7 +1775,7 @@ If you are a firm admin or compliance member, the firm's **Audit trail** shows e
 
 ![The Help and Docs page with document tabs, a search box and the table of contents](img/help.jpg)
 
-Help & Docs holds the written guides. You can open it from the user menu or from the **Tools** group in the sidebar.
+Help & Docs holds the written guides. You can open it from the user menu or from the **Tools** group in the sidebar. To go straight to this guide, select **User Guide** in either place.
 
 Tabs across the top choose the document: **Quick Start** (from a new account to a working portfolio in ten minutes), **User Guide** (every feature) and **FAQ** (common questions). Site administrators also see an **Operations Runbook** tab marked **Admins**.
 

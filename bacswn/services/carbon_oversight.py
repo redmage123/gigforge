@@ -11,8 +11,10 @@ to ICAO. This module is that state-side register:
   * the units each operator claims to have cancelled, and the state's review
     decision on each claim (VERIFIED / REJECTED / REOPENED);
   * automatic findings: shortfalls, missing reports, units claimed twice,
-    ineligible units, vintages outside the phase window, and reports lower than
-    the emissions BACSWN itself observed in the FIR.
+    ineligible units, vintages outside the phase window, reports lower than
+    the emissions BACSWN itself observed in the FIR, and — for units from the
+    Bahamas National Emissions Registry — claims its statements do not support
+    (services/ner_registry.py).
 
 Evidence is append-only (enforced by triggers): a revised emissions report is a
 new row that supersedes the old one; a review is a new decision, never an edit.
@@ -27,6 +29,7 @@ import re
 from datetime import date, datetime, timedelta, timezone
 
 from config import CO2_PER_KG_FUEL, FUEL_BURN_RATES
+from services import ner_registry
 from services.database import get_db
 
 # CORSIA compliance periods. Eligible-unit vintage windows follow ICAO's
@@ -429,6 +432,8 @@ async def register(period: str) -> dict:
     live_fuel = [f for f in all_fuel if f["status"] != "REJECTED"]
 
     observed = {y: await observed_emissions(y) for y in range(y0, min(y1, this_year) + 1)}
+    # Claims against the Bahamas National Emissions Registry are checked against its latest statement.
+    ner_checks = await ner_registry.check_claims([c for c in claims if c["status"] != "REJECTED"])
     findings: list[dict] = []
 
     def finding(severity, kind, op, message, claim_id=None):
@@ -508,6 +513,8 @@ async def register(period: str) -> dict:
                     who = "the same operator" if other["operator_id"] == op["id"] else other["icao_designator"]
                     finding("high", "DOUBLE_CLAIM", op,
                             f"Claim #{c['id']} overlaps units already claimed in #{other['id']} by {who}", c["id"])
+            for i in ner_checks.get(c["id"], {}).get("issues", []):
+                finding(ner_registry.severity(i["kind"]), i["kind"], op, f"Claim #{c['id']}: {i['message']}", c["id"])
 
         for f in my_fuel:
             if f["status"] == "REJECTED":
@@ -550,18 +557,19 @@ async def register(period: str) -> dict:
                "verified_units", "pending_units", "shortfall_units")}
     return {"period": period, **{k: p[k] for k in ("label", "years", "vintages")},
             "period_closed": y1 < this_year, "operators": rows, "totals": totals,
-            "findings": findings, "claims": [_claim_view(c) for c in claims],
+            "findings": findings, "claims": [_claim_view(c, ner_checks) for c in claims],
             "fuel_claims": [_fuel_view(f) for f in fuel],
             "fuel_constants": {"fcf": FCF_JET, "ls_baseline": LS_BASELINE, "ls_max_eligible": LS_MAX_ELIGIBLE,
                                "recognised_schemes": list(RECOGNISED_SCHEMES)}}
 
 
-def _claim_view(c: dict) -> dict:
+def _claim_view(c: dict, ner_checks: dict[int, dict] | None = None) -> dict:
     keys = ("id", "operator_id", "icao_designator", "compliance_period", "registry", "serial_block", "serial_start",
             "serial_end", "quantity", "vintage", "project_id", "project_name", "declared_eligible", "cancelled_on",
             "registry_reference", "notes", "status", "created_by", "created_at")
     v = {k: c[k] for k in keys}
     v["declared_eligible"] = bool(v["declared_eligible"])
+    v["ner_check"] = (ner_checks or {}).get(c["id"])
     return v
 
 
@@ -597,6 +605,7 @@ async def operator_detail(operator_id: int) -> dict:
     for r in reports:
         seen[r["year"]] = seen.get(r["year"], 0) + 1
         r["revision"] = seen[r["year"]]
+    ner_checks = await ner_registry.check_claims([c for c in claims if c["status"] != "REJECTED"])
     latest_ids = {max(r["id"] for r in reports if r["year"] == y) for y in seen}
     for r in reports:
         r["superseded"] = r["id"] not in latest_ids
@@ -609,7 +618,7 @@ async def operator_detail(operator_id: int) -> dict:
         by_fuel.setdefault(v["claim_id"], []).append(
             {k: v[k] for k in ("decision", "reason", "created_by", "created_at")})
     return {"operator": op, "reports": reports,
-            "claims": [{**_claim_view(c), "reviews": by_claim.get(c["id"], [])} for c in claims],
+            "claims": [{**_claim_view(c, ner_checks), "reviews": by_claim.get(c["id"], [])} for c in claims],
             "fuel_claims": [{**_fuel_view(f), "reviews": by_fuel.get(f["id"], [])} for f in fuel]}
 
 
@@ -629,12 +638,13 @@ async def export_csv(period: str) -> str:
     w = csv.writer(buf)
     w.writerow(["claim_id", "operator", "compliance_period", "registry", "serial_block", "serial_start", "serial_end",
                 "quantity", "vintage", "project_id", "project_name", "declared_eligible", "cancelled_on",
-                "registry_reference", "status", "findings", "recorded_by", "recorded_at"])
+                "registry_reference", "status", "ner_check", "findings", "recorded_by", "recorded_at"])
     for c in reg["claims"]:
         w.writerow([_csv_safe(x) for x in (
             c["id"], c["icao_designator"], c["compliance_period"], c["registry"], c["serial_block"], c["serial_start"],
             c["serial_end"], c["quantity"], c["vintage"], c["project_id"], c["project_name"],
             "yes" if c["declared_eligible"] else "no", c["cancelled_on"], c["registry_reference"], c["status"],
+            (c["ner_check"] or {}).get("result", ""),
             " ".join(flagged.get(c["id"], [])), c["created_by"], c["created_at"])])
     return buf.getvalue()
 

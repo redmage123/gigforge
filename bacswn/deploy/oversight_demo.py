@@ -15,12 +15,14 @@ someone added to a demo claim, which go with that claim.
 """
 
 import asyncio
+import json
 import os
 import sys
 
 sys.path.insert(0, os.getcwd())
 
 from services import carbon_oversight as co  # noqa: E402
+from services import ner_registry as ner  # noqa: E402
 from services.database import _SCHEMA_SQL, get_db, init_db  # noqa: E402
 
 SEED_USER = "demo-seed"
@@ -77,6 +79,47 @@ CLAIMS = [
 ]
 
 
+# A fictional National Emissions Registry statement. The real registry had issued
+# no units as of November 2026; these exist only to show the claim checks.
+NER_AS_OF = "2026-11-20"
+NER_REF = "NER-DEMO-2026-11 (fictional units)"
+NER_UNITS = [
+    {"serial_block": "BS-NER-SG-DEMO", "serial_start": 1, "serial_end": 5_000, "vintage": 2025, "status": "CANCELLED",
+     "authorisation_ref": "BS-LOA-DEMO-001", "authorised_uses": ["CORSIA"], "corresponding_adjustment": True,
+     "cancelled_for": "CORSIA", "cancelled_by": "LAL", "cancellation_ref": "NER-CXL-0042", "cancelled_on": "2026-06-10",
+     "project_id": "BS-PRJ-DEMO-01", "project_name": "Little Bahama Bank seagrass (demo)"},
+    {"serial_block": "BS-NER-SG-DEMO", "serial_start": 5_001, "serial_end": 8_000, "vintage": 2025, "status": "ISSUED",
+     "authorisation_ref": "BS-LOA-DEMO-001", "authorised_uses": ["CORSIA"], "corresponding_adjustment": True,
+     "project_id": "BS-PRJ-DEMO-01", "project_name": "Little Bahama Bank seagrass (demo)"},
+    {"serial_block": "BS-NER-MG-DEMO", "serial_start": 1, "serial_end": 500, "vintage": 2025, "status": "CANCELLED",
+     "authorisation_ref": "BS-LOA-DEMO-002", "authorised_uses": ["NDC"], "corresponding_adjustment": False,
+     "cancelled_for": "CORSIA", "cancelled_by": "EIH", "cancellation_ref": "NER-CXL-0057", "cancelled_on": "2026-07-15",
+     "project_id": "BS-PRJ-DEMO-02", "project_name": "North Andros mangroves (demo)"},
+]
+# (designator, block, start, end, cancelled_on, ref, project): all left pending review.
+NER_CLAIMS = [
+    ("LAL", "BS-NER-SG-DEMO", 1, 5_000, "2026-06-10", "NER-CXL-0042", "Little Bahama Bank seagrass (demo)"),   # matches
+    ("EIH", "BS-NER-SG-DEMO", 5_001, 5_300, "2026-07-01", "NER-CXL-0061", "Little Bahama Bank seagrass (demo)"),  # not cancelled
+    ("EIH", "BS-NER-MG-DEMO", 1, 500, "2026-07-15", "NER-CXL-0057", "North Andros mangroves (demo)"),  # not authorised, no CA
+]
+
+
+async def seed_ner(ids: dict) -> None:
+    async with get_db() as db:
+        if await (await db.execute("SELECT 1 FROM ner_statements WHERE imported_by = ?", [SEED_USER])).fetchone():
+            print("Demo registry statement already present; nothing added.")
+            return
+    await ner.import_statement({"format": "json", "content": json.dumps(
+        {"as_of": NER_AS_OF, "reference": NER_REF, "units": NER_UNITS})}, SEED_USER)
+    for d, block, start, end, cancelled, ref, project in NER_CLAIMS:
+        await co.add_unit_claim(ids[d], {
+            "compliance_period": "2024-2026", "registry": ner.REGISTRY_NAME, "serial_block": block,
+            "serial_start": start, "serial_end": end, "quantity": end - start + 1, "vintage": 2025,
+            "project_name": project, "cancelled_on": cancelled, "registry_reference": ref,
+            "declared_eligible": True, "notes": "Demo data"}, SEED_USER)
+    print(f"Seeded a demo registry statement ({len(NER_UNITS)} rows) and {len(NER_CLAIMS)} registry claims.")
+
+
 async def _demo_ops(db):
     rows = await (await db.execute(
         "SELECT id, icao_designator FROM carbon_operators WHERE created_by = ?", [SEED_USER])).fetchall()
@@ -90,7 +133,9 @@ async def seed():
         taken = [d for d, _, _ in OPERATORS if d not in existing and await (await db.execute(
             "SELECT 1 FROM carbon_operators WHERE icao_designator = ?", [d])).fetchone()]
     if existing:
-        print(f"Demo data already present ({', '.join(sorted(existing))}); nothing added.")
+        print(f"Demo operators already present ({', '.join(sorted(existing))}).")
+        if all(d in existing for d, *_ in NER_CLAIMS):
+            await seed_ner(existing)
         return
     if taken:
         sys.exit(f"Designators already used by real operators: {', '.join(taken)}. Not seeding.")
@@ -110,24 +155,30 @@ async def seed():
         if review:
             await co.review_claim(claim["id"], {"decision": review[0], "reason": review[1]}, SEED_USER)
     print(f"Seeded {len(OPERATORS)} demo operators, {len(REPORTS)} reports, {len(CLAIMS)} claims.")
+    await seed_ner(ids)
     await status()
 
 
-_TRIGGERS = [f"{t}_immutable_{op}" for t in ("carbon_reports", "carbon_claims", "carbon_reviews") for op in "ud"]
+_TRIGGERS = [f"{t}_immutable_{op}" for t in ("carbon_reports", "carbon_claims", "carbon_reviews",
+                                              "ner_statements", "ner_units") for op in "ud"]
 
 
 async def purge():
     async with get_db() as db:
         ops = await _demo_ops(db)
-        if not ops:
+        has_ner = await (await db.execute("SELECT 1 FROM ner_statements WHERE imported_by = ?", [SEED_USER])).fetchone()
+        if not ops and not has_ner:
             print("No demo data to remove.")
             return
-        ids = list(ops.values())
+        ids = list(ops.values()) or [-1]
         marks = ",".join("?" * len(ids))
         try:
             await db.execute("BEGIN IMMEDIATE")
             for t in _TRIGGERS:
                 await db.execute(f"DROP TRIGGER IF EXISTS {t}")
+            await db.execute("DELETE FROM ner_units WHERE statement_id IN "
+                             "(SELECT id FROM ner_statements WHERE imported_by = ?)", [SEED_USER])
+            await db.execute("DELETE FROM ner_statements WHERE imported_by = ?", [SEED_USER])
             await db.execute(f"DELETE FROM carbon_claim_reviews WHERE claim_id IN "
                              f"(SELECT id FROM carbon_unit_claims WHERE operator_id IN ({marks}))", ids)
             await db.execute(f"DELETE FROM carbon_unit_claims WHERE operator_id IN ({marks})", ids)
@@ -142,7 +193,7 @@ async def purge():
         left = await (await db.execute(
             f"SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigger' AND name IN ({','.join('?' * len(_TRIGGERS))})",
             _TRIGGERS)).fetchone()
-    print(f"Removed demo operators {', '.join(sorted(ops))}. Append-only triggers in place: {left[0]}/{len(_TRIGGERS)}.")
+    print(f"Removed demo operators {', '.join(sorted(ops)) or '(none)'} and the demo registry statement. Append-only triggers in place: {left[0]}/{len(_TRIGGERS)}.")
 
 
 async def status():

@@ -3,6 +3,7 @@ import { api, saveBlob } from '../api/client'
 import { useSearchParams } from 'react-router-dom'
 import { useUrlState } from '../components/share/useUrlState'
 import CertificateReader from '../components/oversight/CertificateReader'
+import NerPanel from '../components/oversight/NerPanel'
 import { useAuth } from '../App'
 import './CarbonOversight.css'
 
@@ -28,6 +29,15 @@ const KIND = {
   FUEL_DOUBLE_CLAIM: 'Fuel batch claimed twice', FUEL_BELOW_THRESHOLD: 'Fuel not eligible (under 10 % reduction)',
   FUEL_SCHEME_UNRECOGNISED: 'Unrecognised certification scheme', FUEL_CLAIMED_ELSEWHERE: 'Fuel not declared unclaimed elsewhere',
   FUEL_EXCEEDS_USE: 'Fuel claimed exceeds fuel used',
+  NER_NO_STATEMENT: 'No registry statement', NER_STATEMENT_OLDER: 'Registry statement too old',
+  NER_NOT_FOUND: 'Units not in registry', NER_NOT_AUTHORISED: 'Not authorised for CORSIA',
+  NER_NO_ADJUSTMENT: 'No corresponding adjustment', NER_NOT_CANCELLED: 'Not cancelled for CORSIA in registry',
+  NER_CANCELLED_BY_OTHER: 'Cancelled by another operator', NER_REFERENCE_MISMATCH: 'Cancellation reference differs',
+  NER_VINTAGE_MISMATCH: 'Vintage differs from registry',
+}
+const NER_CHECK = {
+  MATCHED: ['Registry: matches', 'ok'], PROBLEMS: ['Registry: problems', 'bad'],
+  STALE: ['Registry: statement too old', 'warn'], NO_STATEMENT: ['Registry: not checked', 'muted'],
 }
 const n = (v) => (v == null ? '—' : Number(v).toLocaleString())
 const today = () => new Date().toISOString().slice(0, 10)
@@ -196,7 +206,12 @@ function OperatorDetail({ operatorId, period, periodYears, row, isAdmin, onChang
                   <th scope="row">#{c.id}</th>
                   <td className="num">{n(c.quantity)}</td>
                   <td>{c.registry} {c.serial_block}{c.serial_start != null && <> {c.serial_start}–{c.serial_end}</>}
-                    {c.registry_reference && <small className="co-dim"><br />ref {c.registry_reference}</small>}</td>
+                    {c.registry_reference && <small className="co-dim"><br />ref {c.registry_reference}</small>}
+                    {c.ner_check && <><br /><Badge map={NER_CHECK} value={c.ner_check.result} />
+                      {c.ner_check.as_of && <small className="co-dim"> statement {c.ner_check.as_of}</small>}
+                      {c.ner_check.issues.length > 0 && (
+                        <ul className="co-history">{c.ner_check.issues.map(i => <li key={i.kind}>{i.message}</li>)}</ul>
+                      )}</>}</td>
                   <td>{c.vintage}{!c.declared_eligible && <><br /><span className="co-badge bad">Not CORSIA-eligible</span></>}</td>
                   <td>{c.project_name || c.project_id || '—'}</td>
                   <td>{c.cancelled_on}</td>
@@ -458,6 +473,8 @@ export default function CarbonOversight() {
             )}
           </section>
 
+          <NerPanel period={period} isAdmin={isAdmin} announce={announce} onImported={load} />
+
           <section className="card" aria-labelledby="co-ops-h">
             <div className="card-header"><h3 id="co-ops-h">Operators</h3></div>
             {reg.operators.length === 0 ? <p className="co-dim">No operators registered yet.</p> : (
@@ -510,7 +527,7 @@ export default function CarbonOversight() {
       )}
 
       <datalist id="co-registries">
-        {['Verra (VCS)', 'Gold Standard', 'American Carbon Registry', 'Climate Action Reserve', 'ART TREES',
+        {['Bahamas National Emissions Registry', 'Verra (VCS)', 'Gold Standard', 'American Carbon Registry', 'Climate Action Reserve', 'ART TREES',
           'Global Carbon Council', 'Article 6.4 Mechanism'].map(r => <option key={r} value={r} />)}
       </datalist>
       <datalist id="co-schemes">

@@ -154,6 +154,12 @@ export const api = {
   oversightReviewFuel: (claimId, data) => request('/api/carbon-oversight/fuel-claims/' + claimId + '/review', { method: 'POST', body: JSON.stringify(data) }),
   oversightReadCertificate: (id, body) => request('/api/carbon-oversight/operators/' + id + '/fuel-certificate', { method: 'POST', body: JSON.stringify(body) }),
   oversightFuelCsv: (period) => fetchBlob('/api/carbon-oversight/fuel-claims.csv?period=' + encodeURIComponent(period)),
+  // Bahamas National Emissions Registry (file exchange)
+  nerStatus: () => request('/api/carbon-oversight/ner/status'),
+  nerStatements: () => request('/api/carbon-oversight/ner/statements'),
+  nerImport: (body) => request('/api/carbon-oversight/ner/statements', { method: 'POST', body: JSON.stringify(body) }),
+  nerTemplate: () => fetchBlob('/api/carbon-oversight/ner/template.csv'),
+  nerStateReport: (period) => fetchBlob('/api/carbon-oversight/ner/state-report?period=' + encodeURIComponent(period)),
 
   // Weather-benefit ledger (fuel / CO2 saved by early storm warnings)
   weatherBenefit: (days) => request('/api/emissions/weather-benefit?days=' + (days || 30)),

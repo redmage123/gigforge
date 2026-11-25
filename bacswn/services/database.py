@@ -25,6 +25,8 @@ _ALLOWED_TABLES = {
     "carbon_fir_observations",
     "carbon_fuel_claims",
     "carbon_fuel_reviews",
+    "ner_statements",
+    "ner_units",
     "wx_benefit_events",
     "wx_benefit_coverage",
 }
@@ -287,6 +289,50 @@ CREATE TABLE IF NOT EXISTS carbon_fuel_reviews (
     created_by  TEXT    NOT NULL,
     created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Bahamas National Emissions Registry statements (services/ner_registry.py):
+-- registry extracts of Bahamian units, imported as files. Append-only; the
+-- latest statement by as_of date is the one claims are checked against.
+CREATE TABLE IF NOT EXISTS ner_statements (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    as_of           TEXT    NOT NULL,
+    reference       TEXT    NOT NULL DEFAULT '',
+    source_format   TEXT    NOT NULL CHECK (source_format IN ('json', 'csv')),
+    sha256          TEXT    NOT NULL UNIQUE,
+    unit_rows       INTEGER NOT NULL,
+    units_total     INTEGER NOT NULL,
+    imported_by     TEXT    NOT NULL,
+    created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS ner_units (
+    id                       INTEGER PRIMARY KEY AUTOINCREMENT,
+    statement_id             INTEGER NOT NULL REFERENCES ner_statements(id),
+    serial_block             TEXT    NOT NULL,
+    serial_start             INTEGER NOT NULL,
+    serial_end               INTEGER NOT NULL,
+    vintage                  INTEGER NOT NULL,
+    status                   TEXT    NOT NULL,
+    authorisation_ref        TEXT    NOT NULL DEFAULT '',
+    authorised_uses          TEXT    NOT NULL DEFAULT '',
+    corresponding_adjustment INTEGER NOT NULL DEFAULT 0,
+    cancelled_for            TEXT    NOT NULL DEFAULT '',
+    cancelled_by             TEXT    NOT NULL DEFAULT '',
+    cancellation_ref         TEXT    NOT NULL DEFAULT '',
+    cancelled_on             TEXT    NOT NULL DEFAULT '',
+    project_id               TEXT    NOT NULL DEFAULT '',
+    project_name             TEXT    NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_ner_units_block ON ner_units (statement_id, serial_block);
+
+CREATE TRIGGER IF NOT EXISTS ner_statements_immutable_u BEFORE UPDATE ON ner_statements
+BEGIN SELECT RAISE(ABORT, 'ner_statements is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS ner_statements_immutable_d BEFORE DELETE ON ner_statements
+BEGIN SELECT RAISE(ABORT, 'ner_statements is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS ner_units_immutable_u BEFORE UPDATE ON ner_units
+BEGIN SELECT RAISE(ABORT, 'ner_units is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS ner_units_immutable_d BEFORE DELETE ON ner_units
+BEGIN SELECT RAISE(ABORT, 'ner_units is append-only'); END;
 
 CREATE TRIGGER IF NOT EXISTS carbon_fuel_claims_immutable_u BEFORE UPDATE ON carbon_fuel_claims
 BEGIN SELECT RAISE(ABORT, 'carbon_fuel_claims is append-only'); END;

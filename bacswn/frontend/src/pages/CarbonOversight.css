@@ -72,6 +72,10 @@
 .co-radios legend { font-size: 13px; font-weight: 600; padding: 0 4px; color: var(--text-secondary); }
 .co-radios label { display: flex; gap: 8px; align-items: center; min-height: 24px; font-size: 14px; }
 
+.co-ner-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px 16px; margin: 0 0 14px; }
+.co-ner-facts dt { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; }
+.co-ner-facts dd { margin: 2px 0 0; font-size: 14px; color: var(--text-primary); }
+
 @media (max-width: 768px) {
   .co-findings li { grid-template-columns: 1fr; }
   .co-findings li > .co-badge, .co-findings li > button { justify-self: start; }

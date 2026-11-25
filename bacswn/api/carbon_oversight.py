@@ -1,9 +1,12 @@
 """BACSWN — CORSIA oversight register API (state-side verification of operators)."""
 
+import json
+
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, Response
 
 from services import carbon_oversight as co
+from services import ner_registry as ner
 
 router = APIRouter()
 
@@ -109,6 +112,51 @@ async def fuel_claims_csv(period: str):
         return result
     return Response(content=result, media_type="text/csv",
                     headers={"Content-Disposition": f'attachment; filename="corsia-fuel-claims-{period}.csv"'})
+
+
+# ── Bahamas National Emissions Registry (file exchange) ────────────────────
+
+async def _run_ner(coro):
+    try:
+        return await coro
+    except ner.RegistryError as e:
+        return JSONResponse(status_code=e.status, content={"error": str(e)})
+
+
+@router.get("/ner/status")
+async def ner_status():
+    return await ner.status()
+
+
+@router.get("/ner/statements")
+async def ner_statements():
+    return {"statements": await ner.statements()}
+
+
+@router.post("/ner/statements")
+async def ner_import(request: Request):
+    """Import a registry statement: {"format": "json"|"csv", "content": "...", "as_of"?, "reference"?}."""
+    if denied := _forbidden(request):
+        return denied
+    return await _run_ner(ner.import_statement(await _body(request), _user(request)["sub"]))
+
+
+@router.get("/ner/template.csv")
+async def ner_template():
+    return Response(content=ner.template_csv(), media_type="text/csv",
+                    headers={"Content-Disposition": 'attachment; filename="ner-statement-template.csv"'})
+
+
+@router.get("/ner/state-report")
+async def ner_state_report(period: str, request: Request):
+    """The period's register packaged for submission to the registry (JSON download)."""
+    reg = await _run(co.register(period))
+    if isinstance(reg, JSONResponse):
+        return reg
+    checks = {c["id"]: c["ner_check"] for c in reg["claims"] if c.get("ner_check")}
+    report = ner.state_report(reg, checks, _user(request).get("sub", "?"))
+    return Response(content=json.dumps(report, indent=2), media_type="application/json",
+                    headers={"Content-Disposition": f'attachment; filename="ner-state-report-{period}.json"'})
 
 
 @router.post("/operators/{operator_id}/fuel-certificate")

@@ -120,6 +120,36 @@ async def seed_ner(ids: dict) -> None:
     print(f"Seeded a demo registry statement ({len(NER_UNITS)} rows) and {len(NER_CLAIMS)} registry claims.")
 
 
+# Unusual-figure signals and a recorded letter of authorisation (all fictional).
+# ASC 2025: verified CO2 nearly doubles on 2024 and uses a different growth factor.
+EXTRA_REPORT = ("ASC", 2025, 31_000, 0.05, "Island Audit Group (demo)", "ASC-ER-2025")
+# EIH: three near-identical SAF claims from one producer in 2025 (possible split batch), left pending.
+EXTRA_FUEL = [("EIH", 2025, mass, f"EIH-SAF-2025-0{i}") for i, mass in enumerate((41.5, 42.0, 43.1), start=1)]
+DEMO_LOA = {"reference": "BS-LOA-DEMO-001", "issue_date": "2026-03-02",
+            "issuing_body": "Office of the Prime Minister, Climate Change and Environment (demo)",
+            "authorised_uses": "CORSIA", "corresponding_adjustment": True, "vintage_from": 2024, "vintage_to": 2026,
+            "max_quantity": 10_000, "serial_blocks": "BS-NER-SG-DEMO", "project_id": "BS-PRJ-DEMO-01",
+            "project_name": "Little Bahama Bank seagrass (demo)", "notes": "Demo data: fictional letter"}
+
+
+async def seed_extras(ids: dict) -> None:
+    async with get_db() as db:
+        done = await (await db.execute("SELECT 1 FROM ner_authorisations WHERE created_by = ?", [SEED_USER])).fetchone()
+    if done:
+        print("Demo signals and letter already present; nothing added.")
+        return
+    d, year, co2, gf, verifier, ref = EXTRA_REPORT
+    await co.add_emission_report(ids[d], {"year": year, "verified_co2_t": co2, "growth_factor": gf, "verifier": verifier,
+                                          "reference": ref, "notes": "Demo data; growth factor differs on purpose"}, SEED_USER)
+    for d, year, mass, batch in EXTRA_FUEL:
+        await co.add_fuel_claim(ids[d], {"year": year, "fuel_type": "SAF", "mass_t": mass, "ls_value": 20.0,
+                                         "ls_basis": "DEFAULT", "batch_id": batch, "scheme": "ISCC CORSIA",
+                                         "pathway": "HEFA", "feedstock": "Used cooking oil",
+                                         "producer": "Caribbean Renewable Fuels (demo)", "notes": "Demo data"}, SEED_USER)
+    await ner.add_authorisation(DEMO_LOA, SEED_USER)
+    print("Seeded demo signals (ASC 2025 report, 3 EIH fuel claims) and a demo letter of authorisation.")
+
+
 async def _demo_ops(db):
     rows = await (await db.execute(
         "SELECT id, icao_designator FROM carbon_operators WHERE created_by = ?", [SEED_USER])).fetchall()
@@ -136,6 +166,7 @@ async def seed():
         print(f"Demo operators already present ({', '.join(sorted(existing))}).")
         if all(d in existing for d, *_ in NER_CLAIMS):
             await seed_ner(existing)
+            await seed_extras(existing)
         return
     if taken:
         sys.exit(f"Designators already used by real operators: {', '.join(taken)}. Not seeding.")
@@ -156,17 +187,21 @@ async def seed():
             await co.review_claim(claim["id"], {"decision": review[0], "reason": review[1]}, SEED_USER)
     print(f"Seeded {len(OPERATORS)} demo operators, {len(REPORTS)} reports, {len(CLAIMS)} claims.")
     await seed_ner(ids)
+    await seed_extras(ids)
     await status()
 
 
 _TRIGGERS = [f"{t}_immutable_{op}" for t in ("carbon_reports", "carbon_claims", "carbon_reviews",
-                                              "ner_statements", "ner_units") for op in "ud"]
+                                              "ner_statements", "ner_units", "ner_authorisations",
+                                              "carbon_fuel_claims", "carbon_fuel_reviews") for op in "ud"]
 
 
 async def purge():
     async with get_db() as db:
         ops = await _demo_ops(db)
-        has_ner = await (await db.execute("SELECT 1 FROM ner_statements WHERE imported_by = ?", [SEED_USER])).fetchone()
+        has_ner = await (await db.execute("SELECT 1 FROM ner_statements WHERE imported_by = ? UNION "
+                                          "SELECT 1 FROM ner_authorisations WHERE created_by = ?",
+                                          [SEED_USER, SEED_USER])).fetchone()
         if not ops and not has_ner:
             print("No demo data to remove.")
             return
@@ -179,6 +214,10 @@ async def purge():
             await db.execute("DELETE FROM ner_units WHERE statement_id IN "
                              "(SELECT id FROM ner_statements WHERE imported_by = ?)", [SEED_USER])
             await db.execute("DELETE FROM ner_statements WHERE imported_by = ?", [SEED_USER])
+            await db.execute("DELETE FROM ner_authorisations WHERE created_by = ?", [SEED_USER])
+            await db.execute(f"DELETE FROM carbon_fuel_reviews WHERE claim_id IN "
+                             f"(SELECT id FROM carbon_fuel_claims WHERE operator_id IN ({marks}))", ids)
+            await db.execute(f"DELETE FROM carbon_fuel_claims WHERE operator_id IN ({marks})", ids)
             await db.execute(f"DELETE FROM carbon_claim_reviews WHERE claim_id IN "
                              f"(SELECT id FROM carbon_unit_claims WHERE operator_id IN ({marks}))", ids)
             await db.execute(f"DELETE FROM carbon_unit_claims WHERE operator_id IN ({marks})", ids)

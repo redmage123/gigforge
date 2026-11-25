@@ -65,10 +65,14 @@ def is_ner(registry: str | None) -> bool:
     return "national emission" in r or r in {"ner", "bahamas ner", "ner (bahamas)"}
 
 
+def _where(row: int | None) -> str:
+    return f"Row {row}: " if row else ""
+
+
 def _str(v, field: str, row: int, max_len: int = 120) -> str:
     s = "" if v is None else str(v).strip()
     if len(s) > max_len:
-        raise RegistryError(f"Row {row}: {field} must be at most {max_len} characters")
+        raise RegistryError(f"{_where(row)}{field} must be at most {max_len} characters")
     return s
 
 
@@ -90,7 +94,7 @@ def _bool(v, field: str, row: int) -> bool:
         return True
     if s in _FALSE:
         return False
-    raise RegistryError(f"Row {row}: {field} must be yes or no")
+    raise RegistryError(f"{_where(row)}{field} must be yes or no")
 
 
 def _date(v, field: str, row: int | None = None, required: bool = False) -> str:
@@ -192,14 +196,16 @@ async def import_statement(data: dict, user: str) -> dict:
     meta, units = parse_statement(content, fmt)
     as_of = _date(data.get("as_of") or meta.get("as_of"), "Statement date (as of)", required=True)
     reference = _str(data.get("reference") or meta.get("reference"), "Statement reference", 0)
+    source_note = _str(data.get("source_note"), "Source note", 0, 500)
     digest = hashlib.sha256(content.encode()).hexdigest()
     async with get_db() as db:
         if await (await db.execute("SELECT id FROM ner_statements WHERE sha256 = ?", [digest])).fetchone():
             raise RegistryError("This statement has already been imported", status=409)
         cur = await db.execute(
-            "INSERT INTO ner_statements (as_of, reference, source_format, sha256, unit_rows, units_total, imported_by)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?)",
-            [as_of, reference, fmt, digest, len(units), sum(u["serial_end"] - u["serial_start"] + 1 for u in units), user])
+            "INSERT INTO ner_statements (as_of, reference, source_format, sha256, unit_rows, units_total, imported_by,"
+            " source_note) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            [as_of, reference, fmt, digest, len(units), sum(u["serial_end"] - u["serial_start"] + 1 for u in units),
+             user, source_note])
         sid = cur.lastrowid
         await db.executemany(
             f"INSERT INTO ner_units (statement_id, {', '.join(COLUMNS)}) VALUES (?{', ?' * len(COLUMNS)})",
@@ -209,7 +215,7 @@ async def import_statement(data: dict, user: str) -> dict:
             "units_total": sum(u["serial_end"] - u["serial_start"] + 1 for u in units)}
 
 
-_STATEMENT_COLS = "id, as_of, reference, source_format, unit_rows, units_total, imported_by, created_at"
+_STATEMENT_COLS = "id, as_of, reference, source_format, unit_rows, units_total, imported_by, source_note, created_at"
 
 
 async def statements() -> list[dict]:
@@ -261,11 +267,84 @@ def template_csv() -> str:
     return buf.getvalue()
 
 
+# ── letters of authorisation ───────────────────────────────────────────────
+
+def _opt_int(v, field: str, lo: int, hi: int) -> int | None:
+    if v is None or str(v).strip() == "":
+        return None
+    try:
+        n = int(str(v).strip())
+    except ValueError:
+        raise RegistryError(f"{field} must be a whole number") from None
+    if not lo <= n <= hi:
+        raise RegistryError(f"{field} must be from {lo:,} to {hi:,}")
+    return n
+
+
+def _blocks(v) -> str:
+    items = v if isinstance(v, list) else str(v or "").replace(",", ";").split(";")
+    out = sorted({str(i).strip() for i in items if str(i).strip()})
+    if any(len(b) > 200 for b in out) or len(out) > 100:
+        raise RegistryError("Serial blocks: at most 100 blocks of up to 200 characters")
+    return ";".join(out)
+
+
+async def add_authorisation(data: dict, user: str) -> dict:
+    """Record a letter of authorisation (append-only; a revision is a new row with the same reference)."""
+    reference = _str(data.get("reference"), "Reference", 0)
+    if not reference:
+        raise RegistryError("Reference is required")
+    issue_date = _date(data.get("issue_date"), "Issue date", required=True)
+    vf = _opt_int(data.get("vintage_from"), "Vintage from", 2000, 2100)
+    vt = _opt_int(data.get("vintage_to"), "Vintage to", 2000, 2100)
+    if vf and vt and vt < vf:
+        raise RegistryError("Vintage to must not be before vintage from")
+    row = [reference, issue_date, _str(data.get("issuing_body"), "Issuing body", 0, 200),
+           _uses(data.get("authorised_uses")),
+           1 if _bool(data.get("corresponding_adjustment", False), "Corresponding adjustment", 0) else 0,
+           vf, vt, _opt_int(data.get("max_quantity"), "Maximum quantity", 1, 10**12),
+           _blocks(data.get("serial_blocks")),
+           _str(data.get("project_id"), "Project ID", 0, 80), _str(data.get("project_name"), "Project name", 0, 200),
+           _str(data.get("notes"), "Notes", 0, 1000), user]
+    async with get_db() as db:
+        cur = await db.execute(
+            "INSERT INTO ner_authorisations (reference, issue_date, issuing_body, authorised_uses,"
+            " corresponding_adjustment, vintage_from, vintage_to, max_quantity, serial_blocks, project_id,"
+            " project_name, notes, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", row)
+        await db.commit()
+    return {"id": cur.lastrowid, "reference": reference}
+
+
+async def _latest_authorisations(db) -> dict[str, dict]:
+    """Latest recorded letter per reference (lower-cased key)."""
+    rows = await (await db.execute("SELECT * FROM ner_authorisations ORDER BY id")).fetchall()
+    return {r["reference"].strip().lower(): dict(r) for r in rows}
+
+
+async def authorisations() -> list[dict]:
+    async with get_db() as db:
+        latest = await _latest_authorisations(db)
+        counts = {}
+        st = await latest_statement(db)
+        if st:
+            for r in await (await db.execute(
+                    "SELECT lower(trim(authorisation_ref)) AS ref, SUM(serial_end - serial_start + 1) AS n FROM ner_units"
+                    " WHERE statement_id = ? GROUP BY lower(trim(authorisation_ref))", [st["id"]])).fetchall():
+                counts[r["ref"]] = r["n"]
+    out = []
+    for key, a in sorted(latest.items(), key=lambda kv: kv[1]["issue_date"], reverse=True):
+        a["units_in_registry"] = counts.get(key, 0)
+        a["over_limit"] = bool(a["max_quantity"] and a["units_in_registry"] > a["max_quantity"])
+        out.append(a)
+    return out
+
+
 # ── claim checks ────────────────────────────────────────────────────────────
 
 _SEVERITY = {"NER_NO_STATEMENT": "medium", "NER_STATEMENT_OLDER": "medium", "NER_NOT_FOUND": "high",
              "NER_NOT_AUTHORISED": "high", "NER_NO_ADJUSTMENT": "high", "NER_NOT_CANCELLED": "high",
-             "NER_CANCELLED_BY_OTHER": "high", "NER_REFERENCE_MISMATCH": "medium", "NER_VINTAGE_MISMATCH": "medium"}
+             "NER_CANCELLED_BY_OTHER": "high", "NER_REFERENCE_MISMATCH": "medium", "NER_VINTAGE_MISMATCH": "medium",
+             "NER_LOA_NOT_ON_FILE": "low", "NER_LOA_MISMATCH": "high", "NER_LOA_EXCEEDED": "high"}
 
 
 def severity(kind: str) -> str:
@@ -284,19 +363,46 @@ async def check_claims(claims: list[dict]) -> dict[int, dict]:
     async with get_db() as db:
         latest = await latest_statement(db)
         units: list[dict] = []
+        ref_totals: dict[str, int] = {}
         if latest:
             blocks = sorted({c["serial_block"].strip().lower() for c in mine})
             marks = ",".join("?" * len(blocks))
             units = [dict(r) for r in await (await db.execute(
                 f"SELECT * FROM ner_units WHERE statement_id = ? AND lower(trim(serial_block)) IN ({marks})",
                 [latest["id"], *blocks])).fetchall()]
+            for r in await (await db.execute(
+                    "SELECT lower(trim(authorisation_ref)) AS ref, SUM(serial_end - serial_start + 1) AS n FROM ner_units"
+                    " WHERE statement_id = ? GROUP BY lower(trim(authorisation_ref))", [latest["id"]])).fetchall():
+                ref_totals[r["ref"]] = r["n"]
+        auths = await _latest_authorisations(db)
     out: dict[int, dict] = {}
     for c in mine:
-        out[c["id"]] = _check(c, latest, units)
+        out[c["id"]] = _check(c, latest, units, auths, ref_totals)
     return out
 
 
-def _check(c: dict, latest: dict | None, units: list[dict]) -> dict:
+def _check_authorisation(u: dict, s: str, auths: dict[str, dict], ref_totals: dict[str, int], issue) -> None:
+    """Compare a registry row with the letter of authorisation it cites (only once letters are kept here)."""
+    ref = u["authorisation_ref"].strip()
+    if not auths or not ref:
+        return
+    a = auths.get(ref.lower())
+    if not a:
+        issue("NER_LOA_NOT_ON_FILE", f"Units {s} cite authorisation {ref}, which is not among the letters on file")
+        return
+    if "CORSIA" in u["authorised_uses"].split(";") and "CORSIA" not in a["authorised_uses"].split(";"):
+        issue("NER_LOA_MISMATCH", f"The registry lists units {s} as authorised for CORSIA, but letter {ref} does not authorise CORSIA use")
+    if (a["vintage_from"] and u["vintage"] < a["vintage_from"]) or (a["vintage_to"] and u["vintage"] > a["vintage_to"]):
+        issue("NER_LOA_MISMATCH", f"Units {s} are vintage {u['vintage']}, outside the {a['vintage_from'] or '…'}–"
+                                  f"{a['vintage_to'] or '…'} vintages letter {ref} covers")
+    total = ref_totals.get(ref.lower(), 0)
+    if a["max_quantity"] and total > a["max_quantity"]:
+        issue("NER_LOA_EXCEEDED", f"The registry holds {total:,} units under letter {ref}, more than the "
+                                  f"{a['max_quantity']:,} it authorises")
+
+
+def _check(c: dict, latest: dict | None, units: list[dict], auths: dict[str, dict] | None = None,
+           ref_totals: dict[str, int] | None = None) -> dict:
     res = {"result": "MATCHED", "as_of": latest and latest["as_of"], "statement_id": latest and latest["id"],
            "issues": []}
 
@@ -342,7 +448,8 @@ def _check(c: dict, latest: dict | None, units: list[dict]) -> dict:
                                             f"not {c['registry_reference']}")
         if u["vintage"] != c["vintage"]:
             issue("NER_VINTAGE_MISMATCH", f"Units {s} are vintage {u['vintage']} in the registry; the claim says {c['vintage']}")
-    if res["issues"]:
+        _check_authorisation(u, s, auths or {}, ref_totals or {}, issue)
+    if any(_SEVERITY[i["kind"]] != "low" for i in res["issues"]):
         res["result"] = "PROBLEMS"
     return res
 

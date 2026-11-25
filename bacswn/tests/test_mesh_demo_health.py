@@ -1,6 +1,7 @@
 """The shared demo must not wear itself out: quarantines heal, light showers raise no tickets."""
 
 import collections
+from datetime import datetime, timezone
 
 import pytest
 
@@ -70,6 +71,10 @@ def test_rejected_showers_raise_no_maintenance_ticket(sim):
 def test_long_running_demo_stays_mostly_healthy(seed):
     """Regression: after ~1,250 ticks the live demo had 10 of 15 stations DEGRADED."""
     m = MeshSimulation(seed=seed)
+    # The simulation clock starts at wall-clock time and the weather depends on it, so pin the
+    # start: otherwise the same seed gives a different run each minute (and a rare start time
+    # shows a brief, self-clearing cluster of unconfirmed hazard calls).
+    m.sim_start = datetime(2026, 11, 25, 12, 0, tzinfo=timezone.utc)
     worst = 0
     for t in range(1, 1201):
         m.step()

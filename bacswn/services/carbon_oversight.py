@@ -232,6 +232,8 @@ async def _review(claims_table: str, reviews_table: str, claim_id: int, data: di
     if decision not in _DECISIONS:
         raise OversightError("Decision must be VERIFIED, REJECTED or REOPENED")
     reason = _text(data.get("reason"), "Reason", 1000)
+    # The AI review brief the reviewer worked from, if any (kept with the decision).
+    ai_brief = _text(data.get("ai_brief"), "AI brief", 4000)
     if decision != "VERIFIED" and len(reason) < 3:
         raise OversightError("A reason is required to reject or reopen a claim")
     async with get_db() as db:
@@ -244,8 +246,8 @@ async def _review(claims_table: str, reviews_table: str, claim_id: int, data: di
             if decision not in _TRANSITIONS[status]:
                 raise OversightError(f"A {status.lower()} claim cannot be marked {decision.lower()}", status=409)
             await db.execute(
-                f"INSERT INTO {reviews_table} (claim_id, decision, reason, created_by) VALUES (?, ?, ?, ?)",
-                [claim_id, decision, reason, user])
+                f"INSERT INTO {reviews_table} (claim_id, decision, reason, created_by, ai_brief) VALUES (?, ?, ?, ?, ?)",
+                [claim_id, decision, reason, user, ai_brief])
             await db.commit()
         except BaseException:
             await db.rollback()
@@ -421,6 +423,9 @@ async def register(period: str) -> dict:
     async with get_db() as db:
         ops, reports, all_claims = await _load(db, period)
         all_fuel = await _load_fuel(db)
+        # The year before the period, so a jump into its first year is visible too.
+        prev_reports = [dict(r) for r in await (await db.execute(
+            "SELECT * FROM carbon_emission_reports WHERE year = ? ORDER BY id", [y0 - 1])).fetchall()]
 
     latest: dict[tuple[int, int], dict] = {}
     for r in reports:
@@ -545,6 +550,8 @@ async def register(period: str) -> dict:
                      "pending_units": pending, "rejected_units": units["REJECTED"],
                      "shortfall_units": shortfall, "status": status})
 
+    _unusual_figures(ops, latest, prev_reports, fuel, observed, (y0, y1), finding)
+
     order = {"high": 0, "medium": 1, "low": 2}
     findings.sort(key=lambda f: (order[f["severity"]], f["operator"], abs(f["claim_id"] or 0)))
     # Unit-claim findings carry the claim id; fuel-claim findings a negative id (see fuel_claim_id).
@@ -561,6 +568,73 @@ async def register(period: str) -> dict:
             "fuel_claims": [_fuel_view(f) for f in fuel],
             "fuel_constants": {"fcf": FCF_JET, "ls_baseline": LS_BASELINE, "ls_max_eligible": LS_MAX_ELIGIBLE,
                                "recognised_schemes": list(RECOGNISED_SCHEMES)}}
+
+
+# ── unusual figures (statistical signals; low severity, for a reviewer to look at) ──
+
+UNUSUAL_CHANGE = 0.35         # year-on-year change in verified CO2 worth a look
+SPLIT_MIN_CLAIMS = 3          # fuel claims from one producer in a year, of near-identical mass
+SPLIT_SPREAD = 0.10           # max/min mass within 10 %
+RATIO_FRACTION = 0.5          # report/observed ratio under half the median of other operators
+
+
+def _unusual_figures(ops, latest, prev_reports, fuel, observed, years, finding) -> None:
+    y0, y1 = years
+    by_id = {o["id"]: o for o in ops}
+    reported = dict(latest)
+    for r in prev_reports:                          # latest revision wins (rows are in id order)
+        reported[(r["operator_id"], r["year"])] = r
+    # 1. Large year-on-year changes in verified emissions.
+    for (op_id, y), r in sorted(reported.items(), key=lambda kv: (kv[0][0], kv[0][1])):
+        prev = reported.get((op_id, y - 1))
+        if y < y0 or not prev or not prev["verified_co2_t"] or op_id not in by_id:
+            continue
+        change = (r["verified_co2_t"] - prev["verified_co2_t"]) / prev["verified_co2_t"]
+        if abs(change) >= UNUSUAL_CHANGE:
+            finding("low", "UNUSUAL_CHANGE", by_id[op_id],
+                    f"{y}: verified CO₂ {'rose' if change > 0 else 'fell'} {abs(change):.0%} on {y - 1} "
+                    f"({prev['verified_co2_t']:,} → {r['verified_co2_t']:,} t)")
+    # 2. Growth factors that differ between operators for the same year (ICAO publishes one per year).
+    for y in range(y0, y1 + 1):
+        year_reports = [(op_id, r) for (op_id, yr), r in latest.items() if yr == y and op_id in by_id]
+        factors = [r["growth_factor"] for _, r in year_reports]
+        if len(set(factors)) < 2:
+            continue
+        common = max(sorted(set(factors)), key=factors.count)
+        for op_id, r in year_reports:
+            if r["growth_factor"] != common:
+                finding("low", "UNUSUAL_GROWTH_FACTOR", by_id[op_id],
+                        f"{y}: growth factor {r['growth_factor']:g} differs from the {common:g} used for the other "
+                        "operators; ICAO publishes one sector growth factor per year")
+    # 3. Several near-identical fuel claims from one producer in a year (possible batch splitting).
+    groups: dict[tuple, list] = {}
+    for f in fuel:
+        if f["status"] != "REJECTED" and f["producer"].strip():
+            groups.setdefault((f["operator_id"], f["year"], f["producer"].strip().lower()), []).append(f)
+    for (op_id, y, _), fs in groups.items():
+        masses = [f["mass_t"] for f in fs]
+        if len(fs) >= SPLIT_MIN_CLAIMS and min(masses) > 0 and max(masses) / min(masses) <= 1 + SPLIT_SPREAD \
+                and op_id in by_id:
+            ids = ", ".join(f"F{f['id']}" for f in fs)
+            finding("low", "UNUSUAL_FUEL_SPLIT", by_id[op_id],
+                    f"{y}: {len(fs)} fuel claims from {fs[0]['producer']} of almost the same mass "
+                    f"({min(masses):,g}–{max(masses):,g} t: {ids}); check they are separate deliveries", -fs[0]["id"])
+    # 4. A report far lower, relative to what BACSWN observed, than other operators' reports are.
+    for y in range(y0, y1 + 1):
+        ratios = {}
+        for (op_id, yr), r in latest.items():
+            obs = observed.get(y, {}).get(by_id.get(op_id, {}).get("icao_designator"), {}).get("live_co2_t")
+            if yr == y and obs and op_id in by_id:
+                ratios[op_id] = r["verified_co2_t"] / obs
+        if len(ratios) < 3:
+            continue
+        for op_id, ratio in ratios.items():
+            others = sorted(v for k, v in ratios.items() if k != op_id)
+            median = others[len(others) // 2] if len(others) % 2 else (others[len(others) // 2 - 1] + others[len(others) // 2]) / 2
+            if ratio < median * RATIO_FRACTION:
+                finding("low", "UNUSUAL_OBSERVED_RATIO", by_id[op_id],
+                        f"{y}: the verified report is {ratio:.1f}× what BACSWN observed in the FIR, against a median "
+                        f"of {median:.1f}× for other operators")
 
 
 def _claim_view(c: dict, ner_checks: dict[int, dict] | None = None) -> dict:
@@ -612,11 +686,11 @@ async def operator_detail(operator_id: int) -> dict:
     by_claim: dict[int, list] = {}
     for v in reviews:
         by_claim.setdefault(v["claim_id"], []).append(
-            {k: v[k] for k in ("decision", "reason", "created_by", "created_at")})
+            {**{k: v[k] for k in ("decision", "reason", "created_by", "created_at")}, "ai_assisted": bool(v["ai_brief"])})
     by_fuel: dict[int, list] = {}
     for v in fuel_reviews:
         by_fuel.setdefault(v["claim_id"], []).append(
-            {k: v[k] for k in ("decision", "reason", "created_by", "created_at")})
+            {**{k: v[k] for k in ("decision", "reason", "created_by", "created_at")}, "ai_assisted": bool(v["ai_brief"])})
     return {"operator": op, "reports": reports,
             "claims": [{**_claim_view(c, ner_checks), "reviews": by_claim.get(c["id"], [])} for c in claims],
             "fuel_claims": [{**_fuel_view(f), "reviews": by_fuel.get(f["id"], [])} for f in fuel]}

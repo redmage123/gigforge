@@ -159,6 +159,120 @@ async def ner_state_report(period: str, request: Request):
                     headers={"Content-Disposition": f'attachment; filename="ner-state-report-{period}.json"'})
 
 
+@router.get("/ner/authorisations")
+async def ner_authorisations():
+    return {"authorisations": await ner.authorisations()}
+
+
+@router.post("/ner/authorisations")
+async def ner_add_authorisation(request: Request):
+    """Record a letter of authorisation (append-only; a revision is a new row with the same reference)."""
+    if denied := _forbidden(request):
+        return denied
+    return await _run_ner(ner.add_authorisation(await _body(request), _user(request)["sub"]))
+
+
+# ── AI assistance (services/oversight_ai.py): drafts and pre-filled forms only ──
+
+async def _run_ai(coro):
+    from services.ai_assist import AIUnavailable
+    try:
+        return await coro
+    except AIUnavailable as e:
+        return JSONResponse(status_code=e.status, content={"error": str(e)})
+    except (co.OversightError, ner.RegistryError) as e:
+        return JSONResponse(status_code=e.status, content={"error": str(e)})
+
+
+async def _operator(operator_id) -> dict:
+    from services.database import get_db
+    try:
+        oid = int(operator_id)
+    except (TypeError, ValueError):
+        raise co.OversightError("Choose an operator") from None
+    async with get_db() as db:
+        return await co._require_operator(db, oid)
+
+
+@router.post("/ai/read/{kind}")
+async def ai_read(kind: str, request: Request):
+    """Read a document and return a pre-filled form: report, cancellation, authorisation or statement."""
+    if denied := _forbidden(request):
+        return denied
+    from services import oversight_ai as oai
+    body = await _body(request)
+    user = _user(request)["sub"]
+    upload = {"filename": str(body.get("filename") or "document")[:120], "media_type": str(body.get("media_type") or ""),
+              "data": str(body.get("data") or "")}
+
+    async def go():
+        if kind == "report":
+            return await oai.read_emissions_report(user, upload, await _operator(body.get("operator_id")))
+        if kind == "cancellation":
+            return await oai.read_cancellation(user, upload, await _operator(body.get("operator_id")),
+                                               str(body.get("period") or ""))
+        if kind == "authorisation":
+            return await oai.read_authorisation(user, upload)
+        if kind == "statement":
+            return await oai.read_registry_extract(user, upload)
+        raise co.OversightError("Unknown document type", status=404)
+    return await _run_ai(go())
+
+
+@router.post("/ai/review-brief")
+async def ai_review_brief(request: Request):
+    if denied := _forbidden(request):
+        return denied
+    from services import oversight_ai as oai
+    body = await _body(request)
+    try:
+        claim_id = int(body.get("claim_id"))
+    except (TypeError, ValueError):
+        return JSONResponse(status_code=400, content={"error": "claim_id is required"})
+    return await _run_ai(oai.review_brief(_user(request)["sub"], str(body.get("kind") or "unit"), claim_id))
+
+
+@router.post("/ai/rules-check")
+async def ai_rules_check(request: Request):
+    if denied := _forbidden(request):
+        return denied
+    from services import oversight_ai as oai
+    body = await _body(request)
+    upload = {"filename": str(body.get("filename") or "document")[:120], "media_type": str(body.get("media_type") or ""),
+              "data": str(body.get("data") or "")}
+    return await _run_ai(oai.check_rules(_user(request)["sub"], upload))
+
+
+@router.post("/ai/ask")
+async def ai_ask(request: Request):
+    from services import oversight_ai as oai
+    body = await _body(request)
+    return await _run_ai(oai.ask_register(_user(request).get("sub", "?"), str(body.get("question") or "")))
+
+
+@router.post("/ai/explain")
+async def ai_explain(request: Request):
+    from services import oversight_ai as oai
+    body = await _body(request)
+    f = body.get("finding") if isinstance(body.get("finding"), dict) else {}
+    return await _run_ai(oai.explain_finding(_user(request).get("sub", "?"), str(body.get("period") or ""), f))
+
+
+@router.post("/ai/draft")
+async def ai_draft(request: Request):
+    if denied := _forbidden(request):
+        return denied
+    from services import oversight_ai as oai
+    body = await _body(request)
+    op = body.get("operator_id")
+    try:
+        op = int(op) if op not in (None, "") else None
+    except (TypeError, ValueError):
+        return JSONResponse(status_code=400, content={"error": "operator_id must be a number"})
+    return await _run_ai(oai.draft_document(_user(request)["sub"], str(body.get("kind") or ""),
+                                            str(body.get("period") or ""), op))
+
+
 @router.post("/operators/{operator_id}/fuel-certificate")
 async def read_fuel_certificate(operator_id: int, request: Request):
     """AI-assisted: pre-fill a fuel claim from an uploaded certificate. Nothing is recorded."""

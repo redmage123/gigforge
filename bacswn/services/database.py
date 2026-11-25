@@ -27,6 +27,7 @@ _ALLOWED_TABLES = {
     "carbon_fuel_reviews",
     "ner_statements",
     "ner_units",
+    "ner_authorisations",
     "wx_benefit_events",
     "wx_benefit_coverage",
 }
@@ -325,6 +326,30 @@ CREATE TABLE IF NOT EXISTS ner_units (
 );
 CREATE INDEX IF NOT EXISTS idx_ner_units_block ON ner_units (statement_id, serial_block);
 
+-- Letters of authorisation the state has issued for Bahamian units (one row per
+-- recorded letter; a revised letter is a new row with the same reference).
+CREATE TABLE IF NOT EXISTS ner_authorisations (
+    id                       INTEGER PRIMARY KEY AUTOINCREMENT,
+    reference                TEXT    NOT NULL,
+    issue_date               TEXT    NOT NULL,
+    issuing_body             TEXT    NOT NULL DEFAULT '',
+    authorised_uses          TEXT    NOT NULL DEFAULT '',
+    corresponding_adjustment INTEGER NOT NULL DEFAULT 0,
+    vintage_from             INTEGER,
+    vintage_to               INTEGER,
+    max_quantity             INTEGER,
+    serial_blocks            TEXT    NOT NULL DEFAULT '',
+    project_id               TEXT    NOT NULL DEFAULT '',
+    project_name             TEXT    NOT NULL DEFAULT '',
+    notes                    TEXT    NOT NULL DEFAULT '',
+    created_by               TEXT    NOT NULL,
+    created_at               TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TRIGGER IF NOT EXISTS ner_authorisations_immutable_u BEFORE UPDATE ON ner_authorisations
+BEGIN SELECT RAISE(ABORT, 'ner_authorisations is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS ner_authorisations_immutable_d BEFORE DELETE ON ner_authorisations
+BEGIN SELECT RAISE(ABORT, 'ner_authorisations is append-only'); END;
+
 CREATE TRIGGER IF NOT EXISTS ner_statements_immutable_u BEFORE UPDATE ON ner_statements
 BEGIN SELECT RAISE(ABORT, 'ner_statements is append-only'); END;
 CREATE TRIGGER IF NOT EXISTS ner_statements_immutable_d BEFORE DELETE ON ner_statements
@@ -395,6 +420,11 @@ BEGIN SELECT RAISE(ABORT, 'carbon_claim_reviews is append-only'); END;
 
 # Columns added after the initial release — applied as lightweight migrations.
 _MIGRATIONS = {
+    # AI review brief the reviewer started from (empty when none was used).
+    "carbon_claim_reviews": {"ai_brief": "TEXT NOT NULL DEFAULT ''"},
+    "carbon_fuel_reviews": {"ai_brief": "TEXT NOT NULL DEFAULT ''"},
+    # How a registry statement was produced (e.g. converted by AI from a file).
+    "ner_statements": {"source_note": "TEXT NOT NULL DEFAULT ''"},
     "forecast_verifications": {
         "corrected_value": "REAL",
         "corrected_signed_error": "REAL",

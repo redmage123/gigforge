@@ -121,10 +121,13 @@ def _check_rate(user: str) -> None:
 
 
 async def _ask_claude(user: str, system: str, prompt: str, effort: str, max_tokens: int,
-                      schema: dict | None = None, attachment: tuple[bytes, str] | None = None) -> str:
+                      schema: dict | None = None, attachment: tuple[bytes, str] | None = None,
+                      attachment_name: str = "certificate", max_usd: str | None = None) -> str:
     """Ask Claude; returns the answer text (with a schema, a JSON string matching it).
 
     attachment: (file bytes, media type) of a document Claude should read.
+    attachment_name: file name (without extension) the CLI backend gives it.
+    max_usd: CLI spend cap for this call (default CLI_MAX_USD).
     """
     if not configured():
         why = ("no ANTHROPIC_API_KEY" if backend() == "api" else
@@ -132,21 +135,23 @@ async def _ask_claude(user: str, system: str, prompt: str, effort: str, max_toke
         raise AIUnavailable(f"AI assistance is not configured on this server ({why}).", 503)
     _check_rate(user)
     if backend() == "cli":
-        return await _ask_cli(system, prompt, effort, schema, attachment)
+        return await _ask_cli(system, prompt, effort, schema, attachment, attachment_name, max_usd)
     return await _ask_api(system, prompt, effort, max_tokens, schema, attachment)
 
 
 async def _ask_cli(system: str, prompt: str, effort: str, schema: dict | None,
-                   attachment: tuple[bytes, str] | None) -> str:
+                   attachment: tuple[bytes, str] | None, attachment_name: str = "certificate",
+                   max_usd: str | None = None) -> str:
     args = [_cli_bin(), "-p", "--output-format", "json", "--no-session-persistence", "--strict-mcp-config",
-            "--system-prompt", system, "--model", CLI_MODEL, "--effort", effort, "--max-budget-usd", CLI_MAX_USD]
+            "--system-prompt", system, "--model", CLI_MODEL, "--effort", effort,
+            "--max-budget-usd", max_usd or CLI_MAX_USD]
     if schema:
         args += ["--json-schema", json.dumps(schema)]
     async with _cli_slots:
         with tempfile.TemporaryDirectory(prefix="bacswn-ai-") as cwd:    # no project files, no CLAUDE.md
             if attachment:
                 raw, media_type = attachment
-                name = f"certificate.{DOC_EXT[media_type]}"
+                name = f"{attachment_name}.{DOC_EXT[media_type]}"
                 with open(os.path.join(cwd, name), "wb") as f:
                     f.write(raw)
                 # Only the Read tool. No --allowedTools: Claude Code then permits reads inside the

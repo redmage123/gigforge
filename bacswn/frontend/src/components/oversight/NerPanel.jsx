@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { api, saveBlob } from '../../api/client'
+import { ConvertExtract, Letters } from './LetterSections'
 
 /**
  * Bahamas National Emissions Registry exchange. The registry has no public
@@ -11,7 +12,7 @@ const MAX_BYTES = 5_000_000
 const n = (v) => (v == null ? '—' : Number(v).toLocaleString())
 const STATUS_LABEL = { ISSUED: 'issued', TRANSFERRED: 'transferred', CANCELLED: 'cancelled', RETIRED: 'retired', SUSPENDED: 'suspended' }
 
-export default function NerPanel({ period, isAdmin, announce, onImported }) {
+export default function NerPanel({ period, isAdmin, aiReady, announce, onImported }) {
   const [status, setStatus] = useState(null)
   const [history, setHistory] = useState([])
   const [error, setError] = useState('')
@@ -96,6 +97,7 @@ export default function NerPanel({ period, isAdmin, announce, onImported }) {
       {isAdmin && (
         <details className="co-forms">
           <summary>Import a registry statement</summary>
+          {aiReady && <ConvertExtract announce={announce} onImported={() => { load(); onImported?.() }} />}
           <form className="co-form" onSubmit={submit} aria-label="Import registry statement">
             <div className="co-form-grid">
               <div className="co-field">
@@ -120,6 +122,7 @@ export default function NerPanel({ period, isAdmin, announce, onImported }) {
           <p className="co-note">Statements are kept permanently. The newest by statement date is used for checks.</p>
         </details>
       )}
+      <Letters isAdmin={isAdmin} aiReady={aiReady} announce={announce} onChanged={onImported} />
     </section>
   )
 }

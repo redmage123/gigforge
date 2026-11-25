@@ -4,6 +4,8 @@ import { useSearchParams } from 'react-router-dom'
 import { useUrlState } from '../components/share/useUrlState'
 import CertificateReader from '../components/oversight/CertificateReader'
 import NerPanel from '../components/oversight/NerPanel'
+import AiDocReader from '../components/oversight/AiDocReader'
+import AiTools from '../components/oversight/AiTools'
 import { useAuth } from '../App'
 import './CarbonOversight.css'
 
@@ -34,6 +36,16 @@ const KIND = {
   NER_NO_ADJUSTMENT: 'No corresponding adjustment', NER_NOT_CANCELLED: 'Not cancelled for CORSIA in registry',
   NER_CANCELLED_BY_OTHER: 'Cancelled by another operator', NER_REFERENCE_MISMATCH: 'Cancellation reference differs',
   NER_VINTAGE_MISMATCH: 'Vintage differs from registry',
+  NER_LOA_NOT_ON_FILE: 'Letter of authorisation not on file', NER_LOA_MISMATCH: 'Differs from letter of authorisation',
+  NER_LOA_EXCEEDED: 'More units than the letter authorises',
+  UNUSUAL_CHANGE: 'Unusual change in emissions', UNUSUAL_GROWTH_FACTOR: 'Unusual growth factor',
+  UNUSUAL_FUEL_SPLIT: 'Possible split fuel batch', UNUSUAL_OBSERVED_RATIO: 'Unusually low against observation',
+}
+const REPORT_LABELS = { year: 'Year', verified_co2_t: 'Verified CO₂', verifier: 'Verification body', reference: 'Report reference' }
+const CLAIM_LABELS = {
+  registry: 'Registry', quantity: 'Quantity', vintage: 'Vintage', serial_block: 'Serial block', serial_start: 'Serial start',
+  serial_end: 'Serial end', project_id: 'Project ID', project_name: 'Project name', cancelled_on: 'Cancellation date',
+  registry_reference: 'Registry cancellation reference',
 }
 const NER_CHECK = {
   MATCHED: ['Registry: matches', 'ok'], PROBLEMS: ['Registry: problems', 'bad'],
@@ -78,6 +90,8 @@ function ApiForm({ title, submitLabel, onSubmit, onDone, children, className = '
     try {
       const result = await onSubmit(data)
       form.reset()
+      // Hidden inputs keep script-set values through reset(); clear AI provenance so it can't carry over.
+      form.querySelectorAll('input[type=hidden]').forEach(el => { el.value = '' })
       form.querySelectorAll('.ai-filled').forEach(el => el.classList.remove('ai-filled'))
       onDone?.(result)
     } catch (err) {
@@ -95,7 +109,55 @@ function ApiForm({ title, submitLabel, onSubmit, onDone, children, className = '
 }
 
 /** Modal review dialog (native <dialog>: focus trap + Esc built in). */
-function ReviewDialog({ claim, onClose, onReviewed }) {
+/** AI review brief: drafted from the register's own record; the reviewer decides. */
+function ReviewBrief({ claim, formId }) {
+  const [brief, setBrief] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const draft = async () => {
+    setBusy(true); setError('')
+    try {
+      const b = await api.oversightAiBrief({ kind: claim.kind === 'fuel' ? 'fuel' : 'unit', claim_id: claim.id })
+      setBrief(b)
+      const form = document.getElementById(formId)
+      if (form) {
+        form.elements.reason.value = b.reason_draft
+        form.elements.reason.classList.add('ai-filled')
+        form.elements.ai_brief.value = b.brief_text
+        const radio = b.decision_to_preselect && form.querySelector(`input[name=decision][value=${b.decision_to_preselect}]`)
+        if (radio) radio.checked = true
+      }
+    } catch (e) { setError(e.message) } finally { setBusy(false) }
+  }
+  const SUGGEST = { VERIFIED: 'verify', REJECTED: 'reject', REOPENED: 'reopen', REQUEST_INFORMATION: 'ask the operator for more information' }
+  return (
+    <div className="cert-reader">
+      <button type="button" className="btn btn-sm btn-primary" onClick={draft} disabled={busy}>
+        {busy ? 'Preparing brief…' : brief ? 'Redraft brief (AI)' : 'Draft review brief (AI)'}</button>
+      <small className="co-hint"> From the register’s record only. It suggests; you decide.</small>
+      {error && <p className="co-form-error" role="alert">{error}</p>}
+      <div role="status" aria-live="polite">
+        {brief && (
+          <div className="cert-result">
+            <p>{brief.summary}</p>
+            {brief.cautions.length > 0 && <ul className="cert-warnings">{brief.cautions.map((c, i) => <li key={i}>{c}</li>)}</ul>}
+            <p><b>Operator says:</b> {brief.operator_says}</p>
+            {brief.records_show.length > 0 && <ul className="cert-notes">{brief.records_show.map((r, i) => <li key={i}>{r}</li>)}</ul>}
+            {brief.findings_assessment.length > 0 && (
+              <ul className="cert-notes">{brief.findings_assessment.map((f, i) => <li key={i}><b>{f.finding}:</b> {f.comment}</li>)}</ul>
+            )}
+            {brief.missing_evidence.length > 0 && <p><b>Missing:</b> {brief.missing_evidence.join('; ')}</p>}
+            <p><b>Suggestion:</b> {SUGGEST[brief.suggested_decision]}.{' '}
+              {brief.decision_to_preselect ? 'The decision and reason below are pre-filled; change them as you see fit.'
+                : 'The reason below is pre-filled; choose the decision yourself.'}</p>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function ReviewDialog({ claim, onClose, onReviewed, aiReady }) {
   const fuel = claim?.kind === 'fuel'
   const ref = useRef(null)
   const allowed = claim && (['VERIFIED', 'REJECTED'].includes(claim.status) ? ['REOPENED'] : ['VERIFIED', 'REJECTED'])
@@ -122,7 +184,8 @@ function ReviewDialog({ claim, onClose, onReviewed }) {
           currently <Badge map={CLAIM_STATUS} value={claim.status} />
         </p>
       )}
-      <ApiForm title={`Review ${fuel ? 'fuel claim' : 'claim'} ${claim.id}`} submitLabel="Record decision"
+      {aiReady && <ReviewBrief key={`${claim.kind}-${claim.id}`} claim={claim} formId="co-review-form" />}
+      <ApiForm id="co-review-form" title={`Review ${fuel ? 'fuel claim' : 'claim'} ${claim.id}`} submitLabel="Record decision"
         onSubmit={(d) => (fuel ? api.oversightReviewFuel(claim.id, d) : api.oversightReview(claim.id, d))} onDone={(r) => onReviewed(r)}>
         <fieldset className="co-radios">
           <legend>Decision</legend>
@@ -134,9 +197,34 @@ function ReviewDialog({ claim, onClose, onReviewed }) {
         </fieldset>
         <Field as="textarea" label="Reason" name="reason" rows={3} maxLength={1000}
           hint="Required to reject or reopen. Recorded permanently with your name." />
+        <input type="hidden" name="ai_brief" />
       </ApiForm>
       <button type="button" className="toggle-btn co-dialog-close" onClick={() => ref.current?.close()}>Cancel</button>
     </dialog>
+  )
+}
+
+/** One finding, with an optional AI explanation of what it could mean. */
+function FindingItem({ f, period, aiReady, onOpen }) {
+  const [text, setText] = useState('')
+  const [busy, setBusy] = useState(false)
+  const explain = async () => {
+    setBusy(true)
+    try { setText((await api.oversightAiExplain(period, f)).explanation) } catch (e) { setText(e.message) } finally { setBusy(false) }
+  }
+  const what = `${f.operator}${f.claim_id ? `, claim ${f.claim_id}` : f.fuel_claim_id ? `, fuel claim F${f.fuel_claim_id}` : ''}`
+  return (
+    <li className={`sev-${f.severity}`}>
+      <Badge map={SEVERITY} value={f.severity} />
+      <span><b>{f.operator}</b> · {KIND[f.kind] || f.kind}: {f.message}
+        <span role="status" aria-live="polite">{text && <span className="co-explain"><b>AI explanation:</b> {text}</span>}</span>
+      </span>
+      <span className="co-finding-actions">
+        {aiReady && !text && <button type="button" className="toggle-btn" onClick={explain} disabled={busy}
+          aria-label={`Explain finding for ${what}`}>{busy ? 'Explaining…' : 'Explain (AI)'}</button>}
+        <button type="button" className="toggle-btn" onClick={onOpen} aria-label={`Open ${what}`}>Open</button>
+      </span>
+    </li>
   )
 }
 
@@ -218,7 +306,7 @@ function OperatorDetail({ operatorId, period, periodYears, row, isAdmin, onChang
                   <td><Badge map={CLAIM_STATUS} value={c.status} /></td>
                   <td>{c.reviews.length === 0 ? <span className="co-dim">None</span> : (
                     <ol className="co-history">{c.reviews.map((r, i) => (
-                      <li key={i}><b>{CLAIM_STATUS[r.decision]?.[0] || r.decision}</b> by {r.created_by}, {r.created_at.slice(0, 10)}{r.reason && ` — ${r.reason}`}</li>
+                      <li key={i}><b>{CLAIM_STATUS[r.decision]?.[0] || r.decision}</b> by {r.created_by}, {r.created_at.slice(0, 10)}{r.reason && ` — ${r.reason}`}{r.ai_assisted && <small className="co-dim"> (AI brief used)</small>}</li>
                     ))}</ol>
                   )}</td>
                   {isAdmin && <td><button type="button" className="toggle-btn" onClick={() => onReview(c, () => refresh(`Claim ${c.id} reviewed`))}
@@ -260,7 +348,7 @@ function OperatorDetail({ operatorId, period, periodYears, row, isAdmin, onChang
                   <td><Badge map={CLAIM_STATUS} value={f.status} /></td>
                   <td>{f.reviews.length === 0 ? <span className="co-dim">None</span> : (
                     <ol className="co-history">{f.reviews.map((r, i) => (
-                      <li key={i}><b>{CLAIM_STATUS[r.decision]?.[0] || r.decision}</b> by {r.created_by}, {r.created_at.slice(0, 10)}{r.reason && ` — ${r.reason}`}</li>
+                      <li key={i}><b>{CLAIM_STATUS[r.decision]?.[0] || r.decision}</b> by {r.created_by}, {r.created_at.slice(0, 10)}{r.reason && ` — ${r.reason}`}{r.ai_assisted && <small className="co-dim"> (AI brief used)</small>}</li>
                     ))}</ol>
                   )}</td>
                   {isAdmin && <td><button type="button" className="toggle-btn" onClick={() => onReview({ ...f, kind: 'fuel', icao_designator: op.icao_designator }, () => refresh(`Fuel claim F${f.id} reviewed`))}
@@ -276,7 +364,9 @@ function OperatorDetail({ operatorId, period, periodYears, row, isAdmin, onChang
         <div className="co-forms">
           <details>
             <summary>Record a verified emissions report</summary>
-            <ApiForm title="Record emissions report" submitLabel="Record report"
+            {aiReady && <AiDocReader kind="report" labels={REPORT_LABELS} formId={`co-report-form-${op.id}`} operatorId={op.id}
+              period={period} onFilled={announce} />}
+            <ApiForm id={`co-report-form-${op.id}`} title="Record emissions report" submitLabel="Record report"
               onSubmit={(d) => api.oversightAddReport(op.id, d)}
               onDone={(r) => refresh(`Report recorded for ${r.year}, revision ${r.revision}. Requirement ${n(r.offsetting_requirement_t)} units.`)}>
               <Field label="Year" name="year" type="number" required min={2019} max={new Date().getFullYear()} inputMode="numeric" />
@@ -285,12 +375,15 @@ function OperatorDetail({ operatorId, period, periodYears, row, isAdmin, onChang
                 hint="The sector growth factor ICAO published for that year (0–1)." />
               <Field label="Verification body" name="verifier" maxLength={120} />
               <Field label="Report reference" name="reference" maxLength={120} />
+              <input type="hidden" name="notes" />
             </ApiForm>
             <p className="co-note">A second report for the same year supersedes the first; both stay on record.</p>
           </details>
           <details>
             <summary>Record a unit cancellation claim</summary>
-            <ApiForm title="Record cancellation claim" submitLabel="Record claim"
+            {aiReady && <AiDocReader kind="cancellation" labels={CLAIM_LABELS} formId={`co-claim-form-${op.id}`} operatorId={op.id}
+              period={period} onFilled={announce} />}
+            <ApiForm id={`co-claim-form-${op.id}`} title="Record cancellation claim" submitLabel="Record claim"
               onSubmit={(d) => api.oversightAddClaim(op.id, { ...d, compliance_period: period })}
               onDone={(r) => refresh(`Claim ${r.id} recorded as pending review.`)}>
               <Field label="Registry" name="registry" required maxLength={80} list="co-registries" hint="Programme that issued and cancelled the units." />
@@ -307,6 +400,7 @@ function OperatorDetail({ operatorId, period, periodYears, row, isAdmin, onChang
               <div className="co-field co-check">
                 <label><input type="checkbox" name="declared_eligible" defaultChecked /> Operator declares the units CORSIA-eligible</label>
               </div>
+              <input type="hidden" name="notes" />
             </ApiForm>
           </details>
           <details>
@@ -359,7 +453,7 @@ export default function CarbonOversight() {
   const reviewReturn = useRef(null)
   // AI certificate reading is offered only when the server has it configured.
   const [aiReady, setAiReady] = useState(false)
-  useEffect(() => { if (isAdmin) api.aiStatus().then(s => setAiReady(!!s.configured)).catch(() => {}) }, [isAdmin])
+  useEffect(() => { api.aiStatus().then(s => setAiReady(!!s.configured)).catch(() => {}) }, [])
 
   useEffect(() => {
     api.oversightPeriods().then(d => {
@@ -462,18 +556,16 @@ export default function CarbonOversight() {
             {reg.findings.length === 0 ? <p className="co-dim">No findings for this period.</p> : (
               <ul className="co-findings">
                 {reg.findings.map((f, i) => (
-                  <li key={i} className={`sev-${f.severity}`}>
-                    <Badge map={SEVERITY} value={f.severity} />
-                    <span><b>{f.operator}</b> · {KIND[f.kind] || f.kind}: {f.message}</span>
-                    <button type="button" className="toggle-btn" onClick={() => showClaim(f)}
-                      aria-label={`Open ${f.operator}${f.claim_id ? `, claim ${f.claim_id}` : f.fuel_claim_id ? `, fuel claim F${f.fuel_claim_id}` : ''}`}>Open</button>
-                  </li>
+                  <FindingItem key={`${f.kind}-${f.operator_id}-${f.claim_id}-${f.fuel_claim_id}-${i}`} f={f} period={period}
+                    aiReady={aiReady} onOpen={() => showClaim(f)} />
                 ))}
               </ul>
             )}
           </section>
 
-          <NerPanel period={period} isAdmin={isAdmin} announce={announce} onImported={load} />
+          <NerPanel period={period} isAdmin={isAdmin} aiReady={aiReady} announce={announce} onImported={load} />
+
+          {aiReady && <AiTools period={period} operators={reg.operators} isAdmin={isAdmin} announce={announce} />}
 
           <section className="card" aria-labelledby="co-ops-h">
             <div className="card-header"><h3 id="co-ops-h">Operators</h3></div>
@@ -536,7 +628,7 @@ export default function CarbonOversight() {
       <datalist id="co-pathways">
         {['HEFA', 'FT (Fischer–Tropsch)', 'ATJ (alcohol-to-jet)', 'Co-processing', 'SIP', 'PtL (power-to-liquid)'].map(r => <option key={r} value={r} />)}
       </datalist>
-      <ReviewDialog claim={reviewing} onClose={closeReview}
+      <ReviewDialog claim={reviewing} onClose={closeReview} aiReady={aiReady && isAdmin}
         onReviewed={() => { const after = reviewReturn.current?.after; closeReview(); after?.() }} />
     </div>
   )

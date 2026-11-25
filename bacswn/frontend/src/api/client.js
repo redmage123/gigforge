@@ -159,6 +159,15 @@ export const api = {
   nerStatements: () => request('/api/carbon-oversight/ner/statements'),
   nerImport: (body) => request('/api/carbon-oversight/ner/statements', { method: 'POST', body: JSON.stringify(body) }),
   nerTemplate: () => fetchBlob('/api/carbon-oversight/ner/template.csv'),
+  nerAuthorisations: () => request('/api/carbon-oversight/ner/authorisations'),
+  nerAddAuthorisation: (data) => request('/api/carbon-oversight/ner/authorisations', { method: 'POST', body: JSON.stringify(data) }),
+  // AI assistance for the register (drafts and pre-filled forms only)
+  oversightAiRead: (kind, body) => request('/api/carbon-oversight/ai/read/' + kind, { method: 'POST', body: JSON.stringify(body) }),
+  oversightAiBrief: (body) => request('/api/carbon-oversight/ai/review-brief', { method: 'POST', body: JSON.stringify(body) }),
+  oversightAiRules: (body) => request('/api/carbon-oversight/ai/rules-check', { method: 'POST', body: JSON.stringify(body) }),
+  oversightAiAsk: (question) => request('/api/carbon-oversight/ai/ask', { method: 'POST', body: JSON.stringify({ question }) }),
+  oversightAiExplain: (period, finding) => request('/api/carbon-oversight/ai/explain', { method: 'POST', body: JSON.stringify({ period, finding }) }),
+  oversightAiDraft: (body) => request('/api/carbon-oversight/ai/draft', { method: 'POST', body: JSON.stringify(body) }),
   nerStateReport: (period) => fetchBlob('/api/carbon-oversight/ner/state-report?period=' + encodeURIComponent(period)),
 
   // Weather-benefit ledger (fuel / CO2 saved by early storm warnings)

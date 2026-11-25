@@ -365,7 +365,7 @@ export default function FlightOps() {
                 const color = getCatColor(f.category)
                 const isSelected = selected?.icao24 === f.icao24
                 return (
-                  <tr key={f.icao24} onClick={() => setSelected(f)} style={{ cursor: 'pointer',
+                  <tr key={f.icao24} onClick={() => setSelected(f)} style={{
                     cursor: 'pointer',
                     background: isSelected ? color + '15' : undefined,
                   }}>

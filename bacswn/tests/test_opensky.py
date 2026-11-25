@@ -109,3 +109,31 @@ def test_simulated_flights_within_bbox():
                 f"Flight longitude {lon} exceeds east limit {east_limit}. "
                 f"lomax={BAHAMAS_BBOX['lomax']}. Clamp uses +0.5 instead of -0.5!"
             )
+
+
+# ── Emergency squawk codes ─────────────────────────────────────────────────
+
+@pytest.mark.parametrize("code,meaning", [("7500", "hijack"), ("7600", "Radio"), ("7700", "General emergency")])
+def test_emergency_squawks_are_flagged(code, meaning):
+    from services.opensky_client import _parse_state
+    state = _make_state()
+    state[14] = code
+    em = _parse_state(state)["emergency"]
+    assert em["code"] == code and meaning in em["meaning"]
+
+
+@pytest.mark.parametrize("code", ["1200", "2000", "7000", "4521", None, ""])
+def test_ordinary_squawks_are_not_flagged(code):
+    from services.opensky_client import _parse_state
+    state = _make_state()
+    state[14] = code
+    assert _parse_state(state)["emergency"] is None
+
+
+def test_simulated_flights_never_squawk_emergency_and_keep_their_code():
+    from services.opensky_client import EMERGENCY_SQUAWKS, _generate_simulated_flights_now
+    first = {f["icao24"]: f["squawk"] for f in _generate_simulated_flights_now()}
+    second = {f["icao24"]: f["squawk"] for f in _generate_simulated_flights_now()}
+    assert first == second
+    assert not set(first.values()) & set(EMERGENCY_SQUAWKS)
+    assert all(len(c) == 4 and set(c) <= set("01234567") for c in first.values())

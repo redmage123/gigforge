@@ -27,6 +27,16 @@ const CAT_LABEL = {
   '#ef4444': 'Military', '#f59e0b': 'Rotorcraft', '#94a3b8': 'Unknown',
 }
 
+// Transponder emergency codes. The server flags them too; this covers any source that doesn't.
+const EMERGENCY_SQUAWKS = {
+  '7500': 'Unlawful interference (hijack)',
+  '7600': 'Radio communication failure',
+  '7700': 'General emergency',
+}
+const emergencyOf = (f) => f?.emergency ||
+  (EMERGENCY_SQUAWKS[String(f?.squawk || '').trim()] ? { code: String(f.squawk).trim(), meaning: EMERGENCY_SQUAWKS[String(f.squawk).trim()] } : null)
+const EMERGENCY_RED = '#ef4444'
+
 // Bahamas FIR approximate boundary [lat, lon]
 const BAHAMAS_FIR = [
   [28.0, -80.5], [28.0, -77.5], [27.0, -76.5], [26.0, -76.0],
@@ -147,6 +157,15 @@ function FlightCanvas({ flights, onSelect, reducedMotion }) {
         ctx.lineWidth = 2
         ctx.strokeStyle = color
         ctx.stroke()
+        if (s.emergency) {
+          // Emergency squawk: a thick red ring that pulses unless reduced motion is on.
+          const pulse = motionRef.current ? 0 : (Math.sin(Date.now() / 250) + 1) * 3
+          ctx.beginPath()
+          ctx.arc(pt.x, pt.y, size * 0.75 + pulse, 0, Math.PI * 2)
+          ctx.lineWidth = 3
+          ctx.strokeStyle = EMERGENCY_RED
+          ctx.stroke()
+        }
         drawPlane(ctx, pt.x, pt.y, s.track || s.true_track || 0, PLANE_FILL, size, hover)
 
         // Callsign label on hover
@@ -190,7 +209,9 @@ export default function FlightOps() {
     ...f,
     lat: f.lat || f.latitude,
     lon: f.lon || f.longitude,
+    emergency: emergencyOf(f),
   }))
+  const emergencies = flights.filter(f => f.emergency)
   const firRaw = mapData?.fir_polygon || []
   const firPolygon = firRaw.length > 0
     ? firRaw.map(([lon, lat]) => [lat, lon])
@@ -230,6 +251,27 @@ export default function FlightOps() {
           </div>
           <LiveBadge />
         </div>
+      </div>
+
+      {/* Emergency squawks: announced once per change, listed until they clear */}
+      <div role="alert">
+        {emergencies.length > 0 && (
+          <div className="card" style={{ border: `2px solid ${EMERGENCY_RED}`, background: 'rgba(239,68,68,0.12)', marginBottom: 12, padding: '10px 14px' }}>
+            <strong style={{ color: 'var(--danger-text)' }}>
+              Emergency squawk{emergencies.length > 1 ? 's' : ''} in the FIR ({emergencies.length})
+            </strong>
+            <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+              {emergencies.map(f => (
+                <li key={f.icao24}>
+                  <button type="button" className="link-btn" style={{ fontFamily: 'monospace', fontWeight: 700 }}
+                    onClick={() => setSelected(f)}>{f.callsign?.trim() || f.icao24}</button>
+                  {' '}squawking <b>{f.emergency.code}</b>: {f.emergency.meaning}
+                  {f.baro_altitude ? `, FL${Math.round(f.baro_altitude * 3.281 / 100).toString().padStart(3, '0')}` : ''}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
 
       {/* Category legend */}
@@ -367,7 +409,8 @@ export default function FlightOps() {
                 return (
                   <tr key={f.icao24} onClick={() => setSelected(f)} style={{
                     cursor: 'pointer',
-                    background: isSelected ? color + '15' : undefined,
+                    background: f.emergency ? 'rgba(239,68,68,0.14)' : isSelected ? color + '15' : undefined,
+                    boxShadow: f.emergency ? `inset 4px 0 0 ${EMERGENCY_RED}` : undefined,
                   }}>
                     <td>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
@@ -386,9 +429,16 @@ export default function FlightOps() {
                     <td>{f.velocity ? `${Math.round(f.velocity * 1.944)}kt` : '—'}</td>
                     <td>{f.true_track ? `${Math.round(f.true_track)}°` : f.track ? `${Math.round(f.track)}°` : '—'}</td>
                     <td>
-                      <span className={`cat-badge ${f.on_ground ? 'cat-IFR' : 'cat-VFR'}`}>
-                        {f.on_ground ? 'GND' : 'AIRBORNE'}
-                      </span>
+                      {f.emergency ? (
+                        <span className="cat-badge cat-IFR" title={f.emergency.meaning}
+                          style={{ fontWeight: 800, border: `1px solid ${EMERGENCY_RED}` }}>
+                          {f.emergency.code} EMERGENCY<span className="sr-only">: {f.emergency.meaning}</span>
+                        </span>
+                      ) : (
+                        <span className={`cat-badge ${f.on_ground ? 'cat-IFR' : 'cat-VFR'}`}>
+                          {f.on_ground ? 'GND' : 'AIRBORNE'}
+                        </span>
+                      )}
                     </td>
                     <td>{ahead[f.icao24] ? (
                       <span style={{ color: ahead[f.icao24].severity === 'severe' ? 'var(--danger-text)' : 'var(--warning-text)', fontWeight: 600 }}>
@@ -419,8 +469,11 @@ export default function FlightOps() {
               ['Ground Speed', selected.velocity ? Math.round(selected.velocity * 1.944) + ' kt' : '—'],
               ['Heading', (selected.track || selected.true_track) ? Math.round(selected.track || selected.true_track) + '°' : '—'],
               ['Vertical Speed', selected.vertical_rate ? (selected.vertical_rate > 0 ? '+' : '') + Math.round(selected.vertical_rate * 196.85) + ' fpm' : '—'],
-              ['Squawk', selected.squawk || '—'],
-              ['Status', selected.on_ground ? 'On Ground' : 'Airborne'],
+              ['Squawk', selected.emergency
+                ? <span style={{ color: 'var(--danger-text)' }}>{selected.emergency.code} — {selected.emergency.meaning}</span>
+                : selected.squawk || '—'],
+              ['Status', selected.emergency ? <span style={{ color: 'var(--danger-text)' }}>Emergency declared</span>
+                : selected.on_ground ? 'On Ground' : 'Airborne'],
               ['Weather ahead', ahead[selected.icao24]
                 ? `${ahead[selected.icao24].hazard} ${ahead[selected.icao24].inside ? 'now' : `in ${ahead[selected.icao24].minutes_to_entry} min`} — ${ahead[selected.icao24].advice.text}`
                 : 'Clear for 30 min'],

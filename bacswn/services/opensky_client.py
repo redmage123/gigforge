@@ -58,6 +58,33 @@ class CircuitBreaker:
 # Module-level circuit breaker for OpenSky API
 _opensky_breaker = CircuitBreaker("opensky")
 
+# ── Transponder emergency codes (ICAO Annex 10 / Doc 4444) ──────────────
+EMERGENCY_SQUAWKS = {
+    "7500": "Unlawful interference (hijack)",
+    "7600": "Radio communication failure",
+    "7700": "General emergency",
+}
+
+
+def squawk_emergency(squawk) -> dict | None:
+    """The emergency a transponder code declares, or None for an ordinary code."""
+    code = str(squawk or "").strip()
+    return {"code": code, "meaning": EMERGENCY_SQUAWKS[code]} if code in EMERGENCY_SQUAWKS else None
+
+
+def _sim_squawk(sf: dict) -> str:
+    """A stable, ordinary code per simulated flight: 1200 (VFR) for light aircraft, else a
+    discrete code from the address. Never an emergency or conspicuity code."""
+    if sf["baro_altitude"] < 3000:
+        return "1200"
+    n = int(sf["icao24"], 16)
+    while True:
+        code = f"{(n % 7) + 1}{(n >> 3) % 8}{(n >> 6) % 8}{(n >> 9) % 8}"
+        if code not in EMERGENCY_SQUAWKS and code not in ("1200", "2000", "7000"):
+            return code
+        n += 1
+
+
 # ── Simulated flight routes across the Bahamas FIR ────────────────────
 _SIM_FLIGHTS = [
     {"icao24": "a0b1c2", "callsign": "BHS201", "origin_country": "Bahamas",
@@ -134,7 +161,8 @@ def _generate_simulated_flights_now() -> list[dict]:
             "true_track": sf["true_track"] + random.randint(-5, 5),
             "vertical_rate": round(random.uniform(-3, 3), 1),
             "geo_altitude": sf["baro_altitude"] + random.randint(-100, 100),
-            "squawk": random.choice(["1200", "2000", "7500", None]),
+            "squawk": _sim_squawk(sf),
+            "emergency": None,
             "category": _categorize_aircraft(sf["baro_altitude"]),
             "simulated": True,  # never count as evidence (e.g. carbon oversight cross-checks)
         })
@@ -200,6 +228,7 @@ def _parse_state(state: list) -> dict:
         "vertical_rate": state[11] if len(state) > 11 else None,
         "geo_altitude": state[13] if len(state) > 13 else None,
         "squawk": state[14] if len(state) > 14 else None,
+        "emergency": squawk_emergency(state[14] if len(state) > 14 else None),
         "category": (
             state[17]
             if len(state) > 17 and state[17] is not None and state[17] != 0

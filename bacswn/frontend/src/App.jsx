@@ -46,6 +46,8 @@ const Simulations = lazy(() => import('./pages/Simulations'))
 const Verification = lazy(() => import('./pages/Verification'))
 const Login = lazy(() => import('./pages/Login'))
 const CoastalPermanence = lazy(() => import('./pages/CoastalPermanence'))
+const PresentParis = lazy(() => import('./present/PresentParis'))
+const Live = lazy(() => import('./present/Live'))
 const GuidedTour = lazy(() => import('./components/tour/GuidedTour'))
 
 /** Sidebar navigation, in display order; icons are decorative (aria-hidden). */
@@ -83,8 +85,8 @@ function Layout() {
     window.addEventListener(STORY_EVENT, play)
     return () => window.removeEventListener(STORY_EVENT, play)
   }, [])
-  /** A story finished or was exited: release the server's hold and reset the mesh (best effort). */
-  const endStory = useCallback(() => { api.meshStoryEnd().catch(() => {}) }, [])
+  /** A story finished or was exited: release the server's hold and reset the mesh (mesh stories only, best effort). */
+  const endStory = useCallback(() => { if (story?.mesh !== false) api.meshStoryEnd().catch(() => {}) }, [story])
   const pause = useDemoPause()
   const [pauseError, setPauseError] = useState('')
   useDemoPauseSync(true)
@@ -236,6 +238,9 @@ export default function App() {
             <Route path="/login" element={<Login />} />
             {/* Unbranded presentation view, outside the app layout */}
             <Route path="/present/coastal-permanence" element={<ProtectedRoute><CoastalPermanence /></ProtectedRoute>} />
+            {/* Paris talk: presenter deck (login) and the audience phone page (public, no account) */}
+            <Route path="/present/paris" element={<ProtectedRoute><PresentParis /></ProtectedRoute>} />
+            <Route path="/live" element={<Live />} />
             <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
               <Route index element={<CommandCenter />} />
               <Route path="watch-office" element={<WatchOffice />} />

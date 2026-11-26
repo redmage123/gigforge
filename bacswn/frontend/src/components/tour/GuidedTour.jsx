@@ -87,7 +87,9 @@ export default function GuidedTour({ open, onClose, steps = TOUR_STEPS, label = 
     setBusy(true)
     setNote('')
     if (SPEECH_OK) window.speechSynthesis.cancel()
-    navigate(step.path)
+    // Stay put when the step is on the page already: re-navigating would drop that page's
+    // URL state (for example the operator open on the CORSIA register).
+    if (window.location.pathname !== step.path.split('?')[0] || step.path.includes('?')) navigate(step.path)
     ;(async () => {
       try {
         await step.action?.()

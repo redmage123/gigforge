@@ -87,6 +87,13 @@ async def test_endpoint(client: AsyncClient, auth_token: str):
     assert len(body["steps"]) == 115 and len(body["projects"]) == 4
 
 
-async def test_endpoint_requires_login(client: AsyncClient):
+async def test_endpoint_is_public_for_the_audience_app(client: AsyncClient):
+    """The replay (public NOAA track over illustrative projects) is open to the talk's phone app."""
     resp = await client.get("/api/hurricane/coastal-replay")
+    assert resp.status_code == 200
+
+
+async def test_other_hurricane_endpoints_still_require_login(client: AsyncClient):
+    """Only the replay is public; the rest of the hurricane API still needs a token."""
+    resp = await client.get("/api/hurricane/active")
     assert resp.status_code == 401

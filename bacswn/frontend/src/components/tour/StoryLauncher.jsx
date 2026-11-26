@@ -31,7 +31,7 @@ export default function StoryLauncher({ headingId = 'mg-stories' }) {
         resets the mesh.
       </p>
       <ul className="story-grid">
-        {STORIES.map(s => (
+        {STORIES.filter(s => s.mesh !== false).map(s => (
           <li key={s.id} className="story-card">
             <b className="story-title">{s.title}</b>
             <span className="story-summary">{s.summary}</span>

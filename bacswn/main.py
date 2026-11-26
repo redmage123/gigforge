@@ -59,6 +59,7 @@ from api.simulation import router as simulation_router
 from api.carbon_oversight import router as carbon_oversight_router
 from api.verification import router as verification_router
 from api.climatology import router as climatology_router
+from api.live_audience import router as live_router, admin_router as live_admin_router
 from services.errors import BacswnError
 
 # ── Logging ─────────────────────────────────────────────────────────────
@@ -228,6 +229,8 @@ if REACT_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 # ── Register API routers ────────────────────────────────────────────────
+app.include_router(live_router, prefix="/api/live", tags=["live-audience"])
+app.include_router(live_admin_router, prefix="/api/live-admin", tags=["live-audience"])
 app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 app.include_router(weather_router, prefix="/api/weather", tags=["weather"])
 app.include_router(flights_router, prefix="/api/flights", tags=["flights"])

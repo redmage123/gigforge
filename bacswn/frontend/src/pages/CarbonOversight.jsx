@@ -23,6 +23,7 @@ import NerPanel from '../components/oversight/NerPanel'
 import AiDocReader from '../components/oversight/AiDocReader'
 import AiTools from '../components/oversight/AiTools'
 import { useAuth } from '../App'
+import { playStory } from '../tour/stories'
 import './CarbonOversight.css'
 
 /** Operator compliance status -> [label, badge tone]. */
@@ -352,7 +353,7 @@ function OperatorDetail({ operatorId, period, periodYears, row, isAdmin, onChang
       <h3 id="co-detail-h" tabIndex={-1} ref={headingRef}>{op.icao_designator} — {op.name}</h3>
 
       <h4>Emissions and requirement, {period}</h4>
-      <div className="table-scroll" role="region" aria-label={`${op.icao_designator} emissions by year`} tabIndex={0}>
+      <div id="co-emis" className="table-scroll" role="region" aria-label={`${op.icao_designator} emissions by year`} tabIndex={0}>
         <table className="data-table co-table">
           <thead><tr>
             <th scope="col">Year</th><th scope="col">Verified CO₂ (t)</th><th scope="col">Growth factor</th>
@@ -385,7 +386,7 @@ function OperatorDetail({ operatorId, period, periodYears, row, isAdmin, onChang
 
       <h4>Cancellation claims, {period}</h4>
       {claims.length === 0 ? <p className="co-dim">No claims recorded for this period.</p> : (
-        <div className="table-scroll" role="region" aria-label={`${op.icao_designator} cancellation claims`} tabIndex={0}>
+        <div id="co-claims" className="table-scroll" role="region" aria-label={`${op.icao_designator} cancellation claims`} tabIndex={0}>
           <table className="data-table co-table">
             <thead><tr>
               <th scope="col">Claim</th><th scope="col">Units</th><th scope="col">Registry / serials</th><th scope="col">Vintage</th>
@@ -643,6 +644,7 @@ export default function CarbonOversight() {
               {periods.map(p => <option key={p.id} value={p.id}>{p.id} · {p.label}{p.current ? ' (current)' : ''}</option>)}
             </select>
           </label>
+          <button type="button" className="toggle-btn" onClick={() => playStory('corsia-register')} disabled={!reg}>Guided walkthrough</button>
           <button type="button" className="toggle-btn" onClick={() => exportCsv(false)} disabled={!reg}>Export unit claims (CSV)</button>
           <button type="button" className="toggle-btn" onClick={() => exportCsv(true)} disabled={!reg}>Export fuel claims (CSV)</button>
         </div>

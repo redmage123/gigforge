@@ -218,6 +218,58 @@ const RADIO = [
   },
 ]
 
+/** Highlight targets on the CORSIA oversight register page. */
+const CO = {
+  stats: '.co-stats', ops: 'section[aria-labelledby="co-ops-h"]', findings: 'section[aria-labelledby="co-findings-h"]',
+  emis: '#co-emis', claims: '#co-claims', ner: 'section[aria-labelledby="co-ner-h"]', exports: '.co-head-actions',
+}
+/** Open one operator's detail on the register page by clicking its designator in the Operators table. */
+const openOperator = (code) => {
+  const btn = [...document.querySelectorAll(`${CO.ops} button`)].find(b => b.textContent.trim() === code)
+  btn?.click()
+}
+/** Make sure an operator's detail (with its claims) is open before highlighting it. */
+const ensureOperator = async (code) => { if (!document.querySelector('.co-detail')) openOperator(code) }
+
+/** Story steps: how the CORSIA oversight register works, start to finish (no mesh involved). */
+const REGISTER = [
+  {
+    id: 'cr-1', path: '/corsia-oversight', title: 'The register at a glance', seconds: 14, target: CO.stats,
+    body: ['Every airline the Bahamas oversees, for one CORSIA period: what they owe, what they have cancelled, what is still short.'],
+  },
+  {
+    id: 'cr-2', path: '/corsia-oversight', title: 'Airline by airline', seconds: 14, target: CO.ops,
+    body: ['Verified emissions set each airline’s offsetting requirement. Cancelled units and eligible fuel reduce it; the rest is the shortfall.'],
+  },
+  {
+    id: 'cr-3', path: '/corsia-oversight', title: 'Reports checked against the sky', seconds: 15, settleMs: 1200, target: CO.emis,
+    action: () => ensureOperator('EIH'),
+    body: ['Each verified emissions report is compared with the flights BACSWN itself observed in Bahamian airspace.'],
+  },
+  {
+    id: 'cr-4', path: '/corsia-oversight', title: 'Every cancelled unit is a claim', seconds: 15, settleMs: 1500, target: CO.claims,
+    action: () => ensureOperator('EIH'),
+    body: ['Registry, serial numbers, vintage — and a live check against the Bahamas national registry.'],
+  },
+  {
+    id: 'cr-5', path: '/corsia-oversight', title: 'Problems flagged automatically', seconds: 15, target: CO.findings,
+    body: ['Double claims, unauthorised units, missing adjustments and unusual figures. Any finding can be explained by AI on request.'],
+  },
+  {
+    id: 'cr-6', path: '/corsia-oversight', title: 'Linked to the national registry', seconds: 14, target: CO.ner,
+    body: ['Registry statements and letters of authorisation are checked against every claim, so units are counted once.'],
+  },
+  {
+    id: 'cr-7', path: '/corsia-oversight', title: 'A person decides', seconds: 14, settleMs: 1500, target: CO.claims,
+    action: () => ensureOperator('EIH'),
+    body: ['Reviewers verify, reject or reopen each claim, helped by an AI brief. Every decision is kept permanently.'],
+  },
+  {
+    id: 'cr-8', path: '/corsia-oversight', title: 'Reported onwards', seconds: 0, target: CO.exports,
+    body: ['The state exports its claim lists and its report to the registry and ICAO in one click.'],
+  },
+]
+
 /** Every story, in the order shown by StoryLauncher. */
 export const STORIES = [
   { id: 'squall', title: 'How a squall line is caught', minutes: 2, steps: SQUALL,
@@ -226,6 +278,8 @@ export const STORIES = [
     summary: 'A faulty sensor fools two models, but the neighbours’ radar disagrees: no false alarm, and a maintenance ticket instead.' },
   { id: 'radio', title: 'A storm takes out the radio', minutes: 2, steps: RADIO,
     summary: 'A squall brings down Chub Cay’s VHF mast: its links switch to satellite, stay connected, and switch back once the repaired radio is stable.' },
+  { id: 'corsia-register', title: 'How the CORSIA register works', minutes: 2, steps: REGISTER, mesh: false,
+    summary: 'From an airline’s verified report to the state’s decision: requirement, claims, automatic checks, the national registry, review and reporting.' },
   { id: 'cut_off', title: 'Cut off from the hub', minutes: 2, steps: CUT_OFF,
     summary: 'The southern islands lose every link, keep working through a storm, queue their alerts and deliver them when links return.' },
 ]

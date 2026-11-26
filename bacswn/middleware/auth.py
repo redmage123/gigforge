@@ -17,6 +17,8 @@ from services.auth import decode_token
 
 PUBLIC_PATHS = (
     "/api/auth/login",
+    "/api/live/",  # audience phones at a talk: no account (see api/live_audience.py)
+    "/api/hurricane/coastal-replay",  # public NOAA track over illustrative projects (phone companion)
     "/health",
     "/static/",
     "/favicon.ico",

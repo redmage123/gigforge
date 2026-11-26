@@ -36,7 +36,8 @@ export function authHeaders(extra = {}) {
 function endSession() {
   localStorage.removeItem('token')
   localStorage.removeItem('user')
-  if (!window.location.pathname.startsWith('/login')) {
+  // The audience page (/live) works without an account, so never bounce it to the login screen.
+  if (!window.location.pathname.startsWith('/login') && !window.location.pathname.startsWith('/live')) {
     window.location.href = '/login'
   }
 }

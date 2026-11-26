@@ -87,14 +87,11 @@ export default function Training() {
     setSending(true)
     setSendError('')
     try {
-      await api.request('/api/training/contact', {
-        method: 'POST',
-        body: JSON.stringify({
-          person_id: contactPerson.id,
-          channel: msgChannel,
-          message: msgText,
-          sender_name: 'BACSWN Control',
-        }),
+      await api.post('/api/training/contact', {
+        person_id: contactPerson.id,
+        channel: msgChannel,
+        message: msgText,
+        sender_name: 'BACSWN Control',
       })
       setMsgSent(true)
       setTimeout(() => { setMsgSent(false); setMsgText(''); setMsgChannel(null) }, 3000)

@@ -30,7 +30,9 @@ class RateLimiter(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         """Count the request against the caller's IP and answer 429 when over the limit."""
         # The demo-pause poll is tiny and must keep working, so it is not counted.
-        if not request.url.path.startswith("/api/") or request.url.path == "/api/demo/pause":
+        if (not request.url.path.startswith("/api/") or request.url.path == "/api/demo/pause"
+                or request.url.path.startswith("/api/live/")
+                or request.url.path == "/api/hurricane/coastal-replay"):  # cached; a whole room shares one IP
             return await call_next(request)
 
         client_ip = request.client.host if request.client else "unknown"

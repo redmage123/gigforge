@@ -206,3 +206,25 @@ class TestSQLInjectionGuards:
         for table in allowed_tables:
             rows = await db_select(table)
             assert isinstance(rows, list), f"Table {table!r} should be selectable"
+
+
+class TestKeyValidation:
+    """Column names used as dict keys in the generic helpers must be plain identifiers."""
+
+    @pytest.mark.asyncio
+    async def test_injected_key_is_rejected(self):
+        """A key carrying SQL is refused before any query runs."""
+        from services.database import db_select, db_insert
+        from services.errors import BacswnValidationError
+        with pytest.raises(BacswnValidationError):
+            await db_select("users", where={"1=1; DROP TABLE users; --": 1})
+        with pytest.raises(BacswnValidationError):
+            await db_insert("users", {"username) VALUES ('x'); --": "y"})
+
+    @pytest.mark.asyncio
+    async def test_delete_without_where_is_refused(self):
+        """An empty where clause would otherwise delete nothing or error obscurely; it is refused."""
+        from services.database import db_delete
+        from services.errors import BacswnValidationError
+        with pytest.raises(BacswnValidationError):
+            await db_delete("users", {})

@@ -1,7 +1,16 @@
 """BACSWN — Forecast Verification API router.
 
-Exposes the forecast-skill scoreboard: how accurate the platform's forecasts
-were against what was actually observed at each station.
+What: exposes the forecast-skill scoreboard (how accurate the platform's
+forecasts were against what was actually observed at each station), the IFR/LIFR
+warning scores, the bias-correction comparison and the operations briefing.
+
+Why: a forecast product is only credible if its skill is measured and shown;
+watch officers also need to know how far to trust today's guidance.
+
+How: thin handlers over ``services.forecast_verification`` (ledger metrics),
+``services.forecast_correction`` (cached MOS scoreboard) and
+``services.briefing``. Look-back windows are clamped to 1 h..90 days; the
+capture and backfill triggers are limited to admin/supervisor users.
 """
 
 from fastapi import APIRouter, Request
@@ -9,8 +18,16 @@ from fastapi import APIRouter, Request
 from services import forecast_verification as fv
 from services import forecast_correction as fc
 from services import briefing as br
+from services.errors import BacswnPermissionError, BacswnValidationError
 
 router = APIRouter()
+
+_MAX_WINDOW_HOURS = 24 * 90
+
+
+def _clamp_window(window_hours: int) -> int:
+    """Clamp a requested look-back window to 1 hour .. 90 days."""
+    return max(1, min(window_hours, _MAX_WINDOW_HOURS))
 
 
 @router.get("/briefing")
@@ -32,29 +49,25 @@ async def get_correction():
 @router.get("/scoreboard")
 async def get_scoreboard(window_hours: int = 168):
     """Headline forecast-verification metrics over the given window."""
-    window_hours = max(1, min(window_hours, 24 * 90))
-    return await fv.scoreboard(window_hours)
+    return await fv.scoreboard(_clamp_window(window_hours))
 
 
 @router.get("/warnings")
 async def get_warnings(window_hours: int = 168):
     """IFR/LIFR warning verification — POD, FAR, CSI, HSS (safety-critical view)."""
-    window_hours = max(1, min(window_hours, 24 * 90))
-    return await fv.warning_scoreboard(window_hours)
+    return await fv.warning_scoreboard(_clamp_window(window_hours))
 
 
 @router.get("/stations")
 async def get_station_leaderboard(window_hours: int = 168):
     """Per-station forecast-accuracy leaderboard."""
-    window_hours = max(1, min(window_hours, 24 * 90))
-    return {"stations": await fv.station_leaderboard(window_hours)}
+    return {"stations": await fv.station_leaderboard(_clamp_window(window_hours))}
 
 
 @router.get("/station/{station_id}")
 async def get_station_detail(station_id: str, window_hours: int = 168):
     """Full verification breakdown for a single station (detail card)."""
-    window_hours = max(1, min(window_hours, 24 * 90))
-    return await fv.station_detail(station_id, window_hours)
+    return await fv.station_detail(station_id, _clamp_window(window_hours))
 
 
 @router.get("/timeseries")
@@ -62,7 +75,7 @@ async def get_timeseries(station: str = "MYNN", variable: str = "temp_c",
                          lead_h: int = 6, limit: int = 48):
     """Forecast-vs-observed pairs for one station/variable/lead (for charting)."""
     if variable not in fv.CONTINUOUS and variable != fv.CATEGORICAL:
-        return {"error": f"Unknown variable: {variable}"}
+        raise BacswnValidationError(f"Unknown variable: {variable}")
     return await fv.timeseries(station, variable, lead_h, max(1, min(limit, 240)))
 
 
@@ -78,6 +91,7 @@ async def get_meta():
 
 
 def _is_admin(request: Request) -> bool:
+    """True if the authenticated user (set on ``request.state`` by the auth middleware) is admin or supervisor."""
     user = getattr(request.state, "user", None)
     return bool(user) and user.get("role") in ("admin", "supervisor")
 
@@ -86,7 +100,7 @@ def _is_admin(request: Request) -> bool:
 async def trigger_capture(request: Request):
     """Run a capture + match cycle now (admin/supervisor)."""
     if not _is_admin(request):
-        return {"error": "Admin privileges required"}
+        raise BacswnPermissionError("Admin privileges required")
     captured = await fv.capture_forecasts()
     verified = await fv.match_pending()
     return {"captured": captured, "verified": verified}
@@ -96,5 +110,5 @@ async def trigger_capture(request: Request):
 async def trigger_backfill(request: Request, days: int = 7):
     """Backfill the scoreboard from Open-Meteo reanalysis (admin/supervisor)."""
     if not _is_admin(request):
-        return {"error": "Admin privileges required"}
+        raise BacswnPermissionError("Admin privileges required")
     return await fv.backfill(max(1, min(days, 30)))

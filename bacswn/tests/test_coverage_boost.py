@@ -776,11 +776,12 @@ class TestWeatherBoost:
         assert resp.json()["station_id"] == "MYNN"
 
     async def test_forecast_unknown_station_returns_error(self, client: AsyncClient, auth_token: str):
+        """An unknown station is a 404 with an error message (it used to be a 200)."""
         resp = await client.get(
             "/api/weather/forecast/XXXX",
             headers={"Authorization": f"Bearer {auth_token}"},
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 404
         assert "error" in resp.json()
 
     async def test_all_forecasts_endpoint(self, client: AsyncClient, auth_token: str):

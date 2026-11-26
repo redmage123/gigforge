@@ -1,17 +1,21 @@
-import HoverTip from '../a11y/HoverTip'
-import { HAZARD_COLORS, VERDICT_EXAMPLES, hz } from './PrecogChamber'
-
 /**
  * Every consensus and fault state at once, as static station cards that never
  * change. Built for presenting: no live data, so nothing moves while you explain
  * it. Hover, focus or tap a card for what it means, when it happens, and how to
  * make it appear live on the Mesh page.
+ *
+ * How: STATES is hand-written example data in the shape of a live station;
+ * each card is the label of a HoverTip whose popup holds the explanation.
  */
+import HoverTip from '../a11y/HoverTip'
+import { HAZARD_COLORS, VERDICT_EXAMPLES, hz } from './PrecogChamber'
+
 
 const OFF = '#64748b'                                  // offline marker
 const C = (call) => HAZARD_COLORS[call] || OFF          // marker colour (graphics)
 const T = (call) => (call ? hz(call) : 'var(--text-secondary)')  // text colour, contrast-safe in both themes
 
+/** One example per state: the station card's content plus means / when / show for the popup. */
 const STATES = [
   {
     id: 'agree', title: 'All three models agree', station: 'MYNN', name: 'Nassau', status: 'HEALTHY', call: 'CLEAR',
@@ -95,8 +99,10 @@ const STATES = [
   },
 ]
 
+/** Station status -> badge colour. */
 const STATUS_BADGE = { HEALTHY: 'green', CAUTION: 'amber', DEGRADED: 'red', OFFLINE: 'grey' }
 
+/** A static station card for example state `s`, styled like the live map markers. */
 function Card({ s }) {
   const color = s.call ? C(s.call) : OFF
   return (
@@ -130,6 +136,7 @@ function Card({ s }) {
   )
 }
 
+/** The "Every state at a glance" section of the Station & Model Guide. */
 export default function StateGallery() {
   return (
     <section className="card mg-section sg" aria-labelledby="mg-glance">

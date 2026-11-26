@@ -1,9 +1,20 @@
+/**
+ * Dialog: the app's one modal dialog component (alert details and others).
+ *
+ * Why: the native <dialog> provides the focus trap, Esc handling and inert
+ * background; this wrapper adds the remaining WCAG requirements (focus to the
+ * title on open, focus returned to the opener, a labelled scrollable body).
+ * How: `open` drives showModal()/close(); every way of closing (Esc, the Close
+ * button, a backdrop click) goes through the element's close event -> onClose.
+ */
 import { useEffect, useId, useRef } from 'react'
 
 /**
  * Accessible modal dialog on the native <dialog> element: focus is moved to the
  * title on open and kept inside, Esc closes, a backdrop click closes, and focus
  * returns to whatever opened it (WCAG 2.1.2, 2.4.3, 4.1.2).
+ * @param {{open: boolean, title: string, onClose?: () => void, children?: any,
+ *   wide?: boolean, actions?: any}} props `actions`: extra buttons beside Close
  */
 export default function Dialog({ open, title, onClose, children, wide = false, actions = null }) {
   const ref = useRef(null)
@@ -25,6 +36,7 @@ export default function Dialog({ open, title, onClose, children, wide = false, a
 
   // Return focus once the dialog has closed (on unmount too).
   useEffect(() => () => { opener.current?.focus?.() }, [])
+  /** Native close event: notify the parent, then return focus to the opener. */
   const handleClose = () => {
     onClose?.()
     requestAnimationFrame(() => opener.current?.focus?.())

@@ -1,10 +1,33 @@
+/**
+ * Sensor Network page.
+ *
+ * What: health overview and per-station cards for the Bahamas weather-station grid.
+ * Why: lets forecasters see at a glance which stations are reporting and what they observe.
+ * How: polls `api.sensorGrid()` every 60 s; renders four summary stat cards (total,
+ * operational, no data, network health %) and one card per station with its latest
+ * temperature, wind, visibility, elevation, flight category and position.
+ */
 import { useCallback } from 'react'
 import { api } from '../api/client'
 import { usePolling } from '../hooks/usePolling'
 import LiveBadge from '../components/LiveBadge'
 
+/**
+ * A muted "Label: " prefix followed by a value, used for each reading on a station card.
+ * @param {{label: string, children: React.ReactNode}} props
+ */
+function StationMetric({ label, children }) {
+  return (
+    <div>
+      <span style={{color: 'var(--text-muted)'}}>{label}: </span>
+      {children}
+    </div>
+  )
+}
+
+/** Station-grid health dashboard, refreshed every minute. */
 export default function SensorNetwork() {
-  const { data, loading } = usePolling(useCallback(() => api.sensorGrid(), []), 60000)
+  const { data } = usePolling(useCallback(() => api.sensorGrid(), []), 60000)
 
   const stations = data?.stations || []
   const healthPct = data?.health_pct ?? 0
@@ -54,22 +77,10 @@ export default function SensorNetwork() {
               </div>
               <div style={{fontSize: 13, color: 'var(--text-secondary)', marginBottom: 8}}>{s.name}</div>
               <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, fontSize: 13}}>
-                <div>
-                  <span style={{color: 'var(--text-muted)'}}>Temp: </span>
-                  {s.temp_c != null ? `${s.temp_c}°C` : '—'}
-                </div>
-                <div>
-                  <span style={{color: 'var(--text-muted)'}}>Wind: </span>
-                  {s.wind_speed_kt != null ? `${s.wind_speed_kt}kt` : '—'}
-                </div>
-                <div>
-                  <span style={{color: 'var(--text-muted)'}}>Vis: </span>
-                  {s.visibility_sm != null ? `${s.visibility_sm}SM` : '—'}
-                </div>
-                <div>
-                  <span style={{color: 'var(--text-muted)'}}>Elev: </span>
-                  {s.elevation_ft}ft
-                </div>
+                <StationMetric label="Temp">{s.temp_c != null ? `${s.temp_c}°C` : '—'}</StationMetric>
+                <StationMetric label="Wind">{s.wind_speed_kt != null ? `${s.wind_speed_kt}kt` : '—'}</StationMetric>
+                <StationMetric label="Vis">{s.visibility_sm != null ? `${s.visibility_sm}SM` : '—'}</StationMetric>
+                <StationMetric label="Elev">{s.elevation_ft}ft</StationMetric>
               </div>
               <div style={{marginTop: 8, fontSize: 11, color: 'var(--text-muted)'}}>
                 {s.lat.toFixed(3)}°N, {Math.abs(s.lon).toFixed(3)}°W | {s.status}

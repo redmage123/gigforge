@@ -1,6 +1,16 @@
-import Dialog from '../a11y/Dialog'
-
 /**
+ * AlertDetails: the dialog that opens from an operational alert.
+ *
+ * Why: a banner has room for one line; a controller deciding whether to warn
+ * an aircraft needs the advice, the geometry and how sure the mesh is.
+ * How: looks the alert's conflict / hazard up in the latest airspace picture
+ * (live values) and falls back to the snapshot stored on the alert.
+ */
+import Dialog from '../a11y/Dialog'
+import { compass } from '../compass'
+import { SEVERITY_LABEL } from './AlertCenter'
+
+/*
  * Details for one operational alert. Flight alerts (an aircraft predicted to enter,
  * or already inside, a mesh hazard) get the full picture: the advice, the aircraft,
  * the hazard, the encounter geometry and why the alert has its severity. While the
@@ -9,23 +19,26 @@ import Dialog from '../a11y/Dialog'
  * when the alert was raised.
  */
 
-const SEVERITY_LABEL = { severe: 'SEVERE', high: 'HIGH', moderate: 'MODERATE', low: 'ADVISORY' }
+/** Plain-language description of each hazard kind. */
 const HAZARD_KIND = {
   SQUALL: 'Squall line: a band of severe thunderstorms with strong gusts, turbulence and heavy rain.',
   TSRA: 'Thunderstorm with rain: turbulence, wind shear, lightning and possible hail.',
   IFR: 'Low cloud or poor visibility (instrument conditions), affecting flight below 10,000 ft.',
 }
+/** What each hazard verification status means. */
 const HAZARD_STATUS = {
   confirmed: 'Confirmed: verified by neighbouring stations and satellite.',
   detected: 'Detected: reported by the mesh, not yet independently verified.',
   tracked: 'Tracked: the mesh is following the cell, not yet verified.',
 }
-const COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']
-const compass = (d) => COMPASS[Math.round(((d % 360) + 360) % 360 / 45) % 8]
+/** Latitude / longitude as "25.04°N 77.47°W". */
 const pos = (lat, lon) => `${Math.abs(lat).toFixed(2)}°${lat >= 0 ? 'N' : 'S'} ${Math.abs(lon).toFixed(2)}°${lon >= 0 ? 'E' : 'W'}`
+/** Heading as three digits, e.g. "045°". */
 const hdg = (d) => String(Math.round(((d % 360) + 360) % 360)).padStart(3, '0') + '°'
+/** 24-hour HH:MM:SS in the user's locale. */
 const fmtTime = (d) => d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
 
+/** Why a flight conflict has its severity, in one sentence. */
 function severityReason(c) {
   if (c.inside) return `${c.severity === 'severe' ? 'Severe' : 'High'}: the aircraft is already inside the ${c.hazard_status === 'confirmed' ? 'confirmed ' : ''}hazard.`
   if (c.severity === 'severe') return 'Severe: entry within 10 minutes into a confirmed hazard.'
@@ -33,6 +46,7 @@ function severityReason(c) {
   return 'Moderate: entry predicted within the 30-minute look-ahead.'
 }
 
+/** Definition list of [label, value] rows; falsy rows are skipped (for optional facts). */
 function Facts({ rows }) {
   return (
     <dl className="ad-facts">
@@ -43,6 +57,7 @@ function Facts({ rows }) {
   )
 }
 
+/** The facts about one hazard area. */
 function HazardFacts({ h }) {
   return (
     <Facts rows={[
@@ -59,6 +74,7 @@ function HazardFacts({ h }) {
   )
 }
 
+/** Body for a flight alert: live/stale status, advice, aircraft, encounter and hazard. */
 function FlightDetails({ alert, airspace }) {
   const snap = alert.conflict
   const live = airspace?.conflicts?.find(c => c.icao24 === snap.icao24 && c.hazard_id === snap.hazard_id)
@@ -111,6 +127,7 @@ function FlightDetails({ alert, airspace }) {
   )
 }
 
+/** Body for a hazard alert: live/stale status, the hazard, and the aircraft predicted to enter it. */
 function HazardDetails({ alert, airspace }) {
   const h = airspace?.hazards?.find(x => x.id === alert.hazard.id)
   const affected = (airspace?.conflicts || []).filter(c => c.hazard_id === alert.hazard.id)
@@ -135,6 +152,12 @@ function HazardDetails({ alert, airspace }) {
   )
 }
 
+/**
+ * The details dialog for `alert` (closed when `alert` is null).
+ * @param {{alert: object|null, airspace: object|null, onClose: () => void,
+ *   onDismiss: (id: any) => void, onLocate?: (where: object) => void}} props
+ *   `airspace`: latest mesh airspace picture; `onLocate` shows the aircraft or hazard on the map
+ */
 export default function AlertDetails({ alert, airspace, onClose, onDismiss, onLocate }) {
   if (!alert) return <Dialog open={false} title="" onClose={onClose} />
   const where = alert.conflict

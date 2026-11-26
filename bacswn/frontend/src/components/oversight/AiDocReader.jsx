@@ -1,14 +1,21 @@
+/**
+ * AI document readers for the CORSIA oversight forms.
+ *
+ * What: AiDocReader (upload a verified emissions report or a unit cancellation
+ * certificate and pre-fill the matching form) and AiResult (the shared summary
+ * of what the AI read: fields filled, warnings, comparisons, notes, evidence).
+ *
+ * Why: transcribing figures from PDFs is slow and error-prone; the AI does the
+ * reading, the server checks the result, and a person verifies and records.
+ *
+ * How: the upload uses the shared aiUpload helpers; nothing is recorded until
+ * the administrator submits the form as usual.
+ */
 import { useId, useState } from 'react'
 import { api } from '../../api/client'
-import { ACCEPT_ANY, ACCEPT_DOCS, fillForm, uploadBody } from './aiUpload'
+import { ACCEPT_ANY, ACCEPT_DOCS, fillForm, filledAnnouncement, uploadBody } from './aiUpload'
 
-/**
- * AI-assisted entry: read a document and pre-fill the form `formId`. Nothing is
- * recorded; the administrator checks every highlighted field and submits as usual.
- * Warnings come from the server's own checks, not from the AI.
- *
- * kind: 'report' (verified emissions report) | 'cancellation' (unit cancellation certificate)
- */
+/** Visible wording per document kind. */
 const COPY = {
   report: { title: 'Fill from emissions report (AI)', button: 'Read report',
     hint: 'PDF or image of the verified emissions report or verification statement, up to 10 MB.' },
@@ -16,6 +23,14 @@ const COPY = {
     hint: 'PDF, image or text of the registry cancellation / retirement certificate, up to 10 MB.' },
 }
 
+/**
+ * AI-assisted entry: read a document and pre-fill the form `formId`. Nothing is
+ * recorded; the administrator checks every highlighted field and submits as usual.
+ * Warnings come from the server's own checks, not from the AI.
+ * @param {{kind: 'report'|'cancellation', labels: object, formId: string, operatorId: number,
+ *   period: string, onFilled?: (message: string) => void}} props
+ *   `kind`: verified emissions report | unit cancellation certificate; `labels`: field name -> label
+ */
 export default function AiDocReader({ kind, labels, formId, operatorId, period, onFilled }) {
   const id = useId()
   const [file, setFile] = useState(null)
@@ -24,6 +39,7 @@ export default function AiDocReader({ kind, labels, formId, operatorId, period, 
   const [result, setResult] = useState(null)
   const copy = COPY[kind]
 
+  /** Upload the chosen file, fill the form and announce the outcome. */
   const read = async () => {
     if (!file) return
     setBusy(true); setError(''); setResult(null)
@@ -31,7 +47,7 @@ export default function AiDocReader({ kind, labels, formId, operatorId, period, 
       const r = await api.oversightAiRead(kind, await uploadBody(file, { operator_id: operatorId, period }))
       const filled = fillForm(formId, r.fields, labels, r.provenance)
       setResult({ ...r, filled })
-      onFilled?.(`${filled.length} fields filled from ${file.name}. ${r.warnings.length} warning${r.warnings.length === 1 ? '' : 's'}. Check every field before recording.`)
+      onFilled?.(filledAnnouncement(filled, file.name, r.warnings))
     } catch (e) { setError(e.message) } finally { setBusy(false) }
   }
 
@@ -57,6 +73,10 @@ export default function AiDocReader({ kind, labels, formId, operatorId, period, 
   )
 }
 
+/**
+ * Summary of an AI document read (used by AiDocReader and the letters-of-authorisation reader).
+ * @param {{result: object, labels?: object}} props `result.filled` is optional (absent: nothing filled is listed)
+ */
 export function AiResult({ result, labels = {} }) {
   return (
     <div className="cert-result">

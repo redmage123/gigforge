@@ -1,4 +1,15 @@
-"""BACSWN — WebSocket feeds for real-time data (token-authenticated)."""
+"""BACSWN — WebSocket feeds for real-time data (token-authenticated).
+
+What: ``/ws/flights``, ``/ws/weather``, ``/ws/agents``, ``/ws/alerts`` and ``/ws/sigmets``,
+each subscribing the client to the ``ws_manager`` channel of the same name.
+
+Why: browsers cannot send an Authorization header on a WebSocket upgrade, so the auth
+middleware lets upgrades through and these endpoints authenticate them themselves.
+
+How: the JWT arrives as ``?token=``; an invalid or missing token closes the socket with
+code 4001. A valid client is subscribed and kept open until it disconnects; data is
+pushed by the broadcasters, and anything the client sends is ignored.
+"""
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
 from services.auth import decode_token
@@ -24,66 +35,43 @@ async def _authenticate_ws(websocket: WebSocket, token: str | None) -> dict | No
     return payload
 
 
-@router.websocket("/flights")
-async def ws_flights(websocket: WebSocket, token: str | None = Query(default=None)):
-    """WebSocket feed for live flight updates."""
+async def _serve_feed(websocket: WebSocket, token: str | None, channel: str) -> None:
+    """Authenticate, subscribe to ``channel`` and hold the socket open until the client leaves."""
     if not await _authenticate_ws(websocket, token):
         return
-    await ws_manager.connect(websocket, "flights")
+    await ws_manager.connect(websocket, channel)
     try:
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
-        ws_manager.disconnect(websocket, "flights")
+        ws_manager.disconnect(websocket, channel)
+
+
+@router.websocket("/flights")
+async def ws_flights(websocket: WebSocket, token: str | None = Query(default=None)):
+    """WebSocket feed for live flight updates."""
+    await _serve_feed(websocket, token, "flights")
 
 
 @router.websocket("/weather")
 async def ws_weather(websocket: WebSocket, token: str | None = Query(default=None)):
     """WebSocket feed for weather updates."""
-    if not await _authenticate_ws(websocket, token):
-        return
-    await ws_manager.connect(websocket, "weather")
-    try:
-        while True:
-            await websocket.receive_text()
-    except WebSocketDisconnect:
-        ws_manager.disconnect(websocket, "weather")
+    await _serve_feed(websocket, token, "weather")
 
 
 @router.websocket("/agents")
 async def ws_agents(websocket: WebSocket, token: str | None = Query(default=None)):
     """WebSocket feed for agent activity."""
-    if not await _authenticate_ws(websocket, token):
-        return
-    await ws_manager.connect(websocket, "agents")
-    try:
-        while True:
-            await websocket.receive_text()
-    except WebSocketDisconnect:
-        ws_manager.disconnect(websocket, "agents")
+    await _serve_feed(websocket, token, "agents")
 
 
 @router.websocket("/alerts")
 async def ws_alerts(websocket: WebSocket, token: str | None = Query(default=None)):
     """WebSocket feed for emergency alerts."""
-    if not await _authenticate_ws(websocket, token):
-        return
-    await ws_manager.connect(websocket, "alerts")
-    try:
-        while True:
-            await websocket.receive_text()
-    except WebSocketDisconnect:
-        ws_manager.disconnect(websocket, "alerts")
+    await _serve_feed(websocket, token, "alerts")
 
 
 @router.websocket("/sigmets")
 async def ws_sigmets(websocket: WebSocket, token: str | None = Query(default=None)):
     """WebSocket feed for live SIGMET updates (including simulation-generated)."""
-    if not await _authenticate_ws(websocket, token):
-        return
-    await ws_manager.connect(websocket, "sigmets")
-    try:
-        while True:
-            await websocket.receive_text()
-    except WebSocketDisconnect:
-        ws_manager.disconnect(websocket, "sigmets")
+    await _serve_feed(websocket, token, "sigmets")

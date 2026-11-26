@@ -21,6 +21,14 @@ simulation:
   lightning causes short outages of terrestrial equipment. The satellite terminal
   is the survivable element (§7.2) and is not damaged by weather. Damaged
   equipment is repaired after a realistic delay.
+
+Why a separate module: transport (which radio carries a hop and why it changed)
+is a concern of its own, independent of the weather models and voting.
+
+How: equipment state lives in ``node["comms"]`` and channel state on each link
+dict (``channels``, ``active``, ``better_since``). ``update`` runs once per tick
+using the simulation's dedicated comms random stream, so weather damage does not
+shift the random sequence of the weather or model code.
 """
 
 from __future__ import annotations
@@ -49,6 +57,7 @@ LIGHTNING_REPAIR = (2, 4)
 
 
 def station_channels(code: str) -> list[str]:
+    """Channels a station has equipment for, fastest first."""
     out = ["vhf", "satellite"]
     if code not in NO_CELLULAR:
         out.append("cellular")
@@ -58,6 +67,7 @@ def station_channels(code: str) -> list[str]:
 
 
 def new_equipment(code: str) -> dict:
+    """Initial (all working) equipment state for a station, one entry per channel it has."""
     return {ch: {"up": True, "cause": None, "until": None, "since": None} for ch in station_channels(code)}
 
 
@@ -77,10 +87,13 @@ def link_channels(a: str, b: str, d_deg: float, hub: str, radio_range_deg: float
 
 
 def latency_ms(channel: str, d_deg: float) -> int:
+    """Link latency for a channel over a distance in degrees (base latency + 12 ms/degree)."""
     return int(BASE_LATENCY_MS[channel] + d_deg * 12)
 
 
 def channel_ok(sim, link: dict, ch: str) -> bool:
+    """Whether channel `ch` works on `link`: both stations alive, both ends' equipment up,
+    and health monitoring has not marked it impaired."""
     # "impaired": channel-health monitoring (services/mesh_health.py) sees the channel down although the
     # equipment works (VHF interference, no second cellular carrier).
     return (all(sim.nodes[s]["alive"] and sim.nodes[s]["comms"].get(ch, {}).get("up") for s in (link["a"], link["b"]))
@@ -88,6 +101,7 @@ def channel_ok(sim, link: dict, ch: str) -> bool:
 
 
 def _why_down(sim, link: dict, ch: str) -> str:
+    """Human-readable reason channel `ch` is not working on `link`."""
     for s in (link["a"], link["b"]):
         n = sim.nodes[s]
         if not n["alive"]:
@@ -99,6 +113,7 @@ def _why_down(sim, link: dict, ch: str) -> str:
 
 
 def set_active(sim, link: dict, ch: str | None) -> None:
+    """Make `ch` the link's active channel (None = no working channel) and update its latency."""
     link["active"] = ch
     link["type"] = ch or link["channels"][0]
     if ch:
@@ -106,6 +121,7 @@ def set_active(sim, link: dict, ch: str | None) -> None:
 
 
 def init_link(sim, link: dict) -> None:
+    """Start a new link on its preferred (fastest) channel."""
     link["better_since"] = None
     set_active(sim, link, link["channels"][0])
 
@@ -122,6 +138,7 @@ def damage(sim, station: str, channel: str, cause: str, repair_ticks: int | None
 
 
 def repair(sim, station: str, channel: str, how: str = "repaired") -> bool:
+    """Return a station's `channel` equipment to service. Returns False if it has none / is already up."""
     eq = sim.nodes[station]["comms"].get(channel)
     if not eq or eq["up"]:
         return False
@@ -131,6 +148,7 @@ def repair(sim, station: str, channel: str, how: str = "repaired") -> bool:
 
 
 def _weather(sim, rng) -> None:
+    """Roll weather damage at every live station: squall gusts and lightning near strong echoes."""
     for code, n in sim.nodes.items():
         if not n["alive"]:
             continue
@@ -147,6 +165,7 @@ def _weather(sim, rng) -> None:
 
 
 def _repairs(sim) -> None:
+    """Return equipment whose repair time has passed to service."""
     for code, n in sim.nodes.items():
         for ch, eq in n["comms"].items():
             if not eq["up"] and eq["until"] is not None and sim.tick >= eq["until"]:
@@ -154,6 +173,7 @@ def _repairs(sim) -> None:
 
 
 def sim_minutes(sim) -> int:
+    """Simulated minutes per tick (imported lazily: mesh_network imports this module)."""
     from services.mesh_network import SIM_MINUTES_PER_TICK
     return SIM_MINUTES_PER_TICK
 
@@ -169,6 +189,8 @@ def _culprit(sim, link: dict, ch: str | None) -> str:
 
 
 def _select(sim) -> None:
+    """Choose each link's channel: fail over at once when the active one breaks, fail back to a
+    faster one only after it has been healthy for HYSTERESIS_TICKS."""
     for link in sim.links.values():
         healthy = [ch for ch in link["channels"] if channel_ok(sim, link, ch)]
         cur = link["active"]
@@ -205,6 +227,7 @@ def update(sim, rng) -> None:
 
 
 def link_view(sim, link: dict) -> dict:
+    """Public comms view of a link: per-channel health, active vs preferred channel, pending failback."""
     chans = []
     for ch in link["channels"]:
         ok = channel_ok(sim, link, ch)
@@ -220,4 +243,5 @@ def link_view(sim, link: dict) -> dict:
 
 
 def station_view(n: dict) -> list[dict]:
+    """Public view of a station's equipment: each channel, whether it is up, and why not."""
     return [{"type": ch, "up": eq["up"], "cause": eq["cause"]} for ch, eq in n["comms"].items()]

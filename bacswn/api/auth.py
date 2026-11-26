@@ -1,4 +1,14 @@
-"""BACSWN — Auth API router (login, register, logout, me)."""
+"""BACSWN — auth API router (login, register, logout, me).
+
+What: ``POST /login``, ``POST /register`` (admin only), ``POST /logout`` and ``GET /me``.
+
+Why: the browser client needs to sign in, sign out and learn who it is; admins need
+to create accounts (there is no public self-registration).
+
+How: thin handlers over ``services.auth``. Login enforces the per-username lockout and
+returns the JWT both in the body and as an httponly ``access_token`` cookie. Errors are
+returned as ``{"error": ...}`` JSON responses with the appropriate status.
+"""
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
@@ -12,11 +22,15 @@ router = APIRouter()
 
 
 class LoginRequest(BaseModel):
+    """Credentials posted to ``/login``."""
+
     username: str
     password: str
 
 
 class RegisterRequest(BaseModel):
+    """New account details posted to ``/register`` by an administrator."""
+
     username: str
     password: str
     confirm_password: str
@@ -28,6 +42,7 @@ class RegisterRequest(BaseModel):
 
 @router.post("/login")
 async def login(req: LoginRequest):
+    """Check credentials and issue a JWT (body + cookie); 429 when locked out, 401 on failure."""
     if check_lockout(req.username):
         return JSONResponse(status_code=429, content={"error": "Too many failed attempts. Try again in 5 minutes."})
 
@@ -88,6 +103,7 @@ async def register(req: RegisterRequest, request: Request):
 
 @router.post("/logout")
 async def logout():
+    """Clear the ``access_token`` cookie (the JWT itself stays valid until it expires)."""
     response = JSONResponse(content={"message": "Logged out"})
     response.delete_cookie("access_token")
     return response
@@ -95,6 +111,7 @@ async def logout():
 
 @router.get("/me")
 async def me(request: Request):
+    """Return the signed-in user's profile, or 404 if the account no longer exists."""
     user_data = request.state.user
     user = await get_user(user_data["sub"])
     if not user:

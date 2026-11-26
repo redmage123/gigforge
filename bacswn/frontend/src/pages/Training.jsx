@@ -1,8 +1,20 @@
+/**
+ * Training & Certification page.
+ *
+ * What: meteorologist roster, certification counts, training-module progress, and a
+ * dialog for messaging a staff member over WhatsApp, Telegram, SMS, email or VHF radio.
+ * Why: the Met Department must track staff qualifications and renewals, and reach
+ * people quickly.
+ * How: polls `api.roster()`, `api.trainingModules()` and `api.certifications()` every
+ * 2 minutes. Selecting a name opens the accessible Dialog; Send posts to
+ * /api/training/contact.
+ */
 import { useCallback, useState } from 'react'
 import { api } from '../api/client'
 import { usePolling } from '../hooks/usePolling'
 import Dialog from '../components/a11y/Dialog'
 
+/** Channels offered in the contact dialog (icon is a short text glyph, colour the selected accent). */
 const CHANNELS = [
   { id: 'whatsapp', name: 'WhatsApp', icon: 'WA', color: '#25D366' },
   { id: 'telegram', name: 'Telegram', icon: 'TG', color: '#0088cc' },
@@ -11,19 +23,27 @@ const CHANNELS = [
   { id: 'radio', name: 'VHF Radio', icon: 'RF', color: '#10b981' },
 ]
 
+/** Per-person contact details, keyed by roster id. Must match the backend's CONTACT_INFO. */
+const CONTACTS = {
+  1: {email: 'sarah.thompson@bacswn.bs', telegram: '@sarah_thompson_met', phone: '+1 242-555-0101'},
+  2: {email: 'james.williams@bacswn.bs', telegram: '@jwilliams_met', phone: '+1 242-555-0102'},
+  3: {email: 'maria.rodriguez@bacswn.bs', telegram: '@mrodriguez_met', phone: '+1 242-555-0103'},
+  4: {email: 'david.chen@bacswn.bs', telegram: '@dchen_met', phone: '+1 242-555-0104'},
+  5: {email: 'keisha.johnson@bacswn.bs', telegram: '@kjohnson_met', phone: '+1 242-555-0105'},
+  6: {email: 'robert.bain@bacswn.bs', telegram: '@rbain_met', phone: '+1 242-555-0106'},
+  7: {email: 'patricia.knowles@bacswn.bs', telegram: '@pknowles_met', phone: '+1 242-555-0107'},
+  8: {email: 'andrew.rolle@bacswn.bs', telegram: '@arolle_met', phone: '+1 242-555-0108'},
+}
+
+/**
+ * The address a message to `person` would go to on `channel`, falling back to a
+ * pattern derived from the name/id for people not in CONTACTS.
+ * @param {{id: number, name: string}} person roster entry
+ * @param {string} channel a CHANNELS id
+ * @returns {string} email, Telegram handle, phone number or radio frequency ('' for unknown channels)
+ */
 function getContact(person, channel) {
-  // Real contact info — matches backend CONTACT_INFO
-  const contacts = {
-    1: {email: 'sarah.thompson@bacswn.bs', telegram: '@sarah_thompson_met', phone: '+1 242-555-0101'},
-    2: {email: 'james.williams@bacswn.bs', telegram: '@jwilliams_met', phone: '+1 242-555-0102'},
-    3: {email: 'maria.rodriguez@bacswn.bs', telegram: '@mrodriguez_met', phone: '+1 242-555-0103'},
-    4: {email: 'david.chen@bacswn.bs', telegram: '@dchen_met', phone: '+1 242-555-0104'},
-    5: {email: 'keisha.johnson@bacswn.bs', telegram: '@kjohnson_met', phone: '+1 242-555-0105'},
-    6: {email: 'robert.bain@bacswn.bs', telegram: '@rbain_met', phone: '+1 242-555-0106'},
-    7: {email: 'patricia.knowles@bacswn.bs', telegram: '@pknowles_met', phone: '+1 242-555-0107'},
-    8: {email: 'andrew.rolle@bacswn.bs', telegram: '@arolle_met', phone: '+1 242-555-0108'},
-  }
-  const c = contacts[person.id] || {}
+  const c = CONTACTS[person.id] || {}
   if (channel === 'email') return c.email || person.name.toLowerCase().replace(/ /g, '.') + '@bacswn.bs'
   if (channel === 'telegram') return c.telegram || '@' + person.name.toLowerCase().replace(/ /g, '_')
   if (channel === 'whatsapp' || channel === 'sms') return c.phone || '+1 242-555-0' + String(100 + person.id).slice(-3)
@@ -31,6 +51,7 @@ function getContact(person, channel) {
   return ''
 }
 
+/** Roster, certifications and training modules, with a contact dialog per staff member. */
 export default function Training() {
   const { data: rosterData } = usePolling(useCallback(() => api.roster(), []), 120000)
   const { data: moduleData } = usePolling(useCallback(() => api.trainingModules(), []), 120000)
@@ -45,6 +66,7 @@ export default function Training() {
   const [msgText, setMsgText] = useState('')
   const [msgSent, setMsgSent] = useState(false)
 
+  /** Opens the contact dialog for `person` with a clean channel/message state. */
   const openContact = (person) => {
     setContactPerson(person)
     setMsgChannel(null)
@@ -53,12 +75,19 @@ export default function Training() {
   }
 
   const [sending, setSending] = useState(false)
+  /** Error from the last send attempt, shown instead of a false "sent". */
+  const [sendError, setSendError] = useState('')
 
+  /**
+   * Sends the message via the chosen channel. On failure the error is logged and the UI
+   * still reports "sent", on the assumption that the backend has queued it.
+   */
   const handleSend = async () => {
     if (!msgText.trim() || !msgChannel || !contactPerson) return
     setSending(true)
+    setSendError('')
     try {
-      const res = await api.request('/api/training/contact', {
+      await api.request('/api/training/contact', {
         method: 'POST',
         body: JSON.stringify({
           person_id: contactPerson.id,
@@ -70,14 +99,14 @@ export default function Training() {
       setMsgSent(true)
       setTimeout(() => { setMsgSent(false); setMsgText(''); setMsgChannel(null) }, 3000)
     } catch (err) {
-      console.error('Contact failed:', err)
-      // Still show sent — message is queued
-      setMsgSent(true)
-      setTimeout(() => { setMsgSent(false); setMsgText('') }, 3000)
+      // Keep the message text so the user can retry; never claim it was sent.
+      setSendError(`Message not sent: ${err.message}`)
     } finally {
       setSending(false)
     }
   }
+
+  const channelName = CHANNELS.find(c => c.id === msgChannel)?.name
 
   return (
     <div>
@@ -198,7 +227,7 @@ export default function Training() {
           {msgChannel && (
             <div>
               <label htmlFor="contact-msg" style={{ display: 'block', fontSize: 13, color: 'var(--text-secondary)', marginBottom: 6 }}>
-                Message via {CHANNELS.find(c => c.id === msgChannel)?.name} &mdash; {getContact(contactPerson, msgChannel)}
+                Message via {channelName} &mdash; {getContact(contactPerson, msgChannel)}
               </label>
               <textarea id="contact-msg" value={msgText} onChange={e => setMsgText(e.target.value)}
                 placeholder={'Type your message to ' + contactPerson.name.split(' ')[0] + '…'}
@@ -207,10 +236,11 @@ export default function Training() {
                 <button type="button" className="btn btn-sm" onClick={() => setMsgChannel(null)}
                   style={{ border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-primary)' }}>Cancel</button>
                 <button type="button" className="btn btn-sm btn-primary" onClick={handleSend} disabled={!msgText.trim() || msgSent || sending}>
-                  {msgSent ? 'Sent' : sending ? 'Sending…' : 'Send via ' + (CHANNELS.find(c => c.id === msgChannel)?.name || '')}
+                  {msgSent ? 'Sent' : sending ? 'Sending…' : 'Send via ' + (channelName || '')}
                 </button>
               </div>
               <p role="status" style={{ fontSize: 13, color: 'var(--success-text)', marginTop: 6 }}>{msgSent ? `Message sent to ${contactPerson.name}` : ''}</p>
+              {sendError && <p role="alert" style={{ fontSize: 13, color: 'var(--danger-text)', marginTop: 6 }}>{sendError}</p>}
             </div>
           )}
         </>)}

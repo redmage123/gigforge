@@ -1,4 +1,15 @@
-"""BACSWN — Climatology API router (ERA5 30-year normals)."""
+"""BACSWN — Climatology API router (ERA5 30-year normals).
+
+What: serves monthly climate normals per station and the anomaly of an observed
+temperature against the normal for the month.
+
+Why: "today vs the 30-year average" gives forecasters and the briefing climate
+context.
+
+How: reads the in-memory normals held by ``services.climatology`` (built from
+ERA5 in the background). While they are still being built the routes answer
+with an ``error`` and ``ready: false`` rather than failing.
+"""
 
 from fastapi import APIRouter
 

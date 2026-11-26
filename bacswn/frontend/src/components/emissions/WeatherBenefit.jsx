@@ -1,3 +1,16 @@
+/**
+ * Weather-benefit ledger card for the Carbon & Emissions page.
+ *
+ * What: headline figures, two charts (per day, by hazard status), the most
+ * recent warnings and a method note, for a chosen period (7 / 30 / 90 days).
+ *
+ * Why: quantifies a climate benefit of the mesh: early storm warnings let
+ * aircraft start a shorter detour, saving fuel and CO₂.
+ *
+ * How: polls /api/emissions/weather-benefit every 30 s; the period is kept in the
+ * URL (shareable); each chart has a data table and CSV export, and the ledger
+ * downloads as a server-side CSV.
+ */
 import { useCallback } from 'react'
 import { Bar } from 'react-chartjs-2'
 import { api, saveBlob } from '../../api/client'
@@ -6,9 +19,13 @@ import ChartTable, { chartTextColor, summarise } from '../a11y/ChartTable'
 import ChartActions from '../share/ChartActions'
 import { useUrlState, oneOf } from '../share/useUrlState'
 
+/** Selectable periods, in days. */
 const WINDOWS = [7, 30, 90]
+/** Hazard status -> chart label (also the chart's category order). */
 const STATUS_LABEL = { confirmed: 'Confirmed by peers', detected: 'Detected, not yet verified', tracked: 'Tracked by radar / satellite' }
+/** Locale number with up to `d` decimals; '—' when missing. */
 const fmt = (v, d = 0) => (v == null ? '—' : Number(v).toLocaleString(undefined, { maximumFractionDigits: d }))
+/** Mass from kg, shown in tonnes from 1000 kg up; '—' when missing. */
 const tonnes = (kg) => (kg == null ? '—' : kg >= 1000 ? `${fmt(kg / 1000, 1)} t` : `${fmt(kg)} kg`)
 
 /**

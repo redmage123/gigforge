@@ -1,4 +1,16 @@
-"""Generate BACSWN Distributed Intelligence Architecture whitepaper PDF."""
+"""Generate BACSWN Distributed Intelligence Architecture whitepaper PDF.
+
+What: a one-shot script that writes the whitepaper PDF (the case against hub-and-spoke,
+the distributed station mesh, edge AI, hurricane resilience, roadmap, cost-benefit,
+SWOT, risks and the Hurricane Dorian case study) to ``OUTPUT``.
+
+Why: the architecture is explained to the client and partners in a print-ready document.
+
+How: ReportLab platypus: module-level colours and paragraph styles, small flowable
+helpers (``hr``, ``spacer``, ``p``, ``bullet``), and ``build_pdf`` which appends the
+content section by section and builds the document. Run it directly:
+``python generate_whitepaper.py``.
+"""
 
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
@@ -61,19 +73,24 @@ styles = {
 }
 
 def hr():
+    """A thin full-width grey divider."""
     return HRFlowable(width="100%", thickness=1, color=HexColor("#e2e8f0"),
                        spaceBefore=8, spaceAfter=8)
 
 def spacer(h=12):
+    """Vertical space of ``h`` points."""
     return Spacer(1, h)
 
 def p(text, style="body"):
+    """A paragraph of ``text`` (ReportLab mini-HTML allowed) in the named style."""
     return Paragraph(text, styles[style])
 
 def bullet(text):
+    """A bullet-point paragraph."""
     return Paragraph(f"• {text}", styles["bullet"])
 
 def build_pdf():
+    """Lay out every section and write the PDF to ``OUTPUT``."""
     doc = SimpleDocTemplate(
         OUTPUT, pagesize=letter,
         topMargin=0.8*inch, bottomMargin=0.8*inch,

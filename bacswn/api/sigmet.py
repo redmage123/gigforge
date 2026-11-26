@@ -1,4 +1,15 @@
-"""BACSWN — SIGMET generation API router."""
+"""BACSWN — SIGMET generation API router.
+
+What: drafts an ICAO-format SIGMET from a hazard description, stores it as an
+advisory, and lists hazard types and past advisories.
+
+Why: lets a forecaster (or the sigmet-drafter agent) produce correctly formatted
+advisories quickly and see them on the Command Center map at once.
+
+How: ``services.sigmet_generator`` builds the text; the advisory row goes to the
+``advisories`` table and a ``new_sigmet`` message is broadcast on the "sigmets"
+WebSocket channel. The request model restricts hazard types to the ICAO set.
+"""
 
 from typing import Literal
 
@@ -16,6 +27,8 @@ ICAO_HAZARD_TYPES = Literal[
 
 
 class SigmetRequest(BaseModel):
+    """Body of ``POST /generate``; defaults draft a moderate thunderstorm SIGMET, FL000-450, 6 h."""
+
     hazard_type: ICAO_HAZARD_TYPES = "TS"
     description: str = "Embedded thunderstorms observed"
     severity: str = "moderate"
@@ -27,7 +40,7 @@ class SigmetRequest(BaseModel):
 
 @router.post("/generate")
 async def generate_sigmet_endpoint(req: SigmetRequest):
-    """Generate an ICAO-formatted SIGMET advisory."""
+    """Generate an ICAO-formatted SIGMET, store it, broadcast it to the map, and return it with its id."""
     sigmet = generate_sigmet(
         hazard_type=req.hazard_type,
         description=req.description,

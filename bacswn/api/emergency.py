@@ -1,4 +1,14 @@
-"""BACSWN — Emergency response API router."""
+"""BACSWN — Emergency response API router.
+
+What: dispatches emergency alerts to the configured communication channels,
+records incident reports, and lists incidents and the dispatch log.
+
+Why: during severe weather the operations team must reach every audience fast
+and keep a record of what was reported and sent.
+
+How: ``services.channel_dispatcher`` fans the alert out to channels; incidents
+and sent messages are stored in the ``incidents`` and ``channel_messages`` tables.
+"""
 
 from fastapi import APIRouter
 from pydantic import BaseModel
@@ -9,6 +19,8 @@ router = APIRouter()
 
 
 class EmergencyAlert(BaseModel):
+    """Body of ``POST /dispatch``; ``channel_types`` limits delivery (None = all channels)."""
+
     title: str
     description: str
     severity: str = "warning"
@@ -17,6 +29,8 @@ class EmergencyAlert(BaseModel):
 
 
 class IncidentReport(BaseModel):
+    """Body of ``POST /incidents``: what happened, how severe, and optionally where."""
+
     incident_type: str
     severity: str
     title: str

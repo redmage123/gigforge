@@ -1,18 +1,35 @@
+/**
+ * Application shell: routing, authentication, theme and the shared page layout.
+ *
+ * What: App owns the session (token + user) and the colour theme and exposes
+ * them through AuthContext / ThemeContext; Layout renders the sidebar
+ * navigation, the shared demo-pause control and banner, and hosts the guided
+ * tour and guided stories over whichever page is open.
+ *
+ * Why: these concerns span every page, so they live once at the top instead of
+ * being repeated per page.
+ *
+ * How: pages are lazy-loaded routes under a ProtectedRoute that redirects to
+ * /login without a token. The token and user are mirrored in localStorage; the
+ * api client clears them and redirects on a 401.
+ */
 import { createContext, useState, useContext, useEffect, useCallback, lazy, Suspense } from 'react'
-import { Routes, Route, Navigate, NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
+import { Routes, Route, Navigate, NavLink, Outlet } from 'react-router-dom'
 import { api } from './api/client'
 import { useDemoPause, useDemoPauseSync, setDemoPaused } from './hooks/useDemoPause'
 import { storyById, STORY_EVENT } from './tour/stories'
 
-// Auth context
+/** Session context: `{ token, user, login(token, user), logout() }`. */
 export const AuthContext = createContext(null)
+/** The current session (see AuthContext). */
 export function useAuth() { return useContext(AuthContext) }
 
-// Theme context (3. Dark/Light mode)
+/** Theme context: `{ theme: 'dark' | 'light', toggleTheme() }`. */
 export const ThemeContext = createContext(null)
+/** The current colour theme and its toggle (see ThemeContext). */
 export function useTheme() { return useContext(ThemeContext) }
 
-// Lazy-loaded pages
+// Lazy-loaded pages (each its own bundle chunk)
 const CommandCenter = lazy(() => import('./pages/CommandCenter'))
 const WatchOffice = lazy(() => import('./pages/WatchOffice'))
 const FlightOps = lazy(() => import('./pages/FlightOps'))
@@ -31,6 +48,7 @@ const Login = lazy(() => import('./pages/Login'))
 const CoastalPermanence = lazy(() => import('./pages/CoastalPermanence'))
 const GuidedTour = lazy(() => import('./components/tour/GuidedTour'))
 
+/** Sidebar navigation, in display order; icons are decorative (aria-hidden). */
 const NAV_ITEMS = [
   { path: '/', icon: '🎯', label: 'Command Center' },
   { path: '/watch-office', icon: '🌤️', label: 'Watch Office' },
@@ -48,9 +66,11 @@ const NAV_ITEMS = [
   { path: '/simulations', icon: '🧪', label: 'Simulations' },
 ]
 
-// 12. Wallboard auto-cycle pages
-const WALLBOARD_PAGES = ['/', '/watch-office', '/flights', '/emissions', '/sensors', '/agents']
-
+/**
+ * Signed-in page frame: skip link, sidebar (navigation, guided demo, demo
+ * pause, theme, logout), the shared pause banner, the routed page (<Outlet />),
+ * and the guided tour or a guided story when one is running.
+ */
 function Layout() {
   const { user, logout } = useAuth()
   const { theme, toggleTheme } = useTheme()
@@ -63,12 +83,14 @@ function Layout() {
     window.addEventListener(STORY_EVENT, play)
     return () => window.removeEventListener(STORY_EVENT, play)
   }, [])
+  /** A story finished or was exited: release the server's hold and reset the mesh (best effort). */
   const endStory = useCallback(() => { api.meshStoryEnd().catch(() => {}) }, [])
   const pause = useDemoPause()
   const [pauseError, setPauseError] = useState('')
   useDemoPauseSync(true)
   const pausedAt = pause.since ? new Date(pause.since).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : ''
   const pausedBy = pause.by ? ` (paused by ${pause.by}${pausedAt ? ' at ' + pausedAt : ''})` : ''
+  /** Pause or resume the demo for every viewer; shows a message if the server cannot be reached. */
   const togglePause = async () => {
     setPauseError('')
     try { await setDemoPaused(!pause.paused) } catch { setPauseError('Could not change the pause. Check the connection and try again.') }
@@ -149,19 +171,21 @@ function Layout() {
   )
 }
 
+/** Render `children` only for a signed-in user; otherwise redirect to /login. */
 function ProtectedRoute({ children }) {
   const { token } = useAuth()
   return token ? children : <Navigate to="/login" replace />
 }
 
+/** Root component: session and theme state, providers, and the route table. */
 export default function App() {
   const [token, setToken] = useState(() => localStorage.getItem('token'))
   const [user, setUser] = useState(() => {
     try { return JSON.parse(localStorage.getItem('user')) } catch { return null }
   })
 
-  // 3. Theme state
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark')
+  /** Switch dark <-> light and remember the choice. */
   const toggleTheme = () => {
     const next = theme === 'dark' ? 'light' : 'dark'
     setTheme(next)
@@ -171,6 +195,8 @@ export default function App() {
     document.documentElement.setAttribute('data-theme', theme)
   }, [theme])
 
+  // Persist the token and refresh the user profile from the server (best effort: the
+  // stored profile stays if this fails; a 401 is handled by the api client).
   useEffect(() => {
     if (token) {
       localStorage.setItem('token', token)
@@ -186,12 +212,14 @@ export default function App() {
     }
   }, [token])
 
+  /** Start a session (called by the Login page). */
   const login = (newToken, userData) => {
     setToken(newToken)
     setUser(userData)
     localStorage.setItem('user', JSON.stringify(userData))
   }
 
+  /** End the session locally at once, then tell the server (best effort). */
   const logout = () => {
     setToken(null)
     setUser(null)

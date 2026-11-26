@@ -1,8 +1,18 @@
+/**
+ * Login page.
+ *
+ * What: the sign-in form shown to unauthenticated users.
+ * Why: every other route sits behind authentication; this is the only public page.
+ * How: posts the credentials through `api.login`, stores the returned token via the
+ * auth context's `login()` and navigates to the Command Center. Failures (an ApiError
+ * from the client) are shown in a live `role="alert"` region.
+ */
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import { api } from '../api/client'
 
+/** Username/password sign-in form; on success stores the session and goes to `/`. */
 export default function Login() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -11,6 +21,10 @@ export default function Login() {
   const { login } = useAuth()
   const navigate = useNavigate()
 
+  /**
+   * Submit handler: authenticates, saves the session and redirects; shows the error message on failure.
+   * @param {React.FormEvent} e form submit event (default navigation is prevented)
+   */
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')

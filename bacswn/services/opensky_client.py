@@ -1,7 +1,16 @@
 """BACSWN — OpenSky Network API client.
 
-Fetches live ADS-B flight data for the Bahamas bounding box.
-Falls back to simulated traffic when the API is unavailable or rate-limited.
+What: fetches live ADS-B state vectors for the Bahamas FIR bounding box and
+normalises them into flight dicts, flagging emergency squawks (7500/7600/7700).
+
+Why: the airspace picture (map, Flight Ops, emissions, carbon cross-checks)
+needs current traffic.
+
+How: a shared ``httpx.AsyncClient`` (with credentials if configured) behind a
+``CircuitBreaker`` that stops calling OpenSky after repeated failures. Results are
+cached for ``CACHE_TTL_FLIGHTS``. When OpenSky is down, rate-limited or the
+breaker is open, simulated flights marked ``simulated: True`` are returned
+instead (frozen while the demo is paused). Never raises.
 """
 
 import logging
@@ -25,6 +34,7 @@ class CircuitBreaker:
     """
 
     def __init__(self, name: str, failure_threshold: int = 3, timeout_seconds: int = 60):
+        """Start closed; open after ``failure_threshold`` consecutive failures, retry after ``timeout_seconds``."""
         self.name = name
         self.failure_threshold = failure_threshold
         self.timeout = timeout_seconds
@@ -134,6 +144,7 @@ def _generate_simulated_flights() -> list[dict]:
 
 
 def _generate_simulated_flights_now() -> list[dict]:
+    """Fresh simulated positions: each ``_SIM_FLIGHTS`` entry jittered randomly and kept inside the FIR."""
     t = time.time()
     flights = []
     for sf in _SIM_FLIGHTS:
@@ -171,7 +182,10 @@ def _generate_simulated_flights_now() -> list[dict]:
 
 async def fetch_flights() -> list[dict]:
     """Fetch live flights in the Bahamas bounding box.
-    Falls back to simulated data when OpenSky is unavailable."""
+
+    Falls back to simulated data when OpenSky is unavailable, rate-limited, the
+    circuit breaker is open, or OpenSky reports no aircraft. Never raises.
+    """
     cached = cache.get("flights:bahamas")
     if cached is not None:
         return cached

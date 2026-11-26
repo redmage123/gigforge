@@ -1,3 +1,16 @@
+/**
+ * AI Agent Console page.
+ *
+ * What: visualises the seven-agent BACSWN pipeline (chief, wx-monitor, flight-tracker,
+ * SIGMET drafter, emissions analyst, dispatch, QC) as an animated flow diagram, with a
+ * detail panel per agent, a live activity feed and the result of a triggered run.
+ * Why: makes the autonomous back-end agents observable and lets a presenter trigger the
+ * whole pipeline, or a single agent, on demand.
+ * How: polls `api.agentStatus()` every 5 s and `api.agentActivity()` every 10 s.
+ * "Trigger Demo Run" calls `api.triggerPipeline()`; if that fails it plays a scripted
+ * client-side simulation (DEMO_STEPS) instead. Animations stop when the user prefers
+ * reduced motion.
+ */
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { api } from '../api/client'
 import { usePolling } from '../hooks/usePolling'
@@ -6,6 +19,7 @@ import { usePrefersReducedMotion } from '../hooks/useA11yPrefs'
 import { useTourEvent } from '../tour/bus'
 
 // ─── Agent pipeline definition ────────────────────────────────────────
+/** The seven agents in pipeline order, with display label, role, icon and accent colour. */
 const PIPELINE_AGENTS = [
   { id: 'bacswn-chief',            label: 'Chief',           role: 'Orchestrator',       icon: '🧠', color: '#f59e0b' },
   { id: 'bacswn-wx-monitor',       label: 'Wx Monitor',      role: 'Weather Observer',   icon: '🌤️', color: '#3b82f6' },
@@ -16,19 +30,33 @@ const PIPELINE_AGENTS = [
   { id: 'bacswn-qc',               label: 'QC',              role: 'Quality Control',    icon: '✅', color: '#f97316' },
 ]
 
+/** PIPELINE_AGENTS indexed by agent id. */
+const AGENT_BY_ID = Object.fromEntries(PIPELINE_AGENTS.map(a => [a.id, a]))
+
 // Flow: chief → wx-monitor → flight-tracker → sigmet-drafter → emissions → dispatch → qc
 // AND: chief also connects to dispatch and qc (orchestrator arrows)
-const PIPELINE_EDGES = [0, 1, 2, 3, 4, 5] // index pairs: n→n+1
-
-const STATUS_DOT = { running: '#10b981', idle: '#64748b', error: '#ef4444', alert: '#ef4444' }
+/** Arrow sources: each index n draws an arrow from PIPELINE_AGENTS[n] to PIPELINE_AGENTS[n+1]. */
+const PIPELINE_EDGES = [0, 1, 2, 3, 4, 5]
 
 // ─── Animated SVG connection arrows ───────────────────────────────────
+/**
+ * Curved SVG arrow between two adjacent agent nodes; when active it is coloured and its
+ * dashes flow (unless `still`), and when `pulsing` a dot pulses at the arrowhead.
+ * @param {object} props
+ * @param {{x: number, y: number}} props.from top-left of the source node
+ * @param {{x: number, y: number}} props.to top-left of the target node
+ * @param {boolean} props.active data is flowing on this edge
+ * @param {string} props.color source agent's colour
+ * @param {boolean} props.pulsing the target agent is active
+ * @param {boolean} props.still reduced motion: draw without animation
+ */
 function PipelineArrow({ from, to, active, color, pulsing, still }) {
   const [offset, setOffset] = useState(0)
   useEffect(() => {
     if (!active || still) return
     let raf
     let start = null
+    /** Advances the dash offset each frame. */
     const animate = (ts) => {
       if (!start) start = ts
       setOffset(((ts - start) / 10) % 24)
@@ -64,10 +92,12 @@ function PipelineArrow({ from, to, active, color, pulsing, still }) {
   )
 }
 
+/** SVG circle whose radius oscillates every frame (used only when motion is allowed). */
 function PulseDot({ cx, cy, color }) {
   const [r, setR] = useState(4)
   useEffect(() => {
     let raf
+    /** Oscillates the radius each frame. */
     const animate = (ts) => {
       setR(4 + Math.sin(ts / 200) * 2.5)
       raf = requestAnimationFrame(animate)
@@ -79,6 +109,21 @@ function PulseDot({ cx, cy, color }) {
 }
 
 // ─── Agent node ────────────────────────────────────────────────────────
+/**
+ * One agent in the diagram: a toggle button showing icon, name, role, state (ALERT /
+ * ACTIVE / API status), last-run time and last action; glows when active or alerting.
+ * @param {object} props
+ * @param {object} props.agent PIPELINE_AGENTS entry
+ * @param {string} [props.status] status reported by the API
+ * @param {string} [props.lastAction] latest event action text
+ * @param {string} [props.timestamp] ISO time of the latest event/run
+ * @param {boolean} props.isActive agent is running
+ * @param {boolean} props.isAlert agent is in error
+ * @param {function} props.onClick selects the agent
+ * @param {number} props.x absolute left position, px
+ * @param {number} props.y absolute top position, px
+ * @param {boolean} props.selected agent's details are open (aria-pressed)
+ */
 function AgentNode({ agent, status, lastAction, timestamp, isActive, isAlert, onClick, x, y, selected }) {
   const dotColor = isAlert ? '#ef4444' : isActive ? '#10b981' : '#64748b'
   const stateText = isAlert ? 'ALERT' : isActive ? 'ACTIVE' : status || 'idle'
@@ -151,10 +196,23 @@ function AgentNode({ agent, status, lastAction, timestamp, isActive, isAlert, on
 }
 
 // ─── Pipeline flow diagram ─────────────────────────────────────────────
+/** Diagram geometry, px: node width/height and the gap between nodes. */
 const NODE_W = 108, NODE_H = 140, GAP = 60
+/** Diagram width and height, px (nodes plus margins). */
 const TOTAL_W = PIPELINE_AGENTS.length * (NODE_W + GAP) - GAP + 40
 const DIAGRAM_H = NODE_H + 80
 
+/**
+ * Lays the agents out left to right as an ordered list of AgentNodes with SVG arrows
+ * between them, highlighting edges that touch an active agent.
+ * @param {object} props
+ * @param {Object<string, object>} props.agentMap API agent records by id
+ * @param {Set<string>} props.activeAgents ids currently running
+ * @param {Set<string>} props.alertAgents ids in error
+ * @param {function(string): void} props.onSelectAgent called with the clicked agent id
+ * @param {boolean} props.still reduced motion
+ * @param {string|null} props.selected currently selected agent id
+ */
 function PipelineDiagram({ agentMap, activeAgents, alertAgents, onSelectAgent, still, selected }) {
   const positions = PIPELINE_AGENTS.map((_, i) => ({
     x: 20 + i * (NODE_W + GAP),
@@ -204,6 +262,7 @@ function PipelineDiagram({ agentMap, activeAgents, alertAgents, onSelectAgent, s
 }
 
 // ─── Demo run simulation ───────────────────────────────────────────────
+/** Scripted hurricane run played when the backend pipeline trigger is unavailable. */
 const DEMO_STEPS = [
   { agent: 'bacswn-chief',            action: 'Pipeline trigger received — initiating hurricane protocol' },
   { agent: 'bacswn-wx-monitor',       action: 'Cat 4 detected at 25.8°N 76.2°W — winds 145mph, pressure 937mb' },
@@ -215,6 +274,7 @@ const DEMO_STEPS = [
 ]
 
 // ─── Main Component ────────────────────────────────────────────────────
+/** The agent console: header with trigger, pipeline diagram, agent detail, activity feed and run result. */
 export default function AgentConsole() {
   const { data: agentData, refresh } = usePolling(useCallback(() => api.agentStatus(), []), 5000)
   const { data: activityData, refresh: refreshActivity } = usePolling(useCallback(() => api.agentActivity(), []), 10000)
@@ -249,6 +309,7 @@ export default function AgentConsole() {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight
   }, [demoLog, activities])
 
+  /** Runs the real pipeline and refreshes the data; on any failure falls back to the scripted demo simulation. */
   const triggerPipeline = async () => {
     setRunning(true)
     setPipelineResult(null)
@@ -266,6 +327,7 @@ export default function AgentConsole() {
     setRunning(false)
   }
 
+  /** Steps through DEMO_STEPS client-side, lighting each agent in turn and appending to the demo log (pausable via demoSleep). */
   const runDemoSimulation = async () => {
     setDemoLog([])
     for (let i = 0; i < DEMO_STEPS.length; i++) {
@@ -289,6 +351,11 @@ export default function AgentConsole() {
     }])
   }
 
+  /**
+   * Runs one agent and refreshes; the node is highlighted for 2 s either way.
+   * Errors are deliberately ignored so the highlight still acts as a demo.
+   * @param {string} name agent id
+   */
   const triggerAgent = async (name) => {
     setActiveAgents(prev => new Set([...prev, name]))
     try {
@@ -306,10 +373,6 @@ export default function AgentConsole() {
   useEffect(() => { if (selectedAgent) detailRef.current?.focus() }, [selectedAgent])
 
   useTourEvent('agents-demo', () => { if (!running) triggerPipeline() })
-
-  const selected = selectedAgent
-    ? (agentMap[selectedAgent] || PIPELINE_AGENTS.find(a => a.id === selectedAgent))
-    : null
 
   return (
     <div>
@@ -359,11 +422,11 @@ export default function AgentConsole() {
 
       {/* ── Selected Agent Detail ── */}
       {selectedAgent && (
-        <section className="card" aria-labelledby="agent-detail-h" style={{ marginBottom: 16, borderLeft: `3px solid ${PIPELINE_AGENTS.find(a => a.id === selectedAgent)?.color || '#64748b'}` }}>
+        <section className="card" aria-labelledby="agent-detail-h" style={{ marginBottom: 16, borderLeft: `3px solid ${AGENT_BY_ID[selectedAgent]?.color || '#64748b'}` }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
             <div>
               <h3 id="agent-detail-h" tabIndex={-1} ref={detailRef} style={{ fontWeight: 700, fontSize: 16 }}>
-                <span aria-hidden="true">{PIPELINE_AGENTS.find(a => a.id === selectedAgent)?.icon} </span>{agentMap[selectedAgent]?.name || selectedAgent}
+                <span aria-hidden="true">{AGENT_BY_ID[selectedAgent]?.icon} </span>{agentMap[selectedAgent]?.name || selectedAgent}
               </h3>
               <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{agentMap[selectedAgent]?.role}</div>
             </div>
@@ -412,7 +475,7 @@ export default function AgentConsole() {
         <div ref={logRef} tabIndex={0} role="log" aria-labelledby="activity-h" aria-live={demoLog.length ? 'polite' : 'off'}
           style={{ maxHeight: 280, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
           {(demoLog.length > 0 ? demoLog : activities.slice(0, 20)).map((a, i) => {
-            const agentMeta = PIPELINE_AGENTS.find(p => p.id === (a.agent_name || a.agent))
+            const agentMeta = AGENT_BY_ID[a.agent_name || a.agent]
             const color = agentMeta?.color || '#64748b'
             return (
               <div key={i} style={{
@@ -465,7 +528,7 @@ export default function AgentConsole() {
             <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '12px 0', borderBottom: '1px solid var(--border)' }}>
               <div style={{
                 width: 32, height: 32, borderRadius: '50%',
-                background: 'var(--bg-primary)', border: `2px solid ${PIPELINE_AGENTS.find(a => a.id === r.agent)?.color || '#64748b'}`,
+                background: 'var(--bg-primary)', border: `2px solid ${AGENT_BY_ID[r.agent]?.color || '#64748b'}`,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 fontWeight: 700, fontSize: 14, color: 'var(--text-primary)', flexShrink: 0,
               }}><span className="sr-only">Step </span>{r.step}</div>

@@ -1,9 +1,20 @@
-"""BACSWN — Sensor network API router."""
+"""BACSWN — Sensor network API router.
+
+What: serves the weather-station grid with each station's reporting status and
+latest readings, and a detail view for one station.
+
+Why: the Sensors page tracks network health — which stations are reporting and
+what they last said.
+
+How: joins the static station list (``config.STATION_COORDS``) with current
+METARs from ``services.awc_client``; a station with a METAR counts as operational.
+"""
 
 from fastapi import APIRouter
 from services.awc_client import fetch_metars, parse_metar
 from services.database import db_select, db_insert
 from config import STATION_COORDS
+from services.errors import BacswnNotFoundError
 
 router = APIRouter()
 
@@ -12,7 +23,7 @@ router = APIRouter()
 async def get_sensor_grid():
     """Get weather station grid with current status."""
     metars = await fetch_metars()
-    metar_map = {parse_metar(m)["station_id"]: parse_metar(m) for m in metars}
+    metar_map = {p["station_id"]: p for p in map(parse_metar, metars)}
 
     stations = []
     for code, info in STATION_COORDS.items():
@@ -44,11 +55,14 @@ async def get_sensor_grid():
 
 @router.get("/{station_id}")
 async def get_station_detail(station_id: str):
-    """Get detailed info for a specific station."""
+    """Get detailed info for a specific station.
+
+    An unknown station raises BacswnNotFoundError (HTTP 404).
+    """
     code = station_id.upper()
     info = STATION_COORDS.get(code)
     if not info:
-        return {"error": f"Unknown station: {code}"}
+        raise BacswnNotFoundError(f"Unknown station: {code}")
 
     metars = await fetch_metars([code])
     parsed = [parse_metar(m) for m in metars]

@@ -1,9 +1,23 @@
+/**
+ * National Emissions Registry sections used by NerPanel: letters of
+ * authorisation (Letters) and AI conversion of registry extracts (ConvertExtract).
+ *
+ * Why: registry claims are only as good as the letters and statements they are
+ * checked against; these let the state record letters and import extracts in
+ * whatever layout the registry sends them.
+ *
+ * How: letters are listed from and recorded to the registry endpoints
+ * (append-only, newest revision wins); AI reads a letter into the form, or an
+ * extract into statement rows, for a person to check before anything is saved.
+ */
 import { useCallback, useEffect, useId, useState } from 'react'
 import { api } from '../../api/client'
 import { ACCEPT_ANY, ACCEPT_DOCS, fillForm, uploadBody } from './aiUpload'
 import { AiResult } from './AiDocReader'
 
+/** Locale number; '—' when missing. */
 const n = (v) => (v == null ? '—' : Number(v).toLocaleString())
+/** Letter-of-authorisation form field -> label. */
 const LOA_LABELS = {
   reference: 'Reference', issue_date: 'Issue date', issuing_body: 'Issuing body', authorised_uses: 'Authorised uses',
   corresponding_adjustment: 'Corresponding adjustment', vintage_from: 'Vintage from', vintage_to: 'Vintage to',
@@ -22,7 +36,10 @@ function F({ label, hint, ...props }) {
   )
 }
 
-/** Letters of authorisation: list, AI reading, and recording (append-only). */
+/**
+ * Letters of authorisation: list, AI reading, and recording (append-only).
+ * @param {{isAdmin: boolean, aiReady: boolean, announce: (message: string) => void, onChanged?: () => void}} props
+ */
 export function Letters({ isAdmin, aiReady, announce, onChanged }) {
   const fileId = useId()
   const formId = `co-loa-form-${fileId.replace(/:/g, '')}`
@@ -32,9 +49,11 @@ export function Letters({ isAdmin, aiReady, announce, onChanged }) {
   const [result, setResult] = useState(null)
   const [error, setError] = useState('')
   const [formError, setFormError] = useState('')
+  /** Reload the letters (an empty list if they cannot be loaded). */
   const load = useCallback(() => api.nerAuthorisations().then(d => setLetters(d.authorisations)).catch(() => setLetters([])), [])
   useEffect(() => { load() }, [load])
 
+  /** AI-read the chosen letter into the form. */
   const read = async () => {
     setBusy(true); setError(''); setResult(null)
     try {
@@ -44,6 +63,7 @@ export function Letters({ isAdmin, aiReady, announce, onChanged }) {
       announce(`${filled.length} fields filled from ${file.name}; ${r.warnings.length} warnings. Check before recording.`)
     } catch (e) { setError(e.message) } finally { setBusy(false) }
   }
+  /** Submit the form: record the letter, reset the form and refresh the list. */
   const record = async (e) => {
     e.preventDefault()
     const form = e.currentTarget
@@ -127,7 +147,10 @@ export function Letters({ isAdmin, aiReady, announce, onChanged }) {
   )
 }
 
-/** Convert a registry extract in any layout into a statement with AI, preview it, then import it. */
+/**
+ * Convert a registry extract in any layout into a statement with AI, preview it, then import it.
+ * @param {{announce: (message: string) => void, onImported?: () => void}} props
+ */
 export function ConvertExtract({ announce, onImported }) {
   const id = useId(), asOfId = useId(), refId = useId()
   const [file, setFile] = useState(null)
@@ -136,6 +159,7 @@ export function ConvertExtract({ announce, onImported }) {
   const [asOf, setAsOf] = useState('')
   const [reference, setReference] = useState('')
   const [error, setError] = useState('')
+  /** AI-read the chosen file into statement rows for preview. */
   const convert = async () => {
     setBusy(true); setError(''); setRes(null)
     try {
@@ -144,6 +168,7 @@ export function ConvertExtract({ announce, onImported }) {
       announce(`${r.units.length} rows read from ${file.name}. ${r.errors.length ? 'It cannot be imported as it stands.' : 'Check the preview, then import.'}`)
     } catch (e) { setError(e.message) } finally { setBusy(false) }
   }
+  /** Import the previewed rows as a registry statement. */
   const doImport = async () => {
     setError('')
     try {

@@ -1,9 +1,21 @@
-"""BACSWN — Weather API router (METAR, TAF, forecasts)."""
+"""BACSWN — Weather API router (METAR, TAF, forecasts).
+
+What: serves current METARs and TAFs for the Bahamas stations, Open-Meteo
+forecasts per station, and the station list.
+
+Why: the Watch Office and map pages need observations and guidance in one
+normalised shape, regardless of which upstream service supplied them.
+
+How: thin handlers over ``services.awc_client`` (METAR/TAF, with simulated METARs
+when AWC is down) and ``services.openmeteo_client`` (forecasts). Both clients
+cache and never raise, so these routes always answer.
+"""
 
 from fastapi import APIRouter
 from services.awc_client import fetch_metars, fetch_tafs, parse_metar
 from services.openmeteo_client import fetch_forecast, fetch_all_station_forecasts
 from config import STATION_COORDS
+from services.errors import BacswnNotFoundError
 
 router = APIRouter()
 
@@ -27,10 +39,13 @@ async def get_tafs(stations: str = ""):
 
 @router.get("/forecast/{station_id}")
 async def get_forecast(station_id: str):
-    """Get Open-Meteo forecast for a specific station."""
+    """Get Open-Meteo forecast for a specific station.
+
+    An unknown station raises BacswnNotFoundError (HTTP 404).
+    """
     coords = STATION_COORDS.get(station_id.upper())
     if not coords:
-        return {"error": f"Unknown station: {station_id}"}
+        raise BacswnNotFoundError(f"Unknown station: {station_id}")
     forecast = await fetch_forecast(coords["lat"], coords["lon"], station_id)
     return forecast
 

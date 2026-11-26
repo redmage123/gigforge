@@ -1,4 +1,15 @@
-"""BACSWN — AI analysis API router."""
+"""BACSWN — AI analysis API router.
+
+What: ``POST /analyze`` summarises current weather, traffic or emissions for a context
+type; ``GET /assist-status`` reports whether Claude-powered assistance is configured.
+
+Why: dashboards show a quick situational summary, and the UI hides AI-assisted
+features when no AI backend is available.
+
+How: ``/analyze`` is rule-based (counts and thresholds over the live AWC/OpenSky data
+and the emissions calculator; no model call). ``/assist-status`` delegates to
+``services.ai_assist.status``.
+"""
 
 from fastapi import APIRouter
 from pydantic import BaseModel
@@ -10,13 +21,18 @@ router = APIRouter()
 
 
 class AnalysisRequest(BaseModel):
+    """Question text and which data set to analyse (weather, flights or emissions)."""
+
     query: str
     context_type: str = "weather"
 
 
 @router.post("/analyze")
 async def ai_analyze(req: AnalysisRequest):
-    """AI-powered analysis of current conditions."""
+    """Summarise current conditions for ``req.context_type`` with a recommendation.
+
+    An unknown context type returns a short hint rather than an error.
+    """
     # Build context based on type
     if req.context_type == "weather":
         metars = await fetch_metars()

@@ -1,4 +1,11 @@
-"""BACSWN — Communication channels API router."""
+"""BACSWN — communication channels API router.
+
+What: lists the configured alert channels and a per-type summary.
+
+Why: the dispatch console shows where an alert would go before it is sent.
+
+How: read-only views of ``services.channel_dispatcher.CHANNELS``.
+"""
 
 from fastapi import APIRouter
 from services.channel_dispatcher import CHANNELS, get_channel_summary

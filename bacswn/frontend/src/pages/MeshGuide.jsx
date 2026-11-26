@@ -1,18 +1,38 @@
+/**
+ * Station & Model Guide page.
+ *
+ * What: a static reference of every state a mesh station, its three AI models
+ * (TEMPO, VISTA, LEXIS), the vote, peer verification, the comms links and the
+ * injectable sensor faults can be in.
+ * Why: presenters and operators need one place that explains each badge and verdict
+ * seen on the Mesh Network page, and how to make it appear live.
+ * How: renders the SECTIONS data as a table of contents plus one card per section; each
+ * term is a HoverTip (hover, focus or tap) showing what it means, when it happens and
+ * how to show it. Also embeds the guided-story launcher and the state gallery.
+ * No API calls.
+ */
 import { Link } from 'react-router-dom'
 import HoverTip from '../components/a11y/HoverTip'
 import { HAZARD_COLORS } from '../components/mesh/PrecogChamber'
 import StateGallery from '../components/mesh/StateGallery'
 import StoryLauncher from '../components/tour/StoryLauncher'
+import { CHANNEL_BY_ID } from '../components/map/CommsChannels'
 import '../components/mesh/mesh.css'
 
 /**
- * Static reference: every state a mesh station, its three AI models, the vote
- * and peer verification can be in. Hover (or focus / tap) any item for details,
- * including how a presenter can make it appear on the Mesh page.
+ * Map line colour per comms channel (and for a failed link), taken from the shared
+ * channel definitions so the guide always matches the Mesh/Command Center maps.
  */
+const LINK = {
+  wired: CHANNEL_BY_ID.wired.color, vhf: CHANNEL_BY_ID.vhf.color, cellular: CHANNEL_BY_ID.cellular.color,
+  satellite: CHANNEL_BY_ID.satellite.color, down: '#ef4444',
+}
 
-const LINK = { wired: '#f472b6', vhf: '#10b981', cellular: '#3b82f6', satellite: '#a855f7', down: '#ef4444' }
-
+/**
+ * Guide content. Each section has an id (anchor `mg-<id>`), title, intro and items;
+ * each item has `term`, `short`, `means`, `when`, `show`, and optionally a hazard
+ * `color` dot, a status `badge` class, or a link `line` colour with `dash` style.
+ */
 const SECTIONS = [
   {
     id: 'verdicts', title: 'Station verdicts',
@@ -154,6 +174,11 @@ const SECTIONS = [
   },
 ]
 
+/**
+ * One guide entry: its swatch/badge, term and short description, with a HoverTip
+ * revealing the full explanation.
+ * @param {{item: object}} props an entry from a SECTIONS `items` list
+ */
 function Term({ item }) {
   const label = (
     <>
@@ -175,6 +200,7 @@ function Term({ item }) {
   )
 }
 
+/** The guide page: intro, section index, story launcher, state gallery and one card per section. */
 export default function MeshGuide() {
   return (
     <div className="mesh-guide">

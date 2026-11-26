@@ -1,18 +1,23 @@
+/**
+ * Per-station dashboard: the station's ground sensor network, the (simulated)
+ * Tomorrow.io satellite products it uses for decisions, and — separately — the
+ * real current conditions from Tomorrow.io's API when a key is configured.
+ *
+ * Why: the precog chamber shows the decision; this shows the evidence behind
+ * it, station by station, and keeps simulated and real data clearly apart.
+ * How: polls /api/mesh/node/<station> every 3 s; live conditions load once per
+ * station and on demand. Every trend line has the same numbers as text.
+ */
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../../api/client'
 import { usePolling } from '../../hooks/usePolling'
 import { hz } from './PrecogChamber'
 import { CHANNEL_BY_ID } from '../map/CommsChannels'
+import { compass } from '../compass'
 
-/**
- * Per-station dashboard: the station's ground sensor network, the (simulated)
- * Tomorrow.io satellite products it uses for decisions, and — separately — the
- * real current conditions from Tomorrow.io's API when a key is configured.
- */
-
+/** Sensor status -> [label, badge colour]. */
 const STATUS = { OK: ['OK', 'green'], STALE: ['Stale', 'amber'], SUSPECT: ['Suspect', 'red'], OFFLINE: ['Offline', 'grey'] }
-const COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']
-const compass = (deg) => COMPASS[Math.round(((deg % 360) + 360) % 360 / 45) % 8]
+/** Numbers to one decimal in the user's locale; text unchanged; '—' when missing. */
 const fmt = (v) => (v == null ? '—' : typeof v === 'number' ? v.toLocaleString(undefined, { maximumFractionDigits: 1 }) : v)
 
 /** Trend line; the numbers it shows are also given as text beside it. */
@@ -28,6 +33,12 @@ function Sparkline({ values }) {
   )
 }
 
+/**
+ * Text form of a trend: direction plus range over the period (5 min per sample).
+ * @param {number[]} values oldest first
+ * @param {string} unit
+ * @returns {string} e.g. 'rising, 1012–1015 hPa over 120 min'
+ */
 function trendText(values, unit) {
   if (!values || values.length < 2) return 'not enough data yet'
   const first = values[0], last = values[values.length - 1]
@@ -36,6 +47,7 @@ function trendText(values, unit) {
   return `${dir}, ${fmt(lo)}–${fmt(hi)} ${unit} over ${values.length * 5} min`
 }
 
+/** Table of the station's ground sensors: status, readings, 2-hour trend and device health. */
 function SensorNetwork({ sensors, metrics, station }) {
   const counts = Object.fromEntries(Object.keys(STATUS).map(k => [k, sensors.filter(s => s.status === k).length]))
   return (
@@ -91,6 +103,7 @@ function SensorNetwork({ sensors, metrics, station }) {
   )
 }
 
+/** One satellite product with its freshness badge; `children` are shown only once a pass exists. */
 function Product({ title, obs, children }) {
   return (
     <div className="sd-product">
@@ -124,6 +137,7 @@ function SatelliteIcon() {
 
 /** The station's communications equipment and the channel each of its links is using. */
 function Comms({ node, station }) {
+  /** Channel label for an id. */
   const name = (id) => CHANNEL_BY_ID[id]?.label || id
   const links = node.links || []
   const onBackup = links.filter(l => l.on_backup || !l.active)
@@ -157,6 +171,7 @@ function Comms({ node, station }) {
   )
 }
 
+/** Tomorrow.io panel: the simulated products the mesh uses, storm cells, outlook, then real live conditions. */
 function Satellite({ sat, node, station }) {
   const r = sat.radar, s = sat.sounder
   return (
@@ -212,9 +227,11 @@ function Satellite({ sat, node, station }) {
   )
 }
 
+/** Real current conditions from Tomorrow.io (reference only; not used by the simulation). */
 function LiveWeather({ station }) {
   const [live, setLive] = useState(null)
   const [error, setError] = useState('')
+  /** Fetch the live conditions; errors are shown in place. */
   const load = useCallback(() => {
     setError('')
     api.meshLiveWeather(station).then(setLive).catch(e => setError(e.message))
@@ -254,6 +271,10 @@ function LiveWeather({ station }) {
   )
 }
 
+/**
+ * Dashboard for one mesh station.
+ * @param {{station: string}} props ICAO code, e.g. 'MYNN'
+ */
 export default function StationDashboard({ station }) {
   const { data } = usePolling(useCallback(() => api.meshNode(station), [station]), 3000)
   const d = data?.station === station ? data : null

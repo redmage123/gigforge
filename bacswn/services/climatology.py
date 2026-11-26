@@ -34,11 +34,16 @@ _NORMALS: dict = {}   # {station_code: {"months": [12 dicts], ...}}
 
 
 def _mean(xs):
+    """Mean of the non-None values rounded to 0.1, or None if there are none."""
     xs = [x for x in xs if x is not None]
     return round(sum(xs) / len(xs), 1) if xs else None
 
 
 async def _fetch_station_daily(lat: float, lon: float) -> dict | None:
+    """ERA5 daily series for 1991-2020 at a point, or None after four failed attempts.
+
+    Retries with backoff on HTTP 429 and on errors; never raises.
+    """
     params = {
         "latitude": lat, "longitude": lon,
         "start_date": BASE_START, "end_date": BASE_END,
@@ -108,6 +113,7 @@ def _compute_monthly(daily: dict) -> list[dict]:
 
 # ── Persistence + access ─────────────────────────────────────────────────────
 def load() -> None:
+    """Load persisted normals from disk into memory; start empty if the file is missing or invalid."""
     global _NORMALS
     try:
         with open(_PATH) as f:
@@ -118,6 +124,7 @@ def load() -> None:
 
 
 def _save() -> None:
+    """Persist the in-memory normals to disk; logs and continues on failure."""
     try:
         with open(_PATH, "w") as f:
             json.dump(_NORMALS, f)
@@ -126,6 +133,7 @@ def _save() -> None:
 
 
 def has_normals() -> bool:
+    """True once normals exist for at least one station."""
     return bool(_NORMALS)
 
 
@@ -156,6 +164,7 @@ async def build(missing_only: bool = False) -> dict:
 
 
 def is_complete() -> bool:
+    """True once every station in ``STATION_COORDS`` has normals."""
     return len(_NORMALS) >= len(STATION_COORDS)
 
 
@@ -166,14 +175,17 @@ async def ensure_built() -> None:
 
 
 def _current_month() -> int:
+    """Current month number (1-12) in UTC."""
     return datetime.now(timezone.utc).month
 
 
 def get_station(code: str) -> dict | None:
+    """Normals record for one station (case-insensitive code), or None."""
     return _NORMALS.get(code.upper())
 
 
 def get_all() -> dict:
+    """All station normals, keyed by station code (the live dict, not a copy)."""
     return _NORMALS
 
 

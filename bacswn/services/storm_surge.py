@@ -1,11 +1,19 @@
 """BACSWN — Storm surge and coastal flood zone mapping.
 
-Generates flood zone polygons for Bahamas coastal areas based on
-hurricane category and proximity. Uses SLOSH-model-inspired estimates.
+What: for a Saffir-Simpson category, returns each key Bahamas coastal zone with
+its expected surge height, inland penetration, a flood polygon, population and
+critical infrastructure at risk.
+
+Why: the Hurricane Operations page needs a quick surge picture to plan
+evacuations before a model run is available.
+
+How: a static, SLOSH-inspired table of surge by category, and a circular flood
+polygon per zone whose radius grows with category and the zone's exposure.
+Storm position is accepted but not yet used. Illustrative, not a surge model.
 """
 
 import logging
-from config import STATION_COORDS
+import math
 
 logger = logging.getLogger("bacswn.storm_surge")
 
@@ -45,8 +53,7 @@ COASTAL_ZONES = [
 
 
 def _generate_flood_polygon(lat, lon, radius_deg):
-    """Generate a simplified circular flood zone polygon."""
-    import math
+    """Closed 24-point circle of ``radius_deg`` around a point, widened in longitude for latitude."""
     points = []
     for i in range(24):
         angle = 2 * math.pi * i / 24
@@ -60,7 +67,9 @@ def _generate_flood_polygon(lat, lon, radius_deg):
 def get_storm_surge_zones(category: int, storm_lat: float = None, storm_lon: float = None) -> dict:
     """Get flood zone data for a given hurricane category.
 
-    Returns zones with flood polygons, surge heights, and affected infrastructure.
+    ``category`` is clamped to 1..5. ``storm_lat``/``storm_lon`` are currently
+    ignored: every coastal zone is returned. Returns zones with flood polygons,
+    surge heights, and affected infrastructure, plus population/infrastructure totals.
     """
     if category < 1 or category > 5:
         category = max(1, min(5, category))

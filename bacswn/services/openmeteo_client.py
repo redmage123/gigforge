@@ -1,4 +1,16 @@
-"""BACSWN — Open-Meteo API client for weather forecasts."""
+"""BACSWN — Open-Meteo API client for weather forecasts.
+
+What: fetches 3-day hourly forecasts per station and batched model "current
+conditions" for stations that have no METAR.
+
+Why: AWC does not cover every Bahamas station, and the platform needs forecast
+guidance; Open-Meteo provides both without an API key.
+
+How: a shared ``httpx.AsyncClient``; responses are cached for
+``CACHE_TTL_FORECAST``. Model current conditions are labelled ``source="model"``
+so they are never presented as observations. Never raises — returns an empty
+dict on failure.
+"""
 
 import logging
 import httpx
@@ -12,7 +24,7 @@ _client = httpx.AsyncClient(timeout=15.0)
 _HPA_TO_INHG = 1.0 / 33.8639
 
 
-def _category_from_cloud(cloud_cover_pct):
+def _category_from_cloud(cloud_cover_pct) -> str:
     """Coarse flight category from cloud cover when no visibility/ceiling exists.
 
     Open-Meteo current conditions lack reported ceiling, so this is a proxy and
@@ -83,7 +95,10 @@ async def fetch_current_for_stations(coords):
 
 
 async def fetch_forecast(lat: float, lon: float, station_id: str = "") -> dict:
-    """Fetch weather forecast for a given location."""
+    """Open-Meteo 3-day hourly + current forecast for a point (Nassau local time).
+
+    The response is tagged with ``station_id``. Returns ``{}`` if the API fails.
+    """
     cache_key = f"forecast:{lat:.2f},{lon:.2f}"
     cached = cache.get(cache_key)
     if cached is not None:
@@ -109,7 +124,7 @@ async def fetch_forecast(lat: float, lon: float, station_id: str = "") -> dict:
 
 
 async def fetch_all_station_forecasts() -> list[dict]:
-    """Fetch forecasts for all Bahamas weather stations."""
+    """Forecasts for every station in ``STATION_COORDS`` (one request each, sequential), skipping failures."""
     cached = cache.get("forecasts:all")
     if cached is not None:
         return cached

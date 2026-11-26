@@ -1,5 +1,22 @@
+/**
+ * Command Center page (the app's home route).
+ *
+ * What: the real-time operational picture of the Bahamas FIR: a Leaflet map with
+ * aircraft, weather stations, FIR boundary, SIGMETs, tropical cyclones (track and cone),
+ * mesh hazards and predicted aircraft conflicts, comms links, optional radar and wind
+ * overlays, flight trails and a replay slider; plus summary stats, an altitude slice,
+ * the operational alert centre, a spoken/text weather briefing, mesh traffic and
+ * accessible data tables of everything on the map.
+ * Why: the duty forecaster's single situational-awareness screen, also usable as a
+ * wall display (kiosk mode).
+ * How: polls `api.mapLayers()` (15 s), `api.dashboardSummary()` (30 s),
+ * `api.meshAirspace()` (5 s) and, while comms links are shown, `api.meshStatus()` (5 s).
+ * useOperationalAlerts merges WebSocket SIGMETs/alerts with mesh hazards and conflicts
+ * into one alert list. Radar tiles come from RainViewer. The map is supplemented by
+ * SituationTables, which is the keyboard/screen-reader equivalent of the markers.
+ */
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import { MapContainer, TileLayer, Marker, Popup, Polygon, Polyline, Circle, Tooltip, useMap } from 'react-leaflet'
+import { MapContainer, TileLayer, Marker, Popup, Polygon, Polyline, Circle, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import { api } from '../api/client'
 import { usePolling } from '../hooks/usePolling'
@@ -16,12 +33,18 @@ import { PLANE_D } from '../components/map/plane'
 import { CommsLinksLayer, CommsFilterControl, useCommsFilter, visibleLinks } from '../components/map/CommsChannels'
 
 // ── 1. Aircraft icon — bright yellow plane ──────────────────────────
+/**
+ * HTML for the yellow plane glyph rotated to a heading.
+ * @param {number} deg heading in degrees
+ * @returns {string}
+ */
 function buildPlaneHtml(deg) {
   return '<div style="transform:rotate(' + deg + 'deg);width:32px;height:32px">'
     + '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="32" height="32">'
     + '<path fill="#facc15" stroke="#000" stroke-width="20" d="' + PLANE_D + '"/>'
     + '</svg></div>'
 }
+/** Leaflet divIcon for an aircraft pointing along `track` (degrees; 0 if unknown). */
 const aircraftIcon = (track) => L.divIcon({
   className: 'aircraft-marker',
   html: buildPlaneHtml(track || 0),
@@ -30,11 +53,21 @@ const aircraftIcon = (track) => L.divIcon({
 })
 
 // ── Station icon — radar tower ──────────────────────────────────────
+/** Flight-category colour (marker outline, legend swatch). */
+const CAT_COLORS = { VFR: '#10b981', MVFR: '#3b82f6', IFR: '#ef4444', LIFR: '#a855f7' }
+
+/** SVG path of the radar-tower glyph used for station markers. */
 const RADAR_SVG_D = 'M16 2 L16 10 M8 10 L24 10 M10 10 Q16 4 22 10 M6 12 L12 28 L20 28 L26 12 M4 28 L28 28'
+/**
+ * Leaflet divIcon for a weather station: a radar tower coloured by flight category,
+ * with the category printed under the tower so it never relies on colour alone (WCAG 1.4.1).
+ * A "~" prefix and `est` class mark a model estimate rather than an observation.
+ * @param {string} [category] VFR | MVFR | IFR | LIFR
+ * @param {string} [source] 'metar' (observed) or 'model' (estimate)
+ * @returns {L.DivIcon}
+ */
 const stationIcon = (category, source) => {
-  const colors = { VFR: '#10b981', MVFR: '#3b82f6', IFR: '#ef4444', LIFR: '#a855f7' }
-  const color = colors[category] || '#94a3b8'
-  // The category is printed under the tower so it never relies on colour alone (WCAG 1.4.1).
+  const color = CAT_COLORS[category] || '#94a3b8'
   return L.divIcon({
     className: 'station-marker',
     // "~" marks a model estimate (not an observation) — in text, not just styling.
@@ -52,6 +85,7 @@ const stationIcon = (category, source) => {
 }
 
 // ── Hurricane icon ──────────────────────────────────────────────────
+/** Pulsing red cyclone marker for tropical cyclones. */
 const hurricaneIcon = L.divIcon({
   className: 'aircraft-marker',
   html: '<div class="hurricane-icon-pulse"><svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24">'
@@ -63,6 +97,11 @@ const hurricaneIcon = L.divIcon({
 })
 
 // ── 2. Weather Radar Layer Component ────────────────────────────────
+/**
+ * Leaflet child that adds the latest RainViewer radar mosaic as a semi-transparent tile
+ * layer while `visible`. Fetch failures are ignored (the layer simply doesn't appear).
+ * @param {{visible: boolean}} props
+ */
 function WeatherRadarLayer({ visible }) {
   const map = useMap()
   const layerRef = useRef(null)
@@ -98,6 +137,12 @@ function WeatherRadarLayer({ visible }) {
 }
 
 // ── 5. Wind Animation Canvas Overlay ────────────────────────────────
+/**
+ * Leaflet child that draws 200 drifting streaks over the map, mostly from the east
+ * (illustrative trade winds, not observed wind data). Under reduced motion it draws a
+ * single static frame. Hidden, not destroyed, when toggled off.
+ * @param {{visible: boolean, reducedMotion: boolean}} props
+ */
 function WindCanvas({ visible, reducedMotion }) {
   const map = useMap()
   const canvasRef = useRef(null)
@@ -120,6 +165,7 @@ function WindCanvas({ visible, reducedMotion }) {
     }
     canvas.style.display = 'block'
 
+    /** Matches the canvas size to the map's. */
     const resize = () => {
       const size = map.getSize()
       canvas.width = size.x
@@ -144,6 +190,7 @@ function WindCanvas({ visible, reducedMotion }) {
     }
 
     const ctx = canvas.getContext('2d')
+    /** Advances and draws every particle; respawns those that expire or leave the view. */
     const animate = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height)
       particlesRef.current.forEach(p => {
@@ -180,8 +227,10 @@ function WindCanvas({ visible, reducedMotion }) {
 }
 
 // ── Map keyboard/AT labelling ────────────────────────────────────────
-// Leaflet makes the map container a Tab stop for keyboard panning; give it a name
-// and instructions instead of the concatenated text of every marker.
+/**
+ * Leaflet child that names the map container (a Tab stop for keyboard panning) and
+ * gives instructions, instead of the concatenated text of every marker. Renders nothing.
+ */
 function MapA11y() {
   const map = useMap()
   useEffect(() => {
@@ -192,7 +241,11 @@ function MapA11y() {
   return null
 }
 
-// Centre the map on a point chosen from an alert ("Show on map").
+/**
+ * Leaflet child that centres the map (zoom 8 or closer) on a point chosen from an alert
+ * ("Show on map"); flies there unless reduced motion is preferred. Renders nothing.
+ * @param {{focus: {lat: number, lon: number}|null, reducedMotion: boolean}} props
+ */
 function MapFocus({ focus, reducedMotion }) {
   const map = useMap()
   useEffect(() => {
@@ -205,25 +258,32 @@ function MapFocus({ focus, reducedMotion }) {
 }
 
 // ── 6. Altitude Slice Panel ─────────────────────────────────────────
+/** Altitude bands, highest first; `min` is the lower bound in metres. */
+const ALTITUDE_BANDS = [
+  { label: 'FL400+', min: 12000, color: '#f59e0b' },
+  { label: 'FL300-400', min: 9000, color: '#8b5cf6' },
+  { label: 'FL200-300', min: 6000, color: '#3b82f6' },
+  { label: 'FL100-200', min: 3000, color: '#06b6d4' },
+  { label: '<FL100', min: 0, color: '#10b981' },
+]
+
+/**
+ * Side panel counting aircraft per altitude band, with a proportional bar for each.
+ * @param {{flights: object[], visible: boolean}} props flights use `altitude` in metres
+ */
 function AltitudePanel({ flights, visible }) {
   if (!visible || flights.length === 0) return null
-  const bands = [
-    { label: 'FL400+', min: 12000, color: '#f59e0b' },
-    { label: 'FL300-400', min: 9000, color: '#8b5cf6' },
-    { label: 'FL200-300', min: 6000, color: '#3b82f6' },
-    { label: 'FL100-200', min: 3000, color: '#06b6d4' },
-    { label: '<FL100', min: 0, color: '#10b981' },
-  ]
+  const bands = ALTITUDE_BANDS
   return (
     <section className="altitude-panel" aria-labelledby="alt-slice-h">
       <h3 id="alt-slice-h" style={{fontSize: 11, fontWeight: 700, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 1, color: 'var(--text-muted)'}}>
         Altitude Slice
       </h3>
       <ul style={{listStyle: 'none', margin: 0, padding: 0}}>
-      {bands.map(b => {
+      {bands.map((b, i) => {
         const count = flights.filter(f => {
           const alt = f.altitude || 0
-          const next = bands[bands.indexOf(b) - 1]
+          const next = bands[i - 1]
           return alt >= b.min && (!next || alt < next.min)
         }).length
         return (
@@ -244,8 +304,12 @@ function AltitudePanel({ flights, visible }) {
 }
 
 // ── 9. SIGMET Animated Polygon ──────────────────────────────────────
+/**
+ * Pulsing dashed circles for up to five active SIGMETs, coloured by hazard.
+ * Positions are placeholders spread across the Bahamas, not the SIGMET's real area.
+ * @param {{sigmets: object[]}} props
+ */
 function SigmetOverlays({ sigmets }) {
-  // Show pulsing circles for active SIGMETs over the Bahamas area
   if (!sigmets || sigmets.length === 0) return null
   const hazardColors = {
     TS: '#ef4444', TURB: '#f59e0b', ICE: '#06b6d4',
@@ -269,8 +333,11 @@ function SigmetOverlays({ sigmets }) {
 }
 
 // ── Map Legend ──────────────────────────────────────────────────────
+/**
+ * Collapsible map legend (collapsed by default on phones, where it would cover the map).
+ * @param {{visible: boolean}} props
+ */
 function MapLegend({ visible }) {
-  // Collapsed by default on phones, where the open legend would cover the map.
   const [open, setOpen] = useState(() => !(typeof window !== 'undefined' && window.matchMedia?.('(max-width: 768px)').matches))
   if (!visible) return null
   return (
@@ -286,24 +353,14 @@ function MapLegend({ visible }) {
             <svg width="18" height="18" viewBox="0 0 512 512" aria-hidden="true"><path fill="#facc15" stroke="#000" strokeWidth="30" d="M256 48 l20 120 l160 90 l-10 30 l-150-50 l0 130 l50 35 l0 30 l-70-20 l-70 20 l0-30 l50-35 l0-130 l-150 50 l-10-30 l160-90 Z"/></svg>
             <span>Aircraft (heading shown)</span>
           </div>
+          {Object.entries(CAT_COLORS).map(([cat, color]) => (
+            <div className="legend-item" key={cat}>
+              <span className="station-cat legend-cat" style={{borderColor: color}}>{cat}</span>
+              <span>Station — {cat}</span>
+            </div>
+          ))}
           <div className="legend-item">
-            <span className="station-cat legend-cat" style={{borderColor: '#10b981'}}>VFR</span>
-            <span>Station — VFR</span>
-          </div>
-          <div className="legend-item">
-            <span className="station-cat legend-cat" style={{borderColor: '#3b82f6'}}>MVFR</span>
-            <span>Station — MVFR</span>
-          </div>
-          <div className="legend-item">
-            <span className="station-cat legend-cat" style={{borderColor: '#ef4444'}}>IFR</span>
-            <span>Station — IFR</span>
-          </div>
-          <div className="legend-item">
-            <span className="station-cat legend-cat" style={{borderColor: '#a855f7'}}>LIFR</span>
-            <span>Station — LIFR</span>
-          </div>
-          <div className="legend-item">
-            <span className="station-cat legend-cat est" style={{borderColor: '#10b981'}}>~VFR</span>
+            <span className="station-cat legend-cat est" style={{borderColor: CAT_COLORS.VFR}}>~VFR</span>
             <span>~ = model estimate, not observed</span>
           </div>
           <div className="legend-item">
@@ -352,7 +409,106 @@ function MapLegend({ visible }) {
   )
 }
 
+// ── Map popups ──────────────────────────────────────────────────────
+/** Popup badge colours (light background / dark text) per flight category. */
+const CAT_BADGE = {
+  VFR: { background: '#d1fae5', color: '#065f46' },
+  MVFR: { background: '#dbeafe', color: '#1e40af' },
+  IFR: { background: '#fee2e2', color: '#991b1b' },
+  LIFR: { background: '#ede9fe', color: '#5b21b6' },
+}
+/** Popup badge colours when the category is missing or unknown. */
+const CAT_BADGE_NONE = { background: '#f1f5f9', color: '#64748b' }
+
+/**
+ * Altitude in whole feet.
+ * @param {number} metres
+ * @returns {number}
+ */
+const feet = (metres) => Math.round(metres * 3.281)
+
+/**
+ * Popup for a weather station marker: flight category, latest METAR values, a simple
+ * temperature gauge and the raw METAR.
+ * @param {{s: object}} props station from `api.mapLayers().stations`
+ */
+function StationPopup({ s }) {
+  return (
+    <div style={{color: '#000', minWidth: 240, fontSize: 13, lineHeight: 1.6}}>
+      <div style={{fontWeight: 700, fontSize: 15, marginBottom: 4, borderBottom: '1px solid #ddd', paddingBottom: 4}}>
+        {s.icao} — {s.name}
+      </div>
+      <div><strong>Flight Category:</strong>{' '}
+        <span style={{
+          padding: '1px 6px', borderRadius: 3, fontWeight: 700, fontSize: 12,
+          ...(CAT_BADGE[s.flight_category] || CAT_BADGE_NONE),
+        }}>{s.flight_category || 'N/A'}</span>
+      </div>
+      {s.temp_c != null && <div><strong>Temperature:</strong> {s.temp_c}°C ({Math.round(s.temp_c * 9/5 + 32)}°F)</div>}
+      {s.dewpoint_c != null && <div><strong>Dewpoint:</strong> {s.dewpoint_c}°C</div>}
+      {s.wind_speed_kt != null && <div><strong>Wind:</strong> {s.wind_dir_deg != null ? s.wind_dir_deg + '° at ' : ''}{s.wind_speed_kt} kt{s.wind_gust_kt ? ' G' + s.wind_gust_kt : ''}</div>}
+      {s.visibility_sm != null && <div><strong>Visibility:</strong> {s.visibility_sm} SM</div>}
+      {s.altimeter_inhg != null && <div><strong>Altimeter:</strong> {s.altimeter_inhg} inHg</div>}
+      {s.elevation_ft != null && <div><strong>Elevation:</strong> {s.elevation_ft} ft</div>}
+      <div><strong>Coordinates:</strong> {s.lat.toFixed(3)}°N, {Math.abs(s.lon).toFixed(3)}°W</div>
+      {/* 8. Mini sparkline (temperature indicator bar) */}
+      {s.temp_c != null && (
+        <div style={{marginTop: 6}}>
+          <div style={{fontSize: 10, color: '#666', marginBottom: 2}}>Temp gauge</div>
+          <div style={{height: 8, background: '#e5e7eb', borderRadius: 4, overflow: 'hidden'}}>
+            <div style={{
+              width: Math.min(100, Math.max(5, (s.temp_c + 10) / 50 * 100)) + '%',
+              height: '100%', borderRadius: 4,
+              background: s.temp_c > 35 ? '#ef4444' : s.temp_c > 25 ? '#f59e0b' : s.temp_c > 15 ? '#10b981' : '#3b82f6',
+            }} />
+          </div>
+        </div>
+      )}
+      {s.raw_metar && (
+        <code style={{fontSize: 10, display: 'block', marginTop: 6, padding: 6, background: '#f0fdf4', borderRadius: 4, wordBreak: 'break-all', whiteSpace: 'pre-wrap', color: '#166534'}}>
+          {s.raw_metar}
+        </code>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Popup for an aircraft marker: country, altitude, speed, track, vertical speed,
+ * category and ICAO24 address.
+ * @param {{f: object}} props flight from `api.mapLayers().flights`
+ */
+function AircraftPopup({ f }) {
+  return (
+    <div style={{color: '#000', minWidth: 200, fontSize: 13, lineHeight: 1.6}}>
+      <div style={{fontWeight: 700, fontSize: 15, marginBottom: 4, borderBottom: '1px solid #ddd', paddingBottom: 4}}>
+        {f.callsign || f.icao24}
+      </div>
+      <div><strong>Country:</strong> {f.origin_country}</div>
+      <div><strong>Altitude:</strong> {f.altitude ? feet(f.altitude) + ' ft (' + Math.round(f.altitude) + 'm)' : 'GND'}</div>
+      <div><strong>Speed:</strong> {f.velocity ? Math.round(f.velocity * 1.944) + ' kt' : 'N/A'}</div>
+      <div><strong>Track:</strong> {f.track ? Math.round(f.track) + '°' : 'N/A'}</div>
+      {f.vertical_rate != null && f.vertical_rate !== 0 && (
+        <div style={{color: f.vertical_rate > 0 ? '#16a34a' : '#dc2626'}}>
+          <strong>V/S:</strong> {f.vertical_rate > 0 ? '+' : ''}{Math.round(f.vertical_rate * 196.85)} fpm
+        </div>
+      )}
+      <div><strong>Category:</strong> {f.category || 'unknown'}</div>
+      <div style={{fontSize: 10, color: '#999', marginTop: 4}}>ICAO24: {f.icao24}</div>
+    </div>
+  )
+}
+
 // ── 11. Timelapse Controller ────────────────────────────────────────
+/**
+ * Replay slider over the recorded flight snapshots; shown only while replay is active.
+ * @param {object} props
+ * @param {object[]} props.snapshots recorded snapshots ({flights, time})
+ * @param {boolean} props.active replay mode on
+ * @param {function} props.onToggle toggles replay (currently unused by the bar itself)
+ * @param {number} props.currentIdx selected snapshot index
+ * @param {function(number): void} props.onSeek called with the new index
+ */
 function TimelapseBar({ snapshots, active, onToggle, currentIdx, onSeek }) {
   if (!active) return null
   return (
@@ -369,6 +525,12 @@ function TimelapseBar({ snapshots, active, onToggle, currentIdx, onSeek }) {
   )
 }
 
+/**
+ * Records a snapshot of the flights on every poll (last 30 kept) and, while replay is
+ * active, returns the selected snapshot's flights instead of the live ones.
+ * @param {object[]} flights live flights
+ * @returns {{snapshots: object[], active: boolean, setActive: function, idx: number, setIdx: function, displayFlights: object[]}}
+ */
 function useTimelapse(flights) {
   const [snapshots, setSnapshots] = useState([])
   const [active, setActive] = useState(false)
@@ -390,20 +552,26 @@ function useTimelapse(flights) {
   return { snapshots, active, setActive, idx, setIdx, displayFlights }
 }
 
-// ── MAIN COMPONENT ──────────────────────────────────────────────────
-export default function CommandCenter() {
-  const { data, loading } = usePolling(useCallback(() => api.mapLayers(), []), 15000)
-  const { data: summary } = usePolling(useCallback(() => api.dashboardSummary(), []), 30000)
-  const { data: airspace } = usePolling(useCallback(() => api.meshAirspace(), []), 5000)
+/**
+ * Collects operational alerts for the Command Center from three sources: SIGMETs pushed
+ * over the `sigmets` WebSocket, the `alerts` WebSocket feed, and the mesh airspace
+ * picture (confirmed hazards, and confirmed-hazard conflicts within 15 minutes). Alerts
+ * are de-duplicated by id, newest first, capped at 50; a chime plays for each new one
+ * when the user has alert sounds on. Mesh alerts dismiss themselves (marked `cleared`)
+ * once their hazard or conflict is over, so "active" means "needs attention now".
+ * @param {object|null} airspace latest `api.meshAirspace()` payload
+ * @param {object} prefs accessibility preferences (reads `alertSound`)
+ * @returns {{alerts: object[], setAlerts: function, dismissAlert: function(string): void, simSigmets: object[]}}
+ *   `simSigmets` are the still-valid SIGMETs received over the WebSocket
+ */
+function useOperationalAlerts(airspace, prefs) {
   const alertWs = useWebSocket('alerts')
   const sigmetWs = useWebSocket('sigmets')
   const [simSigmets, setSimSigmets] = useState([])
 
-  // ── Operational alerts: every alert is shown, announced, and optionally chimed ──
-  const [prefs, setPref] = useA11yPrefs()
-  const reducedMotion = usePrefersReducedMotion()
   const chime = useChime()
   const [alerts, setAlerts] = useState([])
+  /** Adds an alert (stamped now, not dismissed) unless one with the same id already exists. */
   const pushAlert = useCallback((a) => {
     setAlerts(prev => prev.some(x => x.id === a.id) ? prev : [{ ...a, time: new Date(), dismissed: false }, ...prev].slice(0, 50))
   }, [])
@@ -480,11 +648,28 @@ export default function CommandCenter() {
     }))
   }, [airspace, pushAlert])
 
+  /** Marks one alert dismissed. */
+  const dismissAlert = useCallback((id) => setAlerts(prev => prev.map(a => a.id === id ? { ...a, dismissed: true } : a)), [])
+
+  return { alerts, setAlerts, dismissAlert, simSigmets }
+}
+
+// ── MAIN COMPONENT ──────────────────────────────────────────────────
+/** The Command Center: header controls, briefing, alerts, stats, layer toggles, map and tables. */
+export default function CommandCenter() {
+  const { data, loading } = usePolling(useCallback(() => api.mapLayers(), []), 15000)
+  const { data: summary } = usePolling(useCallback(() => api.dashboardSummary(), []), 30000)
+  const { data: airspace } = usePolling(useCallback(() => api.meshAirspace(), []), 5000)
+  // ── Operational alerts: every alert is shown, announced, and optionally chimed ──
+  const [prefs, setPref] = useA11yPrefs()
+  const reducedMotion = usePrefersReducedMotion()
+  const { alerts, setAlerts, dismissAlert, simSigmets } = useOperationalAlerts(airspace, prefs)
+
   // Alert details dialog and "Show on map".
   const [openAlertId, setOpenAlertId] = useState(null)
   const openAlert = alerts.find(a => a.id === openAlertId) || null
   const [mapFocus, setMapFocus] = useState(null)
-  const dismissAlert = useCallback((id) => setAlerts(prev => prev.map(a => a.id === id ? { ...a, dismissed: true } : a)), [])
+  /** Closes the alert dialog, centres the map on `p` and scrolls the map into view. */
   const locateOnMap = useCallback((p) => {
     setOpenAlertId(null)
     setMapFocus({ lat: p.lat, lon: p.lon, n: Date.now() })
@@ -612,14 +797,18 @@ export default function CommandCenter() {
 
       {/* Layer toggle bar */}
       <div className="layer-toggles" role="group" aria-label="Map layers">
-        <label><input type="checkbox" checked={showMesh} onChange={() => setShowMesh(!showMesh)} /> Mesh hazards</label>
-        <label><input type="checkbox" checked={showRadar} onChange={() => setShowRadar(!showRadar)} /> Radar</label>
-        <label><input type="checkbox" checked={showWind} onChange={() => setShowWind(!showWind)} /> Wind</label>
-        <label><input type="checkbox" checked={showTrails} onChange={() => setShowTrails(!showTrails)} /> Trails</label>
-        <label><input type="checkbox" checked={showHurricanes} onChange={() => setShowHurricanes(!showHurricanes)} /> Cyclones</label>
-        <label><input type="checkbox" checked={showSigmets} onChange={() => setShowSigmets(!showSigmets)} /> SIGMETs</label>
-        <label><input type="checkbox" checked={showAltitude} onChange={() => setShowAltitude(!showAltitude)} /> Altitude</label>
-        <label><input type="checkbox" checked={timelapse.active} onChange={() => timelapse.setActive(!timelapse.active)} /> Replay</label>
+        {[
+          ['Mesh hazards', showMesh, setShowMesh],
+          ['Radar', showRadar, setShowRadar],
+          ['Wind', showWind, setShowWind],
+          ['Trails', showTrails, setShowTrails],
+          ['Cyclones', showHurricanes, setShowHurricanes],
+          ['SIGMETs', showSigmets, setShowSigmets],
+          ['Altitude', showAltitude, setShowAltitude],
+          ['Replay', timelapse.active, timelapse.setActive],
+        ].map(([label, checked, set]) => (
+          <label key={label}><input type="checkbox" checked={checked} onChange={() => set(!checked)} /> {label}</label>
+        ))}
       </div>
 
       {/* Timelapse bar */}
@@ -708,45 +897,7 @@ export default function CommandCenter() {
                   <Marker key={s.icao} position={[s.lat, s.lon]}
                     icon={stationIcon(s.flight_category, s.source)}
                     title={`${s.icao} ${s.name}: ${s.flight_category && s.flight_category !== 'N/A' ? s.flight_category : 'flight category unavailable'}${s.source === 'model' ? ' (model estimate, not observed)' : s.source === 'metar' ? ' (observed)' : ''}`}>
-                    <Popup>
-                      <div style={{color: '#000', minWidth: 240, fontSize: 13, lineHeight: 1.6}}>
-                        <div style={{fontWeight: 700, fontSize: 15, marginBottom: 4, borderBottom: '1px solid #ddd', paddingBottom: 4}}>
-                          {s.icao} — {s.name}
-                        </div>
-                        <div><strong>Flight Category:</strong>{' '}
-                          <span style={{
-                            padding: '1px 6px', borderRadius: 3, fontWeight: 700, fontSize: 12,
-                            background: s.flight_category === 'VFR' ? '#d1fae5' : s.flight_category === 'MVFR' ? '#dbeafe' : s.flight_category === 'IFR' ? '#fee2e2' : s.flight_category === 'LIFR' ? '#ede9fe' : '#f1f5f9',
-                            color: s.flight_category === 'VFR' ? '#065f46' : s.flight_category === 'MVFR' ? '#1e40af' : s.flight_category === 'IFR' ? '#991b1b' : s.flight_category === 'LIFR' ? '#5b21b6' : '#64748b',
-                          }}>{s.flight_category || 'N/A'}</span>
-                        </div>
-                        {s.temp_c != null && <div><strong>Temperature:</strong> {s.temp_c}°C ({Math.round(s.temp_c * 9/5 + 32)}°F)</div>}
-                        {s.dewpoint_c != null && <div><strong>Dewpoint:</strong> {s.dewpoint_c}°C</div>}
-                        {s.wind_speed_kt != null && <div><strong>Wind:</strong> {s.wind_dir_deg != null ? s.wind_dir_deg + '° at ' : ''}{s.wind_speed_kt} kt{s.wind_gust_kt ? ' G' + s.wind_gust_kt : ''}</div>}
-                        {s.visibility_sm != null && <div><strong>Visibility:</strong> {s.visibility_sm} SM</div>}
-                        {s.altimeter_inhg != null && <div><strong>Altimeter:</strong> {s.altimeter_inhg} inHg</div>}
-                        {s.elevation_ft != null && <div><strong>Elevation:</strong> {s.elevation_ft} ft</div>}
-                        <div><strong>Coordinates:</strong> {s.lat.toFixed(3)}°N, {Math.abs(s.lon).toFixed(3)}°W</div>
-                        {/* 8. Mini sparkline (temperature indicator bar) */}
-                        {s.temp_c != null && (
-                          <div style={{marginTop: 6}}>
-                            <div style={{fontSize: 10, color: '#666', marginBottom: 2}}>Temp gauge</div>
-                            <div style={{height: 8, background: '#e5e7eb', borderRadius: 4, overflow: 'hidden'}}>
-                              <div style={{
-                                width: Math.min(100, Math.max(5, (s.temp_c + 10) / 50 * 100)) + '%',
-                                height: '100%', borderRadius: 4,
-                                background: s.temp_c > 35 ? '#ef4444' : s.temp_c > 25 ? '#f59e0b' : s.temp_c > 15 ? '#10b981' : '#3b82f6',
-                              }} />
-                            </div>
-                          </div>
-                        )}
-                        {s.raw_metar && (
-                          <code style={{fontSize: 10, display: 'block', marginTop: 6, padding: 6, background: '#f0fdf4', borderRadius: 4, wordBreak: 'break-all', whiteSpace: 'pre-wrap', color: '#166534'}}>
-                            {s.raw_metar}
-                          </code>
-                        )}
-                      </div>
-                    </Popup>
+                    <Popup><StationPopup s={s} /></Popup>
                   </Marker>
                 ))}
 
@@ -764,25 +915,8 @@ export default function CommandCenter() {
                   // the aircraft table below the map is the keyboard/screen-reader equivalent.
                   <Marker key={f.icao24} position={[f.lat, f.lon]}
                     icon={aircraftIcon(f.track)} keyboard={false}
-                    title={`${f.callsign || f.icao24}, ${f.altitude ? Math.round(f.altitude * 3.281).toLocaleString() + ' ft' : 'on ground'}`}>
-                    <Popup>
-                      <div style={{color: '#000', minWidth: 200, fontSize: 13, lineHeight: 1.6}}>
-                        <div style={{fontWeight: 700, fontSize: 15, marginBottom: 4, borderBottom: '1px solid #ddd', paddingBottom: 4}}>
-                          {f.callsign || f.icao24}
-                        </div>
-                        <div><strong>Country:</strong> {f.origin_country}</div>
-                        <div><strong>Altitude:</strong> {f.altitude ? Math.round(f.altitude * 3.281) + ' ft (' + Math.round(f.altitude) + 'm)' : 'GND'}</div>
-                        <div><strong>Speed:</strong> {f.velocity ? Math.round(f.velocity * 1.944) + ' kt' : 'N/A'}</div>
-                        <div><strong>Track:</strong> {f.track ? Math.round(f.track) + '°' : 'N/A'}</div>
-                        {f.vertical_rate != null && f.vertical_rate !== 0 && (
-                          <div style={{color: f.vertical_rate > 0 ? '#16a34a' : '#dc2626'}}>
-                            <strong>V/S:</strong> {f.vertical_rate > 0 ? '+' : ''}{Math.round(f.vertical_rate * 196.85)} fpm
-                          </div>
-                        )}
-                        <div><strong>Category:</strong> {f.category || 'unknown'}</div>
-                        <div style={{fontSize: 10, color: '#999', marginTop: 4}}>ICAO24: {f.icao24}</div>
-                      </div>
-                    </Popup>
+                    title={`${f.callsign || f.icao24}, ${f.altitude ? feet(f.altitude).toLocaleString() + ' ft' : 'on ground'}`}>
+                    <Popup><AircraftPopup f={f} /></Popup>
                   </Marker>
                 ))}
               </MapContainer>

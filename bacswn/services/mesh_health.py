@@ -24,6 +24,12 @@ carrier-A outage across the network, and VHF interference around a station.
 
 Thresholds are the Master Plan's reference values scaled to the simulation clock
 (one tick = 5 simulated minutes = one heartbeat round).
+
+How: state lives in ``sim._health`` (rebuilt whenever the simulation rebuilds its
+links). ``update`` runs once per tick with the simulation's dedicated health
+random stream: telemetry → heartbeats → classification → open/resolve diagnoses
+(MAINT tickets for persistent equipment faults). It feeds back into
+``mesh_comms`` only the impairments that equipment state cannot show.
 """
 
 from __future__ import annotations
@@ -56,6 +62,7 @@ HW_FAULTS = {
 
 
 def _state(sim) -> dict:
+    """The simulation's health-monitoring state, created on first use and after a reset."""
     st = getattr(sim, "_health", None)
     if st is None or st.get("built_for") is not sim.links:
         st = sim._health = {
@@ -74,6 +81,7 @@ def _state(sim) -> dict:
 # ── telemetry ───────────────────────────────────────────────────────────────
 
 def _telemetry(sim, n: dict, st: dict, rng) -> dict:
+    """Radio telemetry for one station's channels, derived from true equipment state plus noise."""
     code = n["station"]
     eq = n["comms"]
     hw = st["hw"].get(code, set())
@@ -146,6 +154,12 @@ def _impairment(st: dict, link: dict, ch: str) -> float:
 
 
 def _heartbeats(sim, st: dict, tel: dict, rng) -> None:
+    """Exchange one heartbeat per link channel and move each through up/degraded/down.
+
+    A telemetry alarm marks the channel down at once; otherwise missed beats and
+    loss over the window degrade it, and it returns to up only after RECOVER_GOOD
+    good beats in a row.
+    """
     for link in sim.links.values():
         for ch in link["channels"]:
             key = (link["a"], link["b"], ch)
@@ -205,6 +219,11 @@ def _station_component(code: str, ch: str, t: dict) -> str | None:
 
 
 def _classify(sim, st: dict, tel: dict) -> dict[str, dict]:
+    """Diagnose current failures across stations, keyed by a stable diagnosis key.
+
+    Classes: equipment (with a ticket naming the component), local network,
+    channel-wide outage, interference and path problem.
+    """
     found: dict[str, dict] = {}
     by_station_ch: dict[tuple, list] = {}
     for (a, b, ch), s in st["state"].items():
@@ -212,6 +231,7 @@ def _classify(sim, st: dict, tel: dict) -> dict[str, dict]:
             by_station_ch.setdefault((code, ch), []).append(s["state"])
 
     def add(key, cls, title, detail, stations, ticket=None):
+        """Record one diagnosis under `key`."""
         found[key] = {"key": key, "class": cls, "title": title, "detail": detail,
                       "stations": sorted(stations), "ticket": ticket}
 
@@ -281,6 +301,7 @@ def _classify(sim, st: dict, tel: dict) -> dict[str, dict]:
 # ── tick, faults, views ────────────────────────────────────────────────────
 
 def update(sim, rng) -> None:
+    """One tick of monitoring: telemetry, heartbeats, classification, then open/resolve diagnoses."""
     st = _state(sim)
     tel = {code: _telemetry(sim, n, st, rng) for code, n in sim.nodes.items()}
     sim._comms_telemetry = tel
@@ -351,6 +372,8 @@ def clear(sim, station: str | None = None) -> None:
 
 
 def view(sim) -> dict:
+    """Public comms-health view: open and resolved diagnoses, telemetry, non-up link channels,
+    injected faults and thresholds."""
     st = _state(sim)
     tel = getattr(sim, "_comms_telemetry", {})
     links = []

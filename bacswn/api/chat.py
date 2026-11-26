@@ -1,4 +1,15 @@
-"""BACSWN — Aviation weather chat API router (RAG-style)."""
+"""BACSWN — aviation weather chat API router.
+
+What: ``POST /api/chat/`` answers a pilot's free-text question with a Markdown briefing:
+a station's METAR/TAF when the message names a Bahamas ICAO code, a FIR traffic summary
+when it mentions flights/traffic, otherwise a help message.
+
+Why: a quick conversational briefing over the same live feeds the dashboards use.
+
+How: keyword matching (no language model): the first known station code found in the
+upper-cased message wins, then traffic keywords; data comes from the AWC and OpenSky
+clients.
+"""
 
 from fastapi import APIRouter
 from pydantic import BaseModel
@@ -10,6 +21,8 @@ router = APIRouter()
 
 
 class ChatMessage(BaseModel):
+    """The user's chat message."""
+
     message: str
 
 

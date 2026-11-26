@@ -16,6 +16,15 @@ How the stations use it (see services/mesh_network.py):
     reading the satellite contradicts is flagged SUSPECT and TEMPO's confidence
     is cut;
   * an outlook of cells due within the next hour, beyond VISTA's 30-min nowcast.
+
+Why a separate module: the satellite is an independent source the safeguards
+rely on, and keeping it apart means a real client can replace it without
+touching the ensemble logic.
+
+How: each station carries a ``node["satellite"]`` dict with the latest radar and
+sounder products, a queue of passes still being processed, and a per-instrument
+revisit phase. Noise comes from the simulation's auxiliary random stream, so
+adding the feed does not change the weather or model behaviour of a seeded run.
 """
 
 from __future__ import annotations
@@ -32,16 +41,24 @@ OUTLOOK_TICKS = 12               # cells due within 60 min
 
 
 def _bearing(lat1, lon1, lat2, lon2) -> float:
+    """Initial bearing in degrees (0 = north) from point 1 to point 2, flat-earth approximation."""
     dy, dx = lat2 - lat1, (lon2 - lon1) * math.cos(math.radians((lat1 + lat2) / 2))
     return math.degrees(math.atan2(dx, dy)) % 360
 
 
 class SatelliteFeed:
+    """Simulated satellite passes and the products derived from them, for every station."""
+
     def __init__(self, sim, rng):
+        """Bind the feed to a ``MeshSimulation`` and the random stream used for observation noise."""
         self.sim = sim
         self.rng = rng
 
     def build(self, node: dict) -> None:
+        """Give a new station its empty satellite state and revisit phases.
+
+        Passes sweep west → east, like a ground track crossing the islands.
+        """
         # Passes sweep west → east, like a ground track crossing the islands.
         frac = (node["lon"] + 80.5) / 8.5
         node["satellite"] = {
@@ -51,6 +68,7 @@ class SatelliteFeed:
 
     # ── passes ──────────────────────────────────────────────────────────
     def update(self, n: dict) -> None:
+        """One tick: publish passes whose processing has finished, and take any pass now due."""
         sat, tick = n["satellite"], self.sim.tick
         ready = [p for p in sat["pending"] if p["available_tick"] <= tick]
         sat["pending"] = [p for p in sat["pending"] if p["available_tick"] > tick]
@@ -60,7 +78,7 @@ class SatelliteFeed:
                 sat[obs["instrument"]] = obs
         for inst, spec in INSTRUMENTS.items():
             if (tick - sat["phase"][inst]) % spec["revisit_ticks"] == 0:
-                obs = self.observe_radar(n) if inst == "radar" else self.observe_sounder(n)
+                obs = self._observe(inst, n)
                 obs.update(instrument=inst, source=spec["name"], tick=tick,
                            available_tick=tick + spec["latency_ticks"])
                 sat["pending"].append(obs)
@@ -70,11 +88,17 @@ class SatelliteFeed:
         sat, tick = n["satellite"], self.sim.tick
         sat["pending"] = []                 # supersedes passes still being processed
         for inst, spec in INSTRUMENTS.items():
-            obs = self.observe_radar(n) if inst == "radar" else self.observe_sounder(n)
+            obs = self._observe(inst, n)
             obs.update(instrument=inst, source=spec["name"], tick=tick, available_tick=tick)
             sat[inst] = obs
 
+    def _observe(self, inst: str, n: dict) -> dict:
+        """Take one observation with instrument `inst` ("radar" or "sounder") over station `n`."""
+        return self.observe_radar(n) if inst == "radar" else self.observe_sounder(n)
+
     def observe_radar(self, n: dict) -> dict:
+        """Precipitation-radar product: reflectivity and rain rate at the station, its hazard
+        call, and every echo of 25 dBZ+ in the footprint (with motion, for advection)."""
         from services.mesh_network import _classify, _dbz_to_rain
         f = self.sim._field(n["lat"], n["lon"])
         dbz = max(0.0, f["dbz"] + self.rng.gauss(0, 3))
@@ -93,6 +117,8 @@ class SatelliteFeed:
                 "call": _classify(dbz, f["gust"], 10, 3500, f["squall"]), "cells": cells}
 
     def observe_sounder(self, n: dict) -> dict:
+        """Microwave-sounder product: cloud-top temperature, precipitable water, instability
+        and low stratus (an IFR call) over the station."""
         f = self.sim._field(n["lat"], n["lon"])
         near = max([self.sim._intensity(c) for c in self.sim.cells if c["kind"] != "fog" and
                     math.hypot(c["lat"] - n["lat"], c["lon"] - n["lon"]) < 0.6] or [0])
@@ -108,6 +134,7 @@ class SatelliteFeed:
 
     # ── derived ─────────────────────────────────────────────────────────
     def _fresh(self, obs: dict | None) -> bool:
+        """Whether a product exists and is recent enough (FRESH_TICKS) to base decisions on."""
         return obs is not None and self.sim.tick - obs["tick"] <= FRESH_TICKS
 
     def call_now(self, n: dict, lat: float | None = None, lon: float | None = None) -> str | None:
@@ -183,9 +210,11 @@ class SatelliteFeed:
         return issues
 
     def view(self, n: dict) -> dict:
+        """Public view of a station's satellite products, call, outlook and next-pass times."""
         sat, tick = n["satellite"], self.sim.tick
 
         def pub(obs):
+            """Public form of one product: age, freshness, and cells as distance/bearing from the station."""
             if obs is None:
                 return None
             out = {k: v for k, v in obs.items() if k not in ("cells", "available_tick", "tick")}

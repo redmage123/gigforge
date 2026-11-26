@@ -1,4 +1,15 @@
-"""BACSWN — AI-powered SIGMET/AIRMET advisory generator."""
+"""BACSWN — SIGMET advisory generator.
+
+What: builds an ICAO-format SIGMET for the Nassau FIR (raw text plus structured
+fields) from a hazard type, severity, flight levels, movement and validity.
+
+Why: SIGMETs must follow the ICAO Annex 3 layout exactly; generating them from
+fields avoids hand-typing errors under time pressure. Used by the SIGMET API and
+the sigmet-drafter agent.
+
+How: deterministic string formatting from the current UTC time; the result is a
+``draft`` advisory for a forecaster to review. Unknown severities map to MOD.
+"""
 
 import logging
 from datetime import datetime, timedelta, timezone
@@ -30,9 +41,10 @@ def generate_sigmet(
     movement: str = "STNR",
     valid_hours: int = 6,
 ) -> dict:
-    """Generate an ICAO-formatted SIGMET advisory.
+    """Generate an ICAO-formatted SIGMET advisory valid from now for ``valid_hours``.
 
-    Returns both raw ICAO text and structured data.
+    The sequence number is the issue time (HHMM). Returns both the raw ICAO text
+    and the structured fields stored in the ``advisories`` table.
     """
     now = datetime.now(timezone.utc)
     expires_at = now + timedelta(hours=valid_hours)

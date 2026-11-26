@@ -121,7 +121,8 @@ def test_path_problem(sim):
 
 def test_inject_errors(sim):
     assert "Unknown station" in health.inject(sim, "vhf_antenna", "XXXX")["error"]
-    assert "no cellular" in health.inject(sim, "vhf_interference", None)["error"] or True
+    # A fault that needs a station is refused without one (this line used to end in "or True").
+    assert "Unknown station" in health.inject(sim, "vhf_interference", None)["error"]
     assert "Unknown comms fault" in health.inject(sim, "bogus", "MYNN")["error"]
 
 

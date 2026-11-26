@@ -1,18 +1,33 @@
-import { Circle, CircleMarker, Polyline } from 'react-leaflet'
-
 /**
  * Mesh weather → air traffic. Map layers (hazard areas, predicted paths into
  * them) plus a panel that is their full text equivalent: every hazard and
  * every conflict, with the suggested heading change.
+ *
+ * Why: the mesh's value to air traffic is warning aircraft before they reach a
+ * storm; the map shows it at a glance and the panel gives the same facts to
+ * screen-reader users and anyone who needs exact values (WCAG 1.1.1).
+ * How: both read the `airspace` picture from /api/mesh/airspace (hazards,
+ * conflicts, horizon); map shapes are non-interactive so they never block
+ * clicks on aircraft beneath.
  */
+import { Circle, CircleMarker, Polyline } from 'react-leaflet'
+import { compass } from '../compass'
 
+
+/** Map colour per hazard kind (graphics only). */
 const HZ_COLOR = { SQUALL: '#ef4444', TSRA: '#f59e0b', IFR: '#a855f7' }
+/** Text colour per hazard kind: CSS variables with 4.5:1 contrast in both themes. */
 const HZ_TEXT = { SQUALL: 'var(--hz-squall, var(--danger-text))', TSRA: 'var(--warning-text)', IFR: 'var(--cat-lifr-text)' }
+/** Hazard verification status -> [label, badge class]. */
 const STATUS = { confirmed: ['Confirmed', 'sev-severe'], detected: ['Detected', 'sev-moderate'], tracked: ['Tracked', 'sev-low'] }
-const COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']
-const compass = (d) => COMPASS[Math.round(((d % 360) + 360) % 360 / 45) % 8]
+/** Leaflet props for shapes that ignore the pointer. */
 const quiet = { interactive: false, bubblingMouseEvents: false }
 
+/**
+ * Map layers: hazard circles (solid = confirmed, dashed = not yet verified) and,
+ * per conflict, the predicted path to the entry point and a ring on the aircraft.
+ * @param {{airspace: object|null}} props
+ */
 export function MeshHazardLayers({ airspace }) {
   if (!airspace) return null
   return (
@@ -36,6 +51,10 @@ export function MeshHazardLayers({ airspace }) {
   )
 }
 
+/**
+ * Text panel: every predicted conflict (with advice) and every hazard area.
+ * @param {{airspace: object|null}} props
+ */
 export default function MeshTrafficPanel({ airspace }) {
   if (!airspace) return null
   const { hazards, conflicts } = airspace

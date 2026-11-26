@@ -1,4 +1,16 @@
-"""BACSWN — Dashboard summary API router."""
+"""BACSWN — Dashboard summary API router.
+
+What: one summary endpoint with headline counts for every page (flights,
+stations, alerts, emissions, channels, sensors, agents).
+
+Why: the overview dashboard needs all headline numbers in a single request.
+
+How: gathers flights, METARs and NWS alerts from their clients, estimates
+airspace CO2 with ``services.emissions_calculator`` and reads agent status from
+the orchestrator, then reduces each to counts.
+"""
+
+import logging
 
 from fastapi import APIRouter
 from datetime import datetime, timezone
@@ -10,6 +22,7 @@ from services.agent_orchestrator import orchestrator
 from services.channel_dispatcher import CHANNELS
 
 router = APIRouter()
+logger = logging.getLogger("bacswn.dashboard")
 
 
 @router.get("/summary")
@@ -23,6 +36,13 @@ async def get_dashboard_summary():
 
     parsed_metars = [parse_metar(m) for m in metars]
     ifr_stations = [m for m in parsed_metars if m.get("flight_category") in ("IFR", "LIFR")]
+
+    try:  # the CORSIA register gives the real position; this overview must not fail because of it
+        from services.carbon_oversight import compliance_overview
+        corsia_status = (await compliance_overview())["status"]
+    except Exception as e:
+        logger.warning("CORSIA overview unavailable: %s", e)
+        corsia_status = "unknown"
 
     return {
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -44,7 +64,7 @@ async def get_dashboard_summary():
         "emissions": {
             "total_co2_tonnes": emissions["total_co2_tonnes"],
             "monitored_flights": emissions["total_flights"],
-            "compliance_status": "compliant",
+            "compliance_status": corsia_status,
         },
         "emergency": {
             "active_incidents": 0,

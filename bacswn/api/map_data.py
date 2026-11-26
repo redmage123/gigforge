@@ -1,4 +1,14 @@
-"""BACSWN — Map data API router (Command Center)."""
+"""BACSWN — Map data API router (Command Center).
+
+What: one endpoint returning every Command Center map layer — aircraft, station
+markers, SIGMETs, NWS alerts, tropical cyclones, the FIR boundary and bbox.
+
+Why: the map draws all layers together, so one request keeps them consistent.
+
+How: fetches each layer from its client. Stations with a real METAR are marked
+``source="metar"``; the rest are filled from Open-Meteo model current conditions
+and marked ``source="model"`` so the UI never shows an estimate as an observation.
+"""
 
 from fastapi import APIRouter
 from services.opensky_client import fetch_flights
@@ -24,7 +34,7 @@ async def get_map_layers():
     # marked source="metar" (observed); the rest are filled from Open-Meteo
     # current conditions and marked source="model" (nowcast estimate) so the UI
     # can label them honestly and never present an estimate as an observation.
-    metar_map = {parse_metar(m)["station_id"]: parse_metar(m) for m in metars}
+    metar_map = {p["station_id"]: p for p in map(parse_metar, metars)}
     missing = [(code, info["lat"], info["lon"])
                for code, info in STATION_COORDS.items() if code not in metar_map]
     model_map = await fetch_current_for_stations(missing)

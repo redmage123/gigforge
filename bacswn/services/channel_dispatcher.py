@@ -1,7 +1,15 @@
-"""BACSWN — Multi-channel emergency alert dispatcher.
+"""BACSWN — multi-channel emergency alert dispatcher.
 
-Dispatches alerts to WhatsApp, Telegram, Slack, Discord, SMS, Email.
-For the demo, all channels are simulated with realistic logging.
+What: the catalogue of alert channels (``CHANNELS``: WhatsApp, Telegram, Slack,
+Discord, email, SMS, radio, pager, webhooks, displays, app push, social, P2P and
+satellite) and ``dispatch_alert``, which sends an alert to all or some of them.
+
+Why: SIGMETs, hurricane warnings and emergencies must reach every audience at once;
+callers name the alert, not the delivery mechanism.
+
+How: for the demo every channel is simulated: each send is marked ``"sent"`` and
+logged as a row in ``channel_messages`` so the dispatch console shows a realistic
+history. Real integrations would replace the per-channel step in ``dispatch_alert``.
 """
 
 import logging
@@ -61,9 +69,13 @@ async def dispatch_alert(
     severity: str = "warning",
     channel_types: list[str] | None = None,
 ) -> list[dict]:
-    """Dispatch an alert to all configured channels.
+    """Dispatch an alert to every configured channel, or only to ``channel_types``.
 
-    Returns list of dispatch results.
+    Each (simulated) send is logged to ``channel_messages`` with ``severity`` as its
+    message type.
+
+    Returns:
+        One result dict per channel reached: type, name, icon, status and sent time.
     """
     results = []
     now = datetime.now(timezone.utc).isoformat()

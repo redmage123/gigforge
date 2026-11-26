@@ -1,4 +1,14 @@
-"""BACSWN — Simulation API router."""
+"""BACSWN — Simulation API router.
+
+What: lists the scripted mesh-network scenarios and returns a scenario's state
+at a given step.
+
+Why: the Simulation page steps through storms and faults to demonstrate how the
+station mesh responds.
+
+How: thin handlers over ``services.simulation_engine``, which is deterministic
+and needs no I/O.
+"""
 
 from fastapi import APIRouter
 from services.simulation_engine import get_scenarios, run_scenario

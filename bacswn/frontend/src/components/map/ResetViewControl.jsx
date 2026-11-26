@@ -1,3 +1,11 @@
+/**
+ * ResetViewControl: a "Reset map" button shared by every Leaflet map.
+ *
+ * Why: users who pan or zoom away (or hit grey tiles after a resize) need one
+ * reliable way back to the starting view, including keyboard users.
+ * How: remembers the first view, then fits / flies back to it, without
+ * animation when the user prefers reduced motion.
+ */
 import { useEffect, useRef } from 'react'
 import { useMap } from 'react-leaflet'
 import { usePrefersReducedMotion } from '../../hooks/useA11yPrefs'
@@ -11,6 +19,7 @@ import MapControl from './MapControl'
  *
  * Use inside <MapContainer>. Clicks on it never reach the map, so maps where a
  * click does something (e.g. spawn a storm) are not triggered by it.
+ * @param {{center?: [number, number], zoom?: number, bounds?: any, position?: string}} props
  */
 export default function ResetViewControl({ center, zoom, bounds, position = 'topleft' }) {
   const map = useMap()
@@ -24,6 +33,7 @@ export default function ResetViewControl({ center, zoom, bounds, position = 'top
     }
   }, [map]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  /** Close popups, re-measure the map and return to the remembered view. */
   const reset = () => {
     const h = home.current
     if (!h) return

@@ -1,3 +1,13 @@
+/**
+ * HoverTip: an accessible hover/focus popup for explaining a term.
+ *
+ * Why: plain `title` tooltips are unreachable by keyboard and touch and vanish
+ * when the pointer moves onto them; WCAG 1.4.13 requires content on hover or
+ * focus to be dismissible, hoverable and persistent.
+ * How: the term is a button; the popup is a role="tooltip" referenced by
+ * aria-describedby while open, placed above or below depending on the room
+ * left in the viewport.
+ */
 import { useEffect, useId, useRef, useState } from 'react'
 
 /**
@@ -5,6 +15,7 @@ import { useEffect, useId, useRef, useState } from 'react'
  * (or a tap on touch screens). Meets WCAG 1.4.13: the popup can be hovered
  * without disappearing, stays until the pointer/focus leaves, and Esc closes it.
  * A click or tap opens it; tapping elsewhere closes it.
+ * @param {{label: any, children: any, className?: string}} props `label`: the term; `children`: the popup
  */
 export default function HoverTip({ label, children, className = '' }) {
   const [open, setOpen] = useState(false)
@@ -14,13 +25,14 @@ export default function HoverTip({ label, children, className = '' }) {
   const hideTimer = useRef(null)
   const pointer = useRef(false)   // focus that comes from a click/tap is handled by onClick
 
+  /** Open the popup on whichever side of the term has room. */
   const show = () => {
     clearTimeout(hideTimer.current)
     const r = wrap.current?.getBoundingClientRect()
     if (r) setSide(window.innerHeight - r.bottom < 260 && r.top > 260 ? 'above' : 'below')
     setOpen(true)
   }
-  // Small delay so the pointer can travel from the term into the popup.
+  /** Close after a short delay, so the pointer can travel from the term into the popup. */
   const hide = () => { hideTimer.current = setTimeout(() => setOpen(false), 120) }
 
   useEffect(() => {

@@ -1,7 +1,16 @@
 """BACSWN — HURDAT2 historical hurricane track database.
 
-Provides historical storm tracks near the Bahamas for comparison
-with current/forecast tracks. Based on notable Atlantic hurricanes.
+What: a small built-in set of notable Atlantic hurricanes that affected the
+Bahamas (Dorian, Matthew, Wilma, Jeanne, Floyd), with simplified tracks, and
+lookups over them.
+
+Why: forecasters compare a current or forecast storm with past storms that
+passed nearby (analogue storms); keeping the set in code means the comparison
+works offline, without a HURDAT2 download.
+
+How: each storm holds a simplified track of [lat, lon, wind_kt, category,
+label] points summarised from NOAA HURDAT2; the lookups filter by peak
+category, by id, or by any track point within 3 degrees of a position.
 """
 
 import logging
@@ -105,12 +114,12 @@ HISTORICAL_STORMS = [
 
 
 def get_historical_storms(min_category: int = 1) -> list:
-    """Get historical storms that affected the Bahamas."""
+    """Historical storms whose peak Saffir-Simpson category is at least ``min_category``."""
     return [s for s in HISTORICAL_STORMS if s["peak_category"] >= min_category]
 
 
 def get_storm_by_id(storm_id: str) -> dict | None:
-    """Get a specific historical storm by ID."""
+    """A historical storm by its HURDAT2 id (e.g. "AL052019"), or None if it is not in the set."""
     for s in HISTORICAL_STORMS:
         if s["id"] == storm_id:
             return s
@@ -118,7 +127,12 @@ def get_storm_by_id(storm_id: str) -> dict | None:
 
 
 def find_similar_storms(lat: float, lon: float, wind_kt: int) -> list:
-    """Find historical storms with tracks near the given position."""
+    """Historical storms with a track point within 3 degrees of latitude and longitude of the position.
+
+    Each storm is listed once, with the first nearby track point as
+    ``closest_point``. ``wind_kt`` is accepted for API compatibility but is not
+    used to rank or filter the matches.
+    """
     similar = []
     for storm in HISTORICAL_STORMS:
         for pt in storm["track"]:

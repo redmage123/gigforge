@@ -1,7 +1,20 @@
+/**
+ * Emergency Response page.
+ *
+ * What: composes an emergency alert and dispatches it to every configured channel
+ * (WhatsApp, SMS, radio, satellite, ...), then shows the per-channel result and the
+ * recent dispatch log.
+ * Why: the operator's single place to push a warning out to all audiences at once.
+ * How: polls `api.channels()` (60 s) for the channel summary and `api.dispatchLog()`
+ * (30 s) for history; `api.dispatchAlert()` sends the form. On success focus moves to
+ * the result heading for screen-reader users; on failure a prominent alert says the
+ * message was NOT sent.
+ */
 import { useState, useCallback, useRef } from 'react'
 import { api } from '../api/client'
 import { usePolling } from '../hooks/usePolling'
 
+/** Alert composer, dispatch result and dispatch log for multi-channel emergency alerts. */
 export default function Emergency() {
   const { data: channelData } = usePolling(useCallback(() => api.channels(), []), 60000)
   const { data: logData, refresh: refreshLog } = usePolling(useCallback(() => api.dispatchLog(), []), 30000)
@@ -20,6 +33,7 @@ export default function Emergency() {
   const channelSummary = channelData || {}
   const dispatchLog = logData?.messages || []
 
+  /** Sends the composed alert; on success shows/focuses the result and refreshes the log, on failure shows a loud error. */
   const handleDispatch = async () => {
     setDispatching(true)
     setDispatchError('')

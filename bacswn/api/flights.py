@@ -1,4 +1,14 @@
-"""BACSWN — Flight operations API router."""
+"""BACSWN — Flight operations API router.
+
+What: serves live flights in the Bahamas FIR, a summary by country and altitude
+band, and stored flight records.
+
+Why: the Flight Ops page needs the current airspace picture and simple traffic
+statistics.
+
+How: ``services.opensky_client.fetch_flights`` supplies live ADS-B (or simulated
+traffic when OpenSky is unavailable); history is read from ``flight_records``.
+"""
 
 from fastapi import APIRouter
 from services.opensky_client import fetch_flights
@@ -52,6 +62,9 @@ async def get_flight_stats():
 
 @router.get("/history")
 async def get_flight_history(hours: int = 24, limit: int = 100):
-    """Get recent flight records from database."""
+    """Get recent flight records from database.
+
+    Note: ``hours`` is accepted but not yet applied; only ``limit`` bounds the result.
+    """
     records = await db_select("flight_records", order_by="recorded_at DESC", limit=limit)
     return {"records": records, "count": len(records)}

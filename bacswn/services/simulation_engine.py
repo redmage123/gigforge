@@ -1,14 +1,25 @@
-from services.websocket_manager import ws_manager
 """BACSWN — Simulation Engine for mesh network scenario demonstrations.
 
-Provides 6 pre-built scenarios that play out over 10 steps each, showing how
-the distributed mesh network responds to real-world weather and fault events.
+What: six scripted scenarios (hurricane landfall, squall line, sensor fault, hub
+failure, IFR event, tropical wave), each played out over ten steps, returning the
+state of every station node plus the mesh messages, consensus votes, alerts and
+propagation forecasts at that step.
+
+Why: the mesh network's behaviour under storms and faults has to be shown to
+stakeholders on demand, without waiting for real weather or breaking real
+equipment. The scenarios are deterministic so a demo is repeatable.
+
+How: each scenario function holds per-step tables (narration, node overrides,
+messages, votes, alerts, forecasts). ``_all_nodes`` lays the step's overrides over a
+healthy baseline for every station, and ``_step_state`` packages one step into the
+response shape served by ``/api/simulation/run``. ``run_scenario`` dispatches by id.
 """
 
 from config import STATION_COORDS, BAHAMAS_STATIONS
 
-# Default baseline state for all stations
+
 def _baseline_node(station_code):
+    """Healthy, hub-connected default state for one station node."""
     info = STATION_COORDS.get(station_code, {})
     return {
         "station": station_code,
@@ -87,6 +98,37 @@ SCENARIOS = [
 ]
 
 
+# Scenario display names, keyed by id, so each step's state repeats the registry name.
+_SCENARIO_NAMES = {sc["id"]: sc["name"] for sc in SCENARIOS}
+
+
+def _step_state(scenario_id, s, total_steps, elapsed_minutes, narrations, nodes_overrides,
+                messages_per_step, consensus_per_step, alerts_per_step, propagation_per_step) -> dict:
+    """Package one step of a scenario into the response shape the frontend renders.
+
+    Args:
+        scenario_id: Registry id; the display name is taken from ``SCENARIOS``.
+        s: The (already clamped) step index into each per-step table.
+        total_steps: Number of steps in the scenario.
+        elapsed_minutes: Simulated minutes since the scenario started at this step.
+        narrations, nodes_overrides, messages_per_step, consensus_per_step,
+        alerts_per_step, propagation_per_step: Per-step tables indexed by ``s``.
+    """
+    return {
+        "scenario_id": scenario_id,
+        "scenario_name": _SCENARIO_NAMES[scenario_id],
+        "step": s,
+        "total_steps": total_steps,
+        "elapsed_minutes": elapsed_minutes,
+        "narration": narrations[s],
+        "nodes": _all_nodes(**nodes_overrides[s]),
+        "active_messages": messages_per_step[s],
+        "consensus_votes": consensus_per_step[s],
+        "alerts_issued": alerts_per_step[s],
+        "propagation_forecasts": propagation_per_step[s],
+    }
+
+
 def get_scenarios():
     """Return list of available scenarios."""
     return SCENARIOS
@@ -95,6 +137,10 @@ def get_scenarios():
 # ── Scenario 1: Hurricane Cat 4 Landfall on Abaco ───────────────────────
 
 def _hurricane_landfall(step):
+    """Scenario 1: a Cat 4 hurricane crosses Abaco; stations lose the hub and go autonomous.
+
+    Adds a ``hurricane`` block (position, intensity, forecast track and cone) to the state.
+    """
     total_steps = 10
     # Storm approaches from SE, hits Abaco (MYAM lat 26.5, MYAT lat 26.7)
     # Pressure drops from 1013 to ~940 at landfall
@@ -280,6 +326,7 @@ def _hurricane_landfall(step):
 
     # Forecast cone — extends ahead of current position
     def _cone(pos_idx):
+        """Closed cone-of-uncertainty polygon ahead of track point ``pos_idx``, widening with time."""
         pts = hurricane_positions[pos_idx:]
         if len(pts) < 2:
             return []
@@ -300,34 +347,28 @@ def _hurricane_landfall(step):
     hp = hurricane_positions[s]
     forecast_track = [[p["lat"], p["lon"]] for p in hurricane_positions[s:]]
 
-    return {
-        "scenario_id": "hurricane_landfall",
-        "scenario_name": "Hurricane Cat 4 Landfall on Abaco",
-        "step": s,
-        "total_steps": total_steps,
-        "elapsed_minutes": s * 15,
-        "narration": narrations[s],
-        "nodes": _all_nodes(**nodes_overrides[s]),
-        "active_messages": messages_per_step[s],
-        "consensus_votes": consensus_per_step[s],
-        "alerts_issued": alerts_per_step[s],
-        "propagation_forecasts": propagation_per_step[s],
-        "hurricane": {
-            "lat": hp["lat"],
-            "lon": hp["lon"],
-            "category": hp["category"],
-            "wind_mph": hp["wind_mph"],
-            "name": hp["name"],
-            "pressure_mb": hp["pressure_mb"],
-            "forecast_track": forecast_track,
-            "cone_polygon": _cone(s),
-        },
+    state = _step_state(
+        "hurricane_landfall", s, total_steps, s * 15,
+        narrations, nodes_overrides, messages_per_step,
+        consensus_per_step, alerts_per_step, propagation_per_step,
+    )
+    state["hurricane"] = {
+        "lat": hp["lat"],
+        "lon": hp["lon"],
+        "category": hp["category"],
+        "wind_mph": hp["wind_mph"],
+        "name": hp["name"],
+        "pressure_mb": hp["pressure_mb"],
+        "forecast_track": forecast_track,
+        "cone_polygon": _cone(s),
     }
+    return state
 
 
 # ── Scenario 2: Squall Line Crossing Northern Bahamas ────────────────────
 
 def _squall_line(step):
+    """Scenario 2: a squall line sweeps the northern islands; stations warn ahead and draft a SIGMET."""
     total_steps = 10
     narrations = [
         "T+0 min: Calm conditions across Northern Bahamas. A cold front is approaching from the northwest. MYGF (Freeport) wind sensors detect a subtle wind shift — the first sign of the incoming squall line.",
@@ -430,24 +471,17 @@ def _squall_line(step):
     ]
 
     s = min(step, total_steps - 1)
-    return {
-        "scenario_id": "squall_line",
-        "scenario_name": "Squall Line Crossing Northern Bahamas",
-        "step": s,
-        "total_steps": total_steps,
-        "elapsed_minutes": s * 10,
-        "narration": narrations[s],
-        "nodes": _all_nodes(**nodes_overrides[s]),
-        "active_messages": messages_per_step[s],
-        "consensus_votes": consensus_per_step[s],
-        "alerts_issued": alerts_per_step[s],
-        "propagation_forecasts": propagation_per_step[s],
-    }
+    return _step_state(
+        "squall_line", s, total_steps, s * 10,
+        narrations, nodes_overrides, messages_per_step,
+        consensus_per_step, alerts_per_step, propagation_per_step,
+    )
 
 
 # ── Scenario 3: Sensor Fault at Nassau ───────────────────────────────────
 
 def _sensor_fault(step):
+    """Scenario 3: Nassau's temperature sensor drifts; neighbours cross-validate and vote it faulty."""
     total_steps = 10
     narrations = [
         "T+0 min: All stations operating normally. MYNN (Nassau) reporting standard conditions — temperature 28.0°C, pressure 1013.2 hPa, wind 12 kt. Routine peer-to-peer observations flowing across the mesh.",
@@ -538,24 +572,17 @@ def _sensor_fault(step):
     propagation_per_step = [[], [], [], [], [], [], [], [], [], []]
 
     s = min(step, total_steps - 1)
-    return {
-        "scenario_id": "sensor_fault",
-        "scenario_name": "Sensor Fault at Nassau (MYNN)",
-        "step": s,
-        "total_steps": total_steps,
-        "elapsed_minutes": s * 5,
-        "narration": narrations[s],
-        "nodes": _all_nodes(**nodes_overrides[s]),
-        "active_messages": messages_per_step[s],
-        "consensus_votes": consensus_per_step[s],
-        "alerts_issued": alerts_per_step[s],
-        "propagation_forecasts": propagation_per_step[s],
-    }
+    return _step_state(
+        "sensor_fault", s, total_steps, s * 5,
+        narrations, nodes_overrides, messages_per_step,
+        consensus_per_step, alerts_per_step, propagation_per_step,
+    )
 
 
 # ── Scenario 4: Total Hub Failure ────────────────────────────────────────
 
 def _hub_failure(step):
+    """Scenario 4: the central hub goes offline; all stations run peer-to-peer until it returns."""
     total_steps = 10
     narrations = [
         "T+0 min: All 15 stations connected to central BACSWN hub. Normal operations — weather observations flowing, AI inferences being shared, consensus votes proceeding. Network health 100%.",
@@ -571,6 +598,7 @@ def _hub_failure(step):
     ]
 
     def _hub_override(connected, autonomous):
+        """Same hub-connection and autonomy flags applied to every station."""
         return {code: {"hub_connected": connected, "autonomous_mode": autonomous} for code in BAHAMAS_STATIONS}
 
     nodes_overrides = [
@@ -666,24 +694,17 @@ def _hub_failure(step):
     ]
 
     s = min(step, total_steps - 1)
-    return {
-        "scenario_id": "hub_failure",
-        "scenario_name": "Total BACSWN Hub Failure",
-        "step": s,
-        "total_steps": total_steps,
-        "elapsed_minutes": [0, 2, 5, 7, 10, 15, 20, 25, 30, 35][s],
-        "narration": narrations[s],
-        "nodes": _all_nodes(**nodes_overrides[s]),
-        "active_messages": messages_per_step[s],
-        "consensus_votes": consensus_per_step[s],
-        "alerts_issued": alerts_per_step[s],
-        "propagation_forecasts": propagation_per_step[s],
-    }
+    return _step_state(
+        "hub_failure", s, total_steps, [0, 2, 5, 7, 10, 15, 20, 25, 30, 35][s],
+        narrations, nodes_overrides, messages_per_step,
+        consensus_per_step, alerts_per_step, propagation_per_step,
+    )
 
 
 # ── Scenario 5: Multi-Station IFR Event ─────────────────────────────────
 
 def _ifr_event(step):
+    """Scenario 5: fog spreads across the central islands; consensus confirms IFR and a SIGMET issues."""
     total_steps = 10
     narrations = [
         "T+0 min: Pre-dawn conditions across the central Bahamas. Light winds, high humidity (95%), and clear skies. Sea surface temperature warm — conditions favorable for radiation fog formation.",
@@ -800,24 +821,17 @@ def _ifr_event(step):
     ]
 
     s = min(step, total_steps - 1)
-    return {
-        "scenario_id": "ifr_event",
-        "scenario_name": "Multi-Station IFR Event",
-        "step": s,
-        "total_steps": total_steps,
-        "elapsed_minutes": s * 15,
-        "narration": narrations[s],
-        "nodes": _all_nodes(**nodes_overrides[s]),
-        "active_messages": messages_per_step[s],
-        "consensus_votes": consensus_per_step[s],
-        "alerts_issued": alerts_per_step[s],
-        "propagation_forecasts": propagation_per_step[s],
-    }
+    return _step_state(
+        "ifr_event", s, total_steps, s * 15,
+        narrations, nodes_overrides, messages_per_step,
+        consensus_per_step, alerts_per_step, propagation_per_step,
+    )
 
 
 # ── Scenario 6: Tropical Wave Detection ──────────────────────────────────
 
 def _tropical_wave(step):
+    """Scenario 6: a tropical wave too subtle for one station is detected by correlating many."""
     total_steps = 10
     narrations = [
         "T+0 hr: Normal afternoon conditions across the Bahamas. Scattered cumulus, typical trade wind pattern. Nothing unusual in any single station's readings — but something subtle is about to unfold.",
@@ -962,19 +976,11 @@ def _tropical_wave(step):
     ]
 
     s = min(step, total_steps - 1)
-    return {
-        "scenario_id": "tropical_wave",
-        "scenario_name": "Tropical Wave Detection",
-        "step": s,
-        "total_steps": total_steps,
-        "elapsed_minutes": s * 60,
-        "narration": narrations[s],
-        "nodes": _all_nodes(**nodes_overrides[s]),
-        "active_messages": messages_per_step[s],
-        "consensus_votes": consensus_per_step[s],
-        "alerts_issued": alerts_per_step[s],
-        "propagation_forecasts": propagation_per_step[s],
-    }
+    return _step_state(
+        "tropical_wave", s, total_steps, s * 60,
+        narrations, nodes_overrides, messages_per_step,
+        consensus_per_step, alerts_per_step, propagation_per_step,
+    )
 
 
 # ── Scenario Dispatcher ─────────────────────────────────────────────────
@@ -990,7 +996,7 @@ _SCENARIO_FUNCS = {
 
 
 def run_scenario(scenario_id: str, step: int) -> dict:
-    """Run a scenario at the given step. Returns full state."""
+    """State of a scenario at ``step`` (clamped to the last step), or an ``error`` dict if the id is unknown."""
     func = _SCENARIO_FUNCS.get(scenario_id)
     if not func:
         return {"error": f"Unknown scenario: {scenario_id}"}

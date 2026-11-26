@@ -1,7 +1,14 @@
 """BACSWN — Evacuation routes, shelter status, and airport operations.
 
-Manages evacuation route visualization, emergency shelter tracking,
-and airport operational status during hurricane events.
+What: returns emergency shelters with occupancy, airports with operational
+status, and evacuation routes with congestion, for a given hurricane category.
+
+Why: the Hurricane Operations page shows where people can go and which airports
+can still move them as a storm strengthens.
+
+How: static shelter, airport and route tables. Occupancy and congestion are
+randomly simulated (scaled by category); airport status follows fixed rules by
+category, with small (2B) airports closing from Category 2. Demo data only.
 """
 
 import logging
@@ -99,7 +106,11 @@ EVACUATION_ROUTES = [
 
 
 def get_shelter_status(category: int = 0) -> list:
-    """Get all shelter statuses. Category affects occupancy simulation."""
+    """Every shelter with simulated occupancy for ``category`` (0 = no storm, all on standby).
+
+    Occupancy is random within a band that rises with category; above 90% a
+    shelter is reported ``at_capacity``.
+    """
     shelters = []
     for s in SHELTERS:
         # Simulate occupancy based on hurricane category
@@ -130,7 +141,7 @@ def get_shelter_status(category: int = 0) -> list:
 
 
 def get_airport_status(category: int = 0) -> list:
-    """Get airport operational status based on hurricane conditions."""
+    """Every airport's status (operational / limited / closed) and notes for ``category``."""
     airports = []
     for a in AIRPORTS:
         if category >= 4:
@@ -165,7 +176,7 @@ def get_airport_status(category: int = 0) -> list:
 
 
 def get_evacuation_routes() -> list:
-    """Get all evacuation routes with current status."""
+    """Every evacuation route, all open, with randomly simulated congestion."""
     routes = []
     for r in EVACUATION_ROUTES:
         routes.append({

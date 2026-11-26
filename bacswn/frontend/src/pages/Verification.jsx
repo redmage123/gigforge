@@ -1,3 +1,17 @@
+/**
+ * Forecast Verification ("Forecast Skill") page.
+ *
+ * What: scores BACSWN's forecasts against what was observed: headline accuracy and
+ * per-variable error cards, skill by lead time, a forecast-vs-observed chart, IFR/LIFR
+ * warning skill (POD/FAR/CSI/HSS with the contingency table), bias-correction (MOS)
+ * gains, an operations briefing and a per-station leaderboard with a detail dialog.
+ * Why: forecast users (and funders) need evidence of how good the forecasts are, in
+ * plain language. Every card, column header and section has an explanation popup.
+ * How: polls `api.verificationScoreboard`, `verificationStations` and
+ * `verificationWarnings` for the chosen window, plus `verificationCorrection` and
+ * `briefing`. The window and chart selection live in the URL (useUrlState) so a copied
+ * chart link reopens the same view. Charts are hand-drawn SVG with table alternatives.
+ */
 import { useState, useCallback, useEffect, useMemo } from 'react'
 import { api } from '../api/client'
 import { usePolling } from '../hooks/usePolling'
@@ -6,6 +20,7 @@ import ChartActions from '../components/share/ChartActions'
 import { useUrlState, oneOf } from '../components/share/useUrlState'
 
 // ── Data-mode badge ──────────────────────────────────────────────────────
+/** Badge text, colour and explanation for each scoreboard `data_mode`. */
 const MODE_BADGE = {
   live: { text: 'LIVE DATA', color: '#047857', detail: 'Forecasts verified against station observations' },
   backfill: { text: 'REANALYSIS BACKFILL', color: '#1d4ed8', detail: 'Open-Meteo ERA5 reanalysis (real)' },
@@ -14,15 +29,29 @@ const MODE_BADGE = {
   empty: { text: 'ACCUMULATING', color: '#475569', detail: 'Capturing forecasts — verification builds over time' },
 }
 
+/**
+ * Value with a unit suffix, or an em dash when missing.
+ * @param {number|string|null|undefined} v
+ * @param {string} [suffix]
+ * @returns {string}
+ */
 const fmt = (v, suffix = '') => (v === null || v === undefined ? '—' : v + suffix)
-// Error magnitudes (MAE) — prefix with ± so they never read as absolute readings.
+/** Error magnitude (MAE) prefixed with ± so it never reads as an absolute reading; em dash when missing. */
 const fmtErr = (v, unit = '') => (v === null || v === undefined ? '—' : `±${v}${unit}`)
-// Text colours from theme tokens (≥4.5:1 in dark and light); the number itself carries the meaning.
+/**
+ * Text colour for an accuracy percentage (>=85 green, >=70 blue, >=50 amber, else red).
+ * Theme tokens with >=4.5:1 contrast in both themes; the number itself carries the meaning.
+ * @param {number|null|undefined} p
+ * @returns {string} CSS colour
+ */
 const accColor = (p) => (p === null || p === undefined ? 'var(--text-muted)' : p >= 85 ? 'var(--success-text)' : p >= 70 ? 'var(--accent-text)' : p >= 50 ? 'var(--warning-text)' : 'var(--danger-text)')
+/** Text colour for a lower-is-better score: green at or below `good`, amber at or below `ok`, else red. */
 const lowerBetter = (v, good, ok) => (v == null ? 'var(--text-muted)' : v <= good ? 'var(--success-text)' : v <= ok ? 'var(--warning-text)' : 'var(--danger-text)')
+/** Text colour for a higher-is-better score: green at or above `good`, amber at or above `ok`, else red. */
 const higherBetter = (v, good, ok) => (v == null ? 'var(--text-muted)' : v >= good ? 'var(--success-text)' : v >= ok ? 'var(--warning-text)' : 'var(--danger-text)')
 
 // ── Plain-language explanations ────────────────────────────────────────────
+/** Plain-language explanation per headline/variable stat card. */
 const CARD_INFO = {
   overall: 'A single 0–100% score blending how close our temperature, wind and pressure forecasts were with how often we correctly called the flight conditions. 100% = perfect. Higher is better.',
   category: 'How often our forecast correctly called the flying conditions — VFR (clear), MVFR (marginal), IFR (instrument) or LIFR (low-instrument) — versus what was actually observed at the station.',
@@ -30,6 +59,7 @@ const CARD_INFO = {
   wind_speed_kt: 'On average, how many knots the wind-speed forecast missed by. Lower is better. Bias shows whether we typically over- or under-forecast wind; RMSE flags volatility.',
   pressure_hpa: 'On average, how many hectopascals (hPa) the air-pressure forecast was off. Pressure is highly predictable, so errors are small. Lower is better.',
 }
+/** Plain-language explanation per page section. */
 const SECTION_INFO = {
   lead: 'This shows how forecast accuracy changes with how far ahead we are predicting. Each bar is the average temperature error (°C) for forecasts made that many hours before the valid time. Forecasts are sharpest in the short range and get less accurate further out — bars rising left-to-right is the normal, expected pattern. The table adds wind error and the percentage of correct flight-condition calls at each lead time, plus how many forecasts back each figure.',
   fvo: 'A direct comparison of what we forecast (dashed blue) against what was actually observed (solid green) at a chosen station, for one weather variable and one lead time. Use the dropdowns to switch station, variable, and how far ahead the forecast was looking. The closer the two lines track each other, the better the forecast.',
@@ -37,6 +67,7 @@ const SECTION_INFO = {
   warnings: 'How well we forecast dangerous instrument-flight conditions (IFR/LIFR) — the safety-critical view. POD (Probability of Detection): of all the times instrument conditions actually occurred, the percentage we correctly forecast — higher means we catch more dangerous weather. FAR (False-Alarm Ratio): of all our instrument-conditions forecasts, the percentage that did not happen — lower means fewer false alarms. CSI combines hits, misses and false alarms into one skill score. HSS (Heidke Skill Score) measures skill versus random chance (0 = no skill, 1 = perfect). The table is the standard 2x2 contingency of forecast vs observed.',
   correction: 'Bias correction (MOS) learns each station’s systematic forecast error from history and removes it — e.g. if wind is consistently forecast 2 kt too low at a station, we add 2 kt back. "Raw" is the unadjusted forecast; "Corrected" is after removing the learned bias. The improvement is measured OUT-OF-SAMPLE: the correction is trained on older data and tested on newer data it never saw, so the gain is real, not circular. Lower error and higher accuracy are better.',
 }
+/** Column explanations for lead-time tables (keys are the header labels, in column order). */
 const LEAD_COL_INFO = {
   Lead: 'How far ahead the forecast was looking — e.g. +6h predicts 6 hours into the future. Accuracy normally falls as this grows.',
   'Temp MAE': 'Average temperature miss (°C) across all forecasts made at this lead time.',
@@ -44,6 +75,7 @@ const LEAD_COL_INFO = {
   'Cat Hit': 'Percentage of correct flight-condition calls at this lead time.',
   n: 'How many verified forecasts these figures are based on — bigger means a more reliable score.',
 }
+/** Column explanations for the station leaderboard (keys are the header labels, in column order). */
 const LB_COL_INFO = {
   '#': 'Rank by overall accuracy — 1 is the most accurately forecast station.',
   Station: 'ICAO airport code for the station.',
@@ -55,7 +87,23 @@ const LB_COL_INFO = {
   n: "Number of verified forecasts behind this station's scores.",
 }
 
+/** Display order of flight categories in the station breakdown. */
+const CAT_ORDER = ['VFR', 'MVFR', 'IFR', 'LIFR']
+/** Text/border colour per flight category (theme tokens, >=4.5:1). */
+const CAT_TEXT_COLORS = { VFR: 'var(--cat-vfr-text)', MVFR: 'var(--cat-mvfr-text)', IFR: 'var(--cat-ifr-text)', LIFR: 'var(--cat-lifr-text)' }
+
+/**
+ * Forecast/observation pairs where both values are present.
+ * @param {object[]|undefined} points timeseries points
+ * @returns {object[]}
+ */
+const verifiedPairs = (points) => (points || []).filter(p => p.forecast_value !== null && p.observed_value !== null)
+
 // ── Info popup and its trigger ──────────────────────────────────────────────
+/**
+ * Dialog showing an explanation.
+ * @param {{info: {title: string, body: string}|null, onClose: function}} props
+ */
 function InfoModal({ info, onClose }) {
   return (
     <Dialog open={!!info} title={info?.title} onClose={onClose}>
@@ -64,7 +112,10 @@ function InfoModal({ info, onClose }) {
   )
 }
 
-// Small "i" button that opens the explanation for `title`
+/**
+ * Small "i" button that opens the explanation for `title` (click doesn't bubble).
+ * @param {{title: string, onClick: function}} props
+ */
 function InfoDot({ title, onClick }) {
   return (
     <button type="button" className="info-dot" aria-label={`About ${title}`}
@@ -72,7 +123,17 @@ function InfoDot({ title, onClick }) {
   )
 }
 
-// Stat card that opens its explanation (a real button: keyboard + screen reader)
+/**
+ * Stat card that opens its explanation when selected (a real button, so it works with
+ * keyboard and screen readers).
+ * @param {object} props
+ * @param {string} props.label card title (also the explanation title)
+ * @param {React.ReactNode} props.value headline figure
+ * @param {string} [props.valueColor] colour for the figure
+ * @param {React.ReactNode} props.detail secondary line
+ * @param {string} props.info explanation text
+ * @param {function(string, string): void} props.openInfo opens the explanation dialog
+ */
 function StatCard({ label, value, valueColor, detail, info, openInfo }) {
   return (
     <button type="button" className="stat-card" onClick={() => openInfo(label, info)}>
@@ -85,7 +146,10 @@ function StatCard({ label, value, valueColor, detail, info, openInfo }) {
   )
 }
 
-// Table header cell — click opens the column explanation
+/**
+ * Column header whose label is a button opening the column's explanation.
+ * @param {{label: string, info: string, openInfo: function, style?: object}} props
+ */
 function Th({ label, info, openInfo, style }) {
   return (
     <th scope="col" style={style}>
@@ -95,7 +159,12 @@ function Th({ label, info, openInfo, style }) {
   )
 }
 
-// ── Lead-time skill curve (SVG bars: MAE rises with lead time; big=expanded) ──
+// ── Lead-time skill curve ───────────────────────────────────────────────────
+/**
+ * SVG bar chart of average temperature error by lead time (errors normally rise with
+ * lead time). `big` renders the larger expanded version with more axis labels.
+ * @param {{byLead: object[], big?: boolean}} props
+ */
 function LeadCurve({ byLead, big }) {
   const rows = (byLead || []).filter(r => r.temp_mae !== null && r.temp_mae !== undefined)
   if (!rows.length) return <div style={{ color: 'var(--text-muted)', padding: 20 }}>Lead-time breakdown accumulates as live forecasts verify.</div>
@@ -133,16 +202,16 @@ function LeadCurve({ byLead, big }) {
   )
 }
 
-// Per-lead table (reused inline and in the expanded view)
-function LeadTable({ byLead, openInfo }) {
+/**
+ * Per-lead-time table of temperature/wind error, category hit rate and sample size;
+ * used beside the curve, in the expanded view and in the station dialog.
+ * @param {{byLead: object[], openInfo: function, marginTop?: number}} props
+ */
+function LeadTable({ byLead, openInfo, marginTop = 10 }) {
   return (
-    <table className="data-table" style={{ marginTop: 10 }}>
+    <table className="data-table" style={marginTop ? { marginTop } : undefined}>
       <thead><tr>
-        <Th label="Lead" info={LEAD_COL_INFO.Lead} openInfo={openInfo} />
-        <Th label="Temp MAE" info={LEAD_COL_INFO['Temp MAE']} openInfo={openInfo} />
-        <Th label="Wind MAE" info={LEAD_COL_INFO['Wind MAE']} openInfo={openInfo} />
-        <Th label="Cat Hit" info={LEAD_COL_INFO['Cat Hit']} openInfo={openInfo} />
-        <Th label="n" info={LEAD_COL_INFO.n} openInfo={openInfo} />
+        {Object.entries(LEAD_COL_INFO).map(([label, info]) => <Th key={label} label={label} info={info} openInfo={openInfo} />)}
       </tr></thead>
       <tbody>
         {(byLead || []).map(r => (
@@ -159,9 +228,15 @@ function LeadTable({ byLead, openInfo }) {
   )
 }
 
-// ── Forecast vs Observed sparkline (big=true renders an expanded view) ──────
+// ── Forecast vs Observed ───────────────────────────────────────────────────
+/**
+ * SVG line chart of forecast (dashed) against observed (solid) values over time, with a
+ * legend and a "Show data as a table" alternative. `big` renders the expanded version
+ * with point markers and time ticks.
+ * @param {{points: object[], unit: string, big?: boolean}} props
+ */
 function ForecastVsObserved({ points, unit, big }) {
-  const pts = (points || []).filter(p => p.forecast_value !== null && p.observed_value !== null)
+  const pts = verifiedPairs(points)
   if (pts.length < 2) return <div style={{ color: 'var(--text-muted)', padding: 20 }}>Not enough verified pairs yet for this selection.</div>
   const W = big ? 940 : 560, H = big ? 400 : 200
   const padL = big ? 48 : 38, padB = big ? 34 : 22, padT = 14
@@ -169,11 +244,14 @@ function ForecastVsObserved({ points, unit, big }) {
   const vals = pts.flatMap(p => [p.forecast_value, p.observed_value])
   const min = Math.min(...vals), max = Math.max(...vals)
   const range = (max - min) || 1
+  /** Chart coordinates of value `v` at point index `i`. */
   const xy = (v, i) => [
     padL + (W - padL - 8) * (i / (pts.length - 1)),
     padT + (H - padT - padB) * (1 - (v - min) / range),
   ]
+  /** SVG path through every point's `key` value. */
   const line = (key) => pts.map((p, i) => { const [x, y] = xy(p[key], i); return `${i ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}` }).join(' ')
+  /** Short UTC label for a time, e.g. "11/25 06Z". */
   const tlabel = (s) => { try { const d = new Date(s); return `${d.getUTCMonth() + 1}/${d.getUTCDate()} ${String(d.getUTCHours()).padStart(2, '0')}Z` } catch { return '' } }
   const xticks = big ? [0, Math.floor((pts.length - 1) / 2), pts.length - 1] : []
   const mae = pts.reduce((a, p) => a + Math.abs(p.forecast_value - p.observed_value), 0) / pts.length
@@ -223,6 +301,11 @@ function ForecastVsObserved({ points, unit, big }) {
 }
 
 // ── Operations briefing (synthesized from live data) ───────────────────────
+/**
+ * Operations briefing card: headline, sections and recommended actions synthesised by
+ * the backend, labelled AI-polished or rule-based.
+ * @param {{data: object|null}} props `api.briefing()` payload (null while loading)
+ */
 function BriefingCard({ data }) {
   const d = data || {}
   const sections = d.sections || []
@@ -270,6 +353,11 @@ function BriefingCard({ data }) {
 }
 
 // ── IFR/LIFR warning verification (safety-critical) ────────────────────────
+/**
+ * Collapsible IFR/LIFR warning-skill card: POD/FAR/CSI/HSS stat cards, the 2x2
+ * contingency table and per-lead skill. Collapsed by default, showing a one-line summary.
+ * @param {{data: object|null, openInfo: function}} props
+ */
 function WarningSkillCard({ data, openInfo }) {
   const [open, setOpen] = useState(false)   // collapsed by default for demos
   const d = data || {}
@@ -356,6 +444,11 @@ function WarningSkillCard({ data, openInfo }) {
 }
 
 // ── Bias-correction (MOS) raw-vs-corrected comparison ──────────────────────
+/**
+ * Arrow and percentage for a change in error (down = better), with screen-reader words.
+ * Changes within ±0.5% count as no change.
+ * @param {{pct: number|null}} props
+ */
 function ImprovementBadge({ pct }) {
   if (pct === null || pct === undefined) return null
   const better = pct > 0.5
@@ -366,6 +459,11 @@ function ImprovementBadge({ pct }) {
   return <span style={{ color, fontWeight: 700, fontSize: 12 }}><span aria-hidden="true">{arrow}</span> <span className="sr-only">{words} </span>{Math.abs(pct)}%</span>
 }
 
+/**
+ * Bias-correction (MOS) card: raw vs corrected error per variable as paired bars, the
+ * model chosen per station, and how much of the live feed has been corrected.
+ * @param {{data: object|null, openInfo: function}} props `api.verificationCorrection()` payload
+ */
 function CorrectionCard({ data, openInfo }) {
   const d = data || {}
   const vars = d.variables || {}
@@ -440,7 +538,46 @@ function CorrectionCard({ data, openInfo }) {
   )
 }
 
+/** Lead times offered before any verification data names its own. */
+const DEFAULT_LEADS = [6, 24, 48, 72]
+
+/**
+ * Station / variable / lead-time pickers for a forecast-vs-observed chart.
+ * @param {object} props
+ * @param {{station?: string, variable: string, lead_h: number}} props.sel current selection
+ * @param {function(function(object): object): void} props.setSel updater-style setter
+ * @param {Object<string, {label: string}>} props.vars verified variables by key
+ * @param {number[]} props.leads lead times (hours)
+ * @param {object[]} [props.stations] stations to offer; omit to hide the station picker
+ * @param {boolean} [props.withNames] show "ID — name" in the station options
+ * @param {number} [props.marginBottom] spacing below the row, px
+ */
+function SeriesSelectors({ sel, setSel, vars, leads, stations, withNames = false, marginBottom = 8 }) {
+  return (
+    <div style={{ display: 'flex', gap: 6, marginBottom, flexWrap: 'wrap' }}>
+      {stations && (
+        <select aria-label="Station" value={sel.station} onChange={e => setSel(s => ({ ...s, station: e.target.value }))} className="btn btn-sm">
+          {stations.length ? stations.map(s => <option key={s.station_id} value={s.station_id}>{s.station_id}{withNames ? ` — ${s.name}` : ''}</option>)
+            : <option value="MYNN">MYNN</option>}
+        </select>
+      )}
+      <select aria-label="Variable" value={sel.variable} onChange={e => setSel(s => ({ ...s, variable: e.target.value }))} className="btn btn-sm">
+        {Object.entries(vars).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+      </select>
+      <select aria-label="Lead time" value={sel.lead_h} onChange={e => setSel(s => ({ ...s, lead_h: Number(e.target.value) }))} className="btn btn-sm">
+        {leads.map(l => <option key={l} value={l}>+{l}h</option>)}
+      </select>
+    </div>
+  )
+}
+
 // ── Station detail modal (opened by clicking a leaderboard row) ─────────────
+/**
+ * Dialog with one station's verification: per-variable error, category breakdown,
+ * accuracy by lead time and its own forecast-vs-observed chart. Load errors leave the
+ * dialog in its loading/empty state.
+ * @param {{stationId: string, windowHours: number, onClose: function, openInfo: function}} props
+ */
 function StationDetailModal({ stationId, windowHours, onClose, openInfo }) {
   const [detail, setDetail] = useState(null)
   const [sel, setSel] = useState({ variable: 'temp_c', lead_h: 24 })
@@ -458,8 +595,6 @@ function StationDetailModal({ stationId, windowHours, onClose, openInfo }) {
   const vars = d.variables || {}
   const leads = (d.by_lead || []).map(r => r.lead_h)
   const selUnit = vars[sel.variable]?.unit || ''
-  const CAT_ORDER = ['VFR', 'MVFR', 'IFR', 'LIFR']
-  const CAT_COLORS = { VFR: 'var(--cat-vfr-text)', MVFR: 'var(--cat-mvfr-text)', IFR: 'var(--cat-ifr-text)', LIFR: 'var(--cat-lifr-text)' }
 
   return (
     <Dialog open wide onClose={onClose} title={<>
@@ -501,7 +636,7 @@ function StationDetailModal({ stationId, windowHours, onClose, openInfo }) {
                     const b = d.category_breakdown[c]
                     const pct = b.n ? Math.round(100 * b.hit / b.n) : 0
                     return (
-                      <span key={c} style={{ fontSize: 12, padding: '4px 10px', borderRadius: 6, border: `1px solid ${CAT_COLORS[c]}`, color: CAT_COLORS[c] }}>
+                      <span key={c} style={{ fontSize: 12, padding: '4px 10px', borderRadius: 6, border: `1px solid ${CAT_TEXT_COLORS[c]}`, color: CAT_TEXT_COLORS[c] }}>
                         {c}: {pct}% <span style={{ color: 'var(--text-muted)' }}>({b.hit}/{b.n})</span>
                       </span>
                     )
@@ -513,37 +648,14 @@ function StationDetailModal({ stationId, windowHours, onClose, openInfo }) {
             {/* Per-lead table */}
             <div className="card" style={{ marginBottom: 14 }}>
               <div className="card-header"><h4 style={{ fontSize: 14 }}>Accuracy by Lead Time</h4></div>
-              <table className="data-table">
-                <thead><tr>
-                  <Th label="Lead" info={LEAD_COL_INFO.Lead} openInfo={openInfo} />
-                  <Th label="Temp MAE" info={LEAD_COL_INFO['Temp MAE']} openInfo={openInfo} />
-                  <Th label="Wind MAE" info={LEAD_COL_INFO['Wind MAE']} openInfo={openInfo} />
-                  <Th label="Cat Hit" info={LEAD_COL_INFO['Cat Hit']} openInfo={openInfo} />
-                  <Th label="n" info={LEAD_COL_INFO.n} openInfo={openInfo} />
-                </tr></thead>
-                <tbody>
-                  {(d.by_lead || []).map(r => (
-                    <tr key={r.lead_h}>
-                      <td>+{r.lead_h}h</td><td>{fmtErr(r.temp_mae, '°C')}</td>
-                      <td>{fmtErr(r.wind_mae, 'kt')}</td><td>{fmt(r.cat_hit_rate, '%')}</td><td>{fmt(r.n)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <LeadTable byLead={d.by_lead} openInfo={openInfo} marginTop={0} />
             </div>
 
             {/* Forecast vs observed for this station */}
             <div className="card">
               <div className="card-header"><h4 style={{ fontSize: 14 }}>Forecast vs. Observed</h4></div>
               <div style={{ padding: '8px 12px' }}>
-                <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
-                  <select aria-label="Variable" value={sel.variable} onChange={e => setSel(s => ({ ...s, variable: e.target.value }))} className="btn btn-sm">
-                    {Object.entries(vars).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-                  </select>
-                  <select aria-label="Lead time" value={sel.lead_h} onChange={e => setSel(s => ({ ...s, lead_h: Number(e.target.value) }))} className="btn btn-sm">
-                    {(leads.length ? leads : [6, 24, 48, 72]).map(l => <option key={l} value={l}>+{l}h</option>)}
-                  </select>
-                </div>
+                <SeriesSelectors sel={sel} setSel={setSel} vars={vars} leads={leads.length ? leads : DEFAULT_LEADS} />
                 <ForecastVsObserved points={series?.points} unit={selUnit} />
               </div>
             </div>
@@ -553,6 +665,7 @@ function StationDetailModal({ stationId, windowHours, onClose, openInfo }) {
   )
 }
 
+/** The Forecast Verification page. */
 export default function Verification() {
   // View state lives in the URL so "Copy link" on a chart reopens exactly this view.
   const [windowHours, setWindowHours] = useUrlState('window', 168, oneOf([24, 72, 168, 720]))
@@ -566,7 +679,11 @@ export default function Verification() {
   const [qVariable, setQVariable] = useUrlState('var', 'temp_c', (v) => (/^[a-z_]{1,30}$/.test(v) ? v : undefined))
   const [qLead, setQLead] = useUrlState('lead', 6, (v) => (/^\d{1,3}$/.test(v) ? Number(v) : undefined))
   const sel = useMemo(() => ({ station: qStation, variable: qVariable, lead_h: qLead }), [qStation, qVariable, qLead])
-  // Each control changes one field, so one URL update per change.
+  /**
+   * Updater-style setter for the chart selection, backed by three URL parameters.
+   * Each control changes one field, so only one URL update is made per change.
+   * @param {function(object): object} fn maps the current selection to the next
+   */
   const setSel = (fn) => {
     const next = fn(sel)
     if (next.station !== sel.station) setQStation(next.station)
@@ -578,6 +695,7 @@ export default function Verification() {
   const [info, setInfo] = useState(null)
   const [expanded, setExpanded] = useState(false)
   const [leadExpanded, setLeadExpanded] = useState(false)
+  /** Opens the explanation dialog. */
   const openInfo = (title, body) => setInfo({ title, body })
 
   useEffect(() => {
@@ -590,7 +708,7 @@ export default function Verification() {
   const stations = stationsData?.stations || []
   const selUnit = vars[sel.variable]?.unit || ''
   const leadOptions = (board.by_lead || []).map(r => r.lead_h)
-  const leads = leadOptions.length ? leadOptions : [6, 24, 48, 72]
+  const leads = leadOptions.length ? leadOptions : DEFAULT_LEADS
 
   return (
     <div className="page">
@@ -666,23 +784,12 @@ export default function Verification() {
             <button type="button" className="btn btn-sm" onClick={() => setExpanded(true)} aria-label="Expand Forecast vs. Observed chart"><span aria-hidden="true">⤢</span> Expand</button>
           </div>
           <div style={{ padding: '8px 12px' }}>
-            <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
-              <select aria-label="Station" value={sel.station} onChange={e => setSel(s => ({ ...s, station: e.target.value }))} className="btn btn-sm">
-                {stations.length ? stations.map(s => <option key={s.station_id} value={s.station_id}>{s.station_id}</option>)
-                  : <option value="MYNN">MYNN</option>}
-              </select>
-              <select aria-label="Variable" value={sel.variable} onChange={e => setSel(s => ({ ...s, variable: e.target.value }))} className="btn btn-sm">
-                {Object.entries(vars).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-              </select>
-              <select aria-label="Lead time" value={sel.lead_h} onChange={e => setSel(s => ({ ...s, lead_h: Number(e.target.value) }))} className="btn btn-sm">
-                {leads.map(l => <option key={l} value={l}>+{l}h</option>)}
-              </select>
-            </div>
+            <SeriesSelectors sel={sel} setSel={setSel} vars={vars} leads={leads} stations={stations} />
             <ForecastVsObserved points={series?.points} unit={selUnit} />
             <ChartActions id="chart-forecast-observed" title={`Forecast vs. observed, ${sel.station}`}
               filename={`forecast-vs-observed-${sel.station}-${sel.variable}-${sel.lead_h}h`}
               columns={['Valid time (UTC)', `Forecast (${selUnit})`, `Observed (${selUnit})`, 'Difference']}
-              rows={(series?.points || []).filter(p => p.forecast_value !== null && p.observed_value !== null)
+              rows={verifiedPairs(series?.points)
                 .map(p => [p.valid_at, p.forecast_value, p.observed_value, +(p.forecast_value - p.observed_value).toFixed(2)])} />
           </div>
         </div>
@@ -691,18 +798,7 @@ export default function Verification() {
       {/* Expanded views */}
       <Dialog open={expanded} wide onClose={() => setExpanded(false)}
         title={`Forecast vs. Observed — ${sel.station} · ${vars[sel.variable]?.label || sel.variable} · +${sel.lead_h}h`}>
-        <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
-          <select aria-label="Station" value={sel.station} onChange={e => setSel(s => ({ ...s, station: e.target.value }))} className="btn btn-sm">
-            {stations.length ? stations.map(s => <option key={s.station_id} value={s.station_id}>{s.station_id} — {s.name}</option>)
-              : <option value="MYNN">MYNN</option>}
-          </select>
-          <select aria-label="Variable" value={sel.variable} onChange={e => setSel(s => ({ ...s, variable: e.target.value }))} className="btn btn-sm">
-            {Object.entries(vars).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-          </select>
-          <select aria-label="Lead time" value={sel.lead_h} onChange={e => setSel(s => ({ ...s, lead_h: Number(e.target.value) }))} className="btn btn-sm">
-            {leads.map(l => <option key={l} value={l}>+{l}h</option>)}
-          </select>
-        </div>
+        <SeriesSelectors sel={sel} setSel={setSel} vars={vars} leads={leads} stations={stations} withNames marginBottom={10} />
         <ForecastVsObserved points={series?.points} unit={selUnit} big />
       </Dialog>
       <Dialog open={leadExpanded} wide onClose={() => setLeadExpanded(false)} title="Skill vs. Lead Time"
@@ -726,14 +822,7 @@ export default function Verification() {
         <div className="table-scroll" tabIndex={0} role="region" aria-labelledby="lb-h">
           <table className="data-table">
             <thead><tr>
-              <Th label="#" info={LB_COL_INFO['#']} openInfo={openInfo} />
-              <Th label="Station" info={LB_COL_INFO.Station} openInfo={openInfo} />
-              <Th label="Name" info={LB_COL_INFO.Name} openInfo={openInfo} />
-              <Th label="Accuracy" info={LB_COL_INFO.Accuracy} openInfo={openInfo} />
-              <Th label="Temp MAE" info={LB_COL_INFO['Temp MAE']} openInfo={openInfo} />
-              <Th label="Wind MAE" info={LB_COL_INFO['Wind MAE']} openInfo={openInfo} />
-              <Th label="Cat Hit" info={LB_COL_INFO['Cat Hit']} openInfo={openInfo} />
-              <Th label="n" info={LB_COL_INFO.n} openInfo={openInfo} />
+              {Object.entries(LB_COL_INFO).map(([label, info]) => <Th key={label} label={label} info={info} openInfo={openInfo} />)}
             </tr></thead>
             <tbody>
               {stations.length === 0 && <tr><td colSpan={8} style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 16 }}>No verified forecasts in this window yet.</td></tr>}

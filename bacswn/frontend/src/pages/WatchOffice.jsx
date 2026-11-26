@@ -1,3 +1,18 @@
+/**
+ * Meteorological Watch Office page.
+ *
+ * What: two tabs. "METAR / TAF Map" shows every Bahamas station on a map with its
+ * flight category, temperature, wind and visibility; selecting one shows the raw and
+ * decoded METAR, density altitude, this month's ERA5 climate normal and anomaly, and the
+ * TAF with its forecast periods; a grid of all stations sits below. "SIGMET Generator"
+ * drafts ICAO-formatted SIGMETs from a hazard/severity/flight-level form.
+ * Why: the forecaster's working view of current observations and forecasts, and the
+ * place advisories are drafted.
+ * How: polls `api.metars()` (2 min), `api.tafs()` (10 min), `api.mapLayers()` (1 min,
+ * for station positions) and `api.climatologyNormals()` (hourly). METAR records are
+ * merged onto map stations by ICAO id. `api.generateSigmet()` creates an advisory; the
+ * last ten are listed. Every map station is also reachable from the All Stations grid.
+ */
 import { useState, useCallback, useEffect } from 'react'
 import { MapContainer, TileLayer, Marker } from 'react-leaflet'
 import L from 'leaflet'
@@ -7,7 +22,9 @@ import LiveBadge from '../components/LiveBadge'
 import ResetViewControl from '../components/map/ResetViewControl'
 
 // ─── Flight category colors ────────────────────────────────────────────
+/** Flight-category colour (marker border, swatches). */
 const CAT_COLORS = { VFR: '#10b981', MVFR: '#3b82f6', IFR: '#ef4444', LIFR: '#a855f7' }
+/** Visibility/ceiling criteria per flight category, for the legend. */
 const CAT_CRITERIA = {
   VFR: '> 3SM, > 3000ft ceiling',
   MVFR: '1–3SM or 1000–3000ft',
@@ -16,6 +33,12 @@ const CAT_CRITERIA = {
 }
 
 // ─── Station map marker (shows ICAO, temp, wind, vis at a glance) ──────
+/**
+ * Station card marker: ICAO code, category badge, temperature, wind (with a rotated
+ * arrow when the direction is known) and visibility, bordered in the category colour.
+ * @param {object} s merged station/METAR record
+ * @returns {L.DivIcon}
+ */
 const stationMarkerIcon = (s) => {
   const color = CAT_COLORS[s.flight_category] || '#64748b'
   const windDir = s.wind_dir_deg != null ? s.wind_dir_deg : null
@@ -54,7 +77,7 @@ const stationMarkerIcon = (s) => {
   })
 }
 
-// Stale/no-data station marker
+/** Grey "NO REPORT" marker for a station with no category or temperature. */
 const staleMarkerIcon = (icao) => L.divIcon({
   className: '',
   html: `<div style="
@@ -69,6 +92,11 @@ const staleMarkerIcon = (icao) => L.divIcon({
 })
 
 // ─── Last-updated hook ────────────────────────────────────────────────
+/**
+ * Time the given polled data last changed.
+ * @param {any} data
+ * @returns {Date|null}
+ */
 function useLastUpdated(data) {
   const [ts, setTs] = useState(null)
   useEffect(() => { if (data) setTs(new Date()) }, [data])
@@ -76,14 +104,57 @@ function useLastUpdated(data) {
 }
 
 // ─── SIGMET severity color ────────────────────────────────────────────
+/** Badge colour for a SIGMET severity (grey if unknown). */
 const sigmetColor = (sev) => ({
   extreme: '#dc2626', severe: '#ef4444', moderate: '#f59e0b', light: '#3b82f6',
 }[sev] || '#64748b')
-// Text colours (≥4.5:1 in both themes) for the same categories / severities.
+/** Text colours (≥4.5:1 in both themes) per flight category. */
 const CAT_TEXT = { VFR: 'var(--cat-vfr-text)', MVFR: 'var(--cat-mvfr-text)', IFR: 'var(--cat-ifr-text)', LIFR: 'var(--cat-lifr-text)' }
+/** Text colours (≥4.5:1 in both themes) per SIGMET severity. */
 const SEV_TEXT = { extreme: 'var(--danger-text)', severe: 'var(--danger-text)', moderate: 'var(--warning-text)', light: 'var(--accent-text)' }
 
+/** Help text per SIGMET hazard code, shown in the hazard-type help popover. */
+const HAZARD_DESCRIPTIONS = {
+  TS: 'Active thunderstorms with lightning, heavy rain, possible hail, strong updrafts/downdrafts, and wind shear. Extremely hazardous to all aircraft.',
+  TURB: 'Clear air or convective turbulence. Causes altitude deviations, airspeed fluctuations, and structural stress. Can occur at any altitude.',
+  ICE: 'Supercooled water droplets freeze on aircraft surfaces. Degrades aerodynamic performance, adds weight, blocks pitot tubes.',
+  TC: 'Organized tropical weather system with sustained winds 34kt+. Massive area of extreme turbulence, heavy precipitation, and storm surge.',
+  CB: 'Towering cumulus clouds exceeding FL400. Contains severe turbulence, icing, hail, lightning, and microbursts.',
+  LLWS: 'Sudden wind speed/direction change below 2000ft AGL. Extremely dangerous during takeoff and landing.',
+  VA: 'Airborne particulate from volcanic eruptions. Causes engine flameout, windscreen abrasion. Zero tolerance — all aircraft must avoid.',
+}
+
+/** Help text per SIGMET severity, shown in the severity help popover. */
+const SEVERITY_DESCRIPTIONS = {
+  light: 'Light (LGT): Minor turbulence or icing. Slight changes in altitude. No significant impact on flight safety.',
+  moderate: 'Moderate (MOD): Changes in altitude/attitude but aircraft in positive control. Occasional de-icing needed. Consider deviation.',
+  severe: 'Severe (SEV): Large, abrupt altitude/attitude changes. Aircraft may be momentarily out of control. Immediate deviation recommended.',
+  extreme: 'Extreme (EXTM): Virtually impossible to control aircraft. Structural failure risk. Avoid at all costs.',
+}
+
+/**
+ * Station identifier: the map's ICAO code, else the METAR station id.
+ * @param {{icao?: string, station_id?: string}} s
+ * @returns {string|undefined}
+ */
+const stationId = (s) => s.icao || s.station_id
+
+/**
+ * Density altitude, the takeoff-performance number, from temperature, altimeter setting
+ * and field elevation (rule-of-thumb: pressure altitude + 120 ft per °C above ISA).
+ * @param {object|null} s station with temp_c, altimeter_inhg and elevation_ft
+ * @returns {number|null} feet, or null when temperature or altimeter is missing
+ */
+function densityAltitudeFt(s) {
+  if (!s || s.temp_c == null || s.altimeter_inhg == null) return null
+  const elev = s.elevation_ft || 0
+  const pressureAlt = (29.92 - s.altimeter_inhg) * 1000 + elev   // ft
+  const isaTemp = 15 - 1.98 * (elev / 1000)                       // °C at field
+  return Math.round(pressureAlt + 120 * (s.temp_c - isaTemp))     // ft
+}
+
 // ─── Main component ────────────────────────────────────────────────────
+/** The Watch Office page: category summary, METAR/TAF map tab and SIGMET generator tab. */
 export default function WatchOffice() {
   const { data: metarData, loading, refresh } = usePolling(useCallback(() => api.metars(), []), 120000)
   const { data: tafData } = usePolling(useCallback(() => api.tafs(), []), 600000)
@@ -99,28 +170,11 @@ export default function WatchOffice() {
   })
   const [tooltip, setTooltip] = useState({ visible: false, text: '', x: 0, y: 0 })
 
-  const hazardDescriptions = {
-    TS: 'Active thunderstorms with lightning, heavy rain, possible hail, strong updrafts/downdrafts, and wind shear. Extremely hazardous to all aircraft.',
-    TURB: 'Clear air or convective turbulence. Causes altitude deviations, airspeed fluctuations, and structural stress. Can occur at any altitude.',
-    ICE: 'Supercooled water droplets freeze on aircraft surfaces. Degrades aerodynamic performance, adds weight, blocks pitot tubes.',
-    TC: 'Organized tropical weather system with sustained winds 34kt+. Massive area of extreme turbulence, heavy precipitation, and storm surge.',
-    CB: 'Towering cumulus clouds exceeding FL400. Contains severe turbulence, icing, hail, lightning, and microbursts.',
-    LLWS: 'Sudden wind speed/direction change below 2000ft AGL. Extremely dangerous during takeoff and landing.',
-    VA: 'Airborne particulate from volcanic eruptions. Causes engine flameout, windscreen abrasion. Zero tolerance — all aircraft must avoid.',
-  }
-
-  const severityDescriptions = {
-    light: 'Light (LGT): Minor turbulence or icing. Slight changes in altitude. No significant impact on flight safety.',
-    moderate: 'Moderate (MOD): Changes in altitude/attitude but aircraft in positive control. Occasional de-icing needed. Consider deviation.',
-    severe: 'Severe (SEV): Large, abrupt altitude/attitude changes. Aircraft may be momentarily out of control. Immediate deviation recommended.',
-    extreme: 'Extreme (EXTM): Virtually impossible to control aircraft. Structural failure risk. Avoid at all costs.',
-  }
-
-  const showTooltip = (e, text) => {
-    const rect = e.target.getBoundingClientRect()
-    setTooltip({ visible: true, text, x: rect.right + 8, y: rect.top })
-  }
-  const hideTooltip = () => setTooltip({ visible: false, text: '', x: 0, y: 0 })
+  /**
+   * Opens the named help popover ('hazard' or 'severity'), or closes it if already open.
+   * @param {string} name
+   */
+  const toggleHelp = (name) => setTooltip(t => ({ ...t, visible: t.show === name ? false : true, show: t.show === name ? '' : name }))
   const [generating, setGenerating] = useState(false)
   const [generatedSigmets, setGeneratedSigmets] = useState([])
   const [sigmetStatus, setSigmetStatus] = useState('')
@@ -135,12 +189,12 @@ export default function WatchOffice() {
   })
   // Also include METAR-only stations that have lat/lon
   metars.forEach(m => {
-    if (m.lat && m.lon && !allStations.find(s => (s.icao || s.station_id) === m.station_id)) {
+    if (m.lat && m.lon && !allStations.find(s => stationId(s) === m.station_id)) {
       allStations.push({ ...m, icao: m.station_id })
     }
   })
   const mappableStations = allStations.filter(s => s.lat && s.lon)
-    .filter((s, i, arr) => arr.findIndex(x => (x.icao || x.station_id) === (s.icao || s.station_id)) === i)
+    .filter((s, i, arr) => arr.findIndex(x => stationId(x) === stationId(s)) === i)
 
   // TAF for selected station
   const selectedTaf = selectedStation
@@ -151,7 +205,7 @@ export default function WatchOffice() {
   const climoStations = climoData?.stations || {}
   const climoBase = climoData?.base_period || 'ERA5 1991–2020'
   const selectedClimo = selectedStation
-    ? climoStations[selectedStation.icao || selectedStation.station_id]
+    ? climoStations[stationId(selectedStation)]
     : null
   const nowMonth = new Date().getUTCMonth() + 1
   const climoNormal = selectedClimo
@@ -161,16 +215,9 @@ export default function WatchOffice() {
     ? Math.round((selectedStation.temp_c - climoNormal.temp_mean) * 10) / 10
     : null
 
-  // Density altitude — the takeoff-performance number, from temp + pressure + elevation.
-  const densityAltitude = (() => {
-    const s = selectedStation
-    if (!s || s.temp_c == null || s.altimeter_inhg == null) return null
-    const elev = s.elevation_ft || 0
-    const pressureAlt = (29.92 - s.altimeter_inhg) * 1000 + elev   // ft
-    const isaTemp = 15 - 1.98 * (elev / 1000)                       // °C at field
-    return Math.round(pressureAlt + 120 * (s.temp_c - isaTemp))     // ft
-  })()
+  const densityAltitude = densityAltitudeFt(selectedStation)
 
+  /** Generates a SIGMET from the form, prepends it to the list and reports the result in a status region. */
   const generateSigmet = async () => {
     setGenerating(true)
     setSigmetStatus('')
@@ -214,7 +261,7 @@ export default function WatchOffice() {
 
       {/* Flight category summary */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }} role="list" aria-label="Stations by flight category">
-        {[['VFR', '#10b981'], ['MVFR', '#3b82f6'], ['IFR', '#ef4444'], ['LIFR', '#a855f7'], ['Unknown', '#64748b']].map(([cat, color]) => (
+        {[...Object.entries(CAT_COLORS), ['Unknown', '#64748b']].map(([cat, color]) => (
           <div key={cat} role="listitem" style={{
             display: 'flex', alignItems: 'center', gap: 6,
             background: color + '15', border: '1px solid ' + color + '40',
@@ -232,9 +279,10 @@ export default function WatchOffice() {
         onKeyDown={e => {
           if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return
           e.preventDefault()
-          const next = activeTab === 'metar' ? 'sigmet' : 'metar'
-          setActiveTab(e.key === 'Home' ? 'metar' : e.key === 'End' ? 'sigmet' : next)
-          requestAnimationFrame(() => document.getElementById(`wo-tab-${e.key === 'Home' ? 'metar' : e.key === 'End' ? 'sigmet' : next}`)?.focus())
+          // Two tabs: arrows toggle, Home/End go to the first/last.
+          const target = e.key === 'Home' ? 'metar' : e.key === 'End' ? 'sigmet' : activeTab === 'metar' ? 'sigmet' : 'metar'
+          setActiveTab(target)
+          requestAnimationFrame(() => document.getElementById(`wo-tab-${target}`)?.focus())
         }}>
         {[['metar', 'METAR / TAF Map'], ['sigmet', 'SIGMET Generator']].map(([key, label]) => (
           <button key={key} type="button" role="tab" id={`wo-tab-${key}`} aria-selected={activeTab === key} aria-controls="wo-panel"
@@ -269,7 +317,7 @@ export default function WatchOffice() {
                   <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}" />
 
                   {mappableStations.map(s => {
-                    const id = s.icao || s.station_id
+                    const id = stationId(s)
                     const hasData = s.flight_category || s.temp_c != null
                     return (
                       <Marker key={id}
@@ -291,7 +339,7 @@ export default function WatchOffice() {
                   {/* Station header */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
                     <div>
-                      <h3 style={{ fontSize: 22, fontWeight: 800 }}>{selectedStation.icao || selectedStation.station_id}</h3>
+                      <h3 style={{ fontSize: 22, fontWeight: 800 }}>{stationId(selectedStation)}</h3>
                       {selectedStation.name && <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 1 }}>{selectedStation.name}</div>}
                       <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
                         {selectedStation.lat?.toFixed(3)}°N, {Math.abs(selectedStation.lon)?.toFixed(3)}°W
@@ -462,10 +510,10 @@ export default function WatchOffice() {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(180px, 100%), 1fr))', gap: 8 }}>
                 {metars.map(m => {
                   const color = CAT_COLORS[m.flight_category] || '#64748b'
-                  const isSelected = selectedStation && (selectedStation.icao || selectedStation.station_id) === m.station_id
+                  const isSelected = selectedStation && stationId(selectedStation) === m.station_id
                   return (
                     <button type="button" key={m.station_id} aria-pressed={!!isSelected} onClick={() => {
-                      const s = mappableStations.find(st => (st.icao || st.station_id) === m.station_id) || { ...m, icao: m.station_id }
+                      const s = mappableStations.find(st => stationId(st) === m.station_id) || { ...m, icao: m.station_id }
                       setSelectedStation(s)
                       setActiveTab('metar')
                     }} style={{
@@ -538,7 +586,7 @@ export default function WatchOffice() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   <label htmlFor="sg-hazard" style={{ marginBottom: 0 }}>Hazard Type</label>
                   <button type="button" className="info-dot" aria-label="About hazard types" aria-expanded={tooltip.show === 'hazard'} aria-controls="sg-hazard-help"
-                    onClick={() => setTooltip(t => ({ ...t, visible: t.show === 'hazard' ? false : true, show: t.show === 'hazard' ? '' : 'hazard' }))}>i</button>
+                    onClick={() => toggleHelp('hazard')}>i</button>
                 </div>
                 <select id="sg-hazard" value={sigmetForm.hazard_type}
                   onChange={e => setSigmetForm({ ...sigmetForm, hazard_type: e.target.value })}
@@ -554,7 +602,7 @@ export default function WatchOffice() {
                 {tooltip.show === 'hazard' && (
                   <div id="sg-hazard-help" className="help-pop">
                     <div style={{ fontWeight: 700, marginBottom: 8, fontSize: 13 }}>Hazard Types</div>
-                    {Object.entries(hazardDescriptions).map(([k, v]) => (
+                    {Object.entries(HAZARD_DESCRIPTIONS).map(([k, v]) => (
                       <div key={k} style={{ marginBottom: 6, fontSize: 12, lineHeight: 1.3, padding: '4px 0', borderBottom: '1px solid var(--border)' }}>
                         <span style={{ fontWeight: 700, color: k === sigmetForm.hazard_type ? 'var(--warning-text)' : 'var(--text-primary)' }}>{k}</span>
                         <span style={{ color: 'var(--text-secondary)' }}> {v}</span>
@@ -567,7 +615,7 @@ export default function WatchOffice() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   <label htmlFor="sg-severity" style={{ marginBottom: 0 }}>Severity</label>
                   <button type="button" className="info-dot" aria-label="About severity levels" aria-expanded={tooltip.show === 'severity'} aria-controls="sg-severity-help"
-                    onClick={() => setTooltip(t => ({ ...t, visible: t.show === 'severity' ? false : true, show: t.show === 'severity' ? '' : 'severity' }))}>i</button>
+                    onClick={() => toggleHelp('severity')}>i</button>
                 </div>
                 <select id="sg-severity" value={sigmetForm.severity}
                   onChange={e => setSigmetForm({ ...sigmetForm, severity: e.target.value })}
@@ -580,7 +628,7 @@ export default function WatchOffice() {
                 {tooltip.show === 'severity' && (
                   <div id="sg-severity-help" className="help-pop">
                     <div style={{ fontWeight: 700, marginBottom: 8, fontSize: 13 }}>Severity Levels</div>
-                    {Object.entries(severityDescriptions).map(([k, v]) => (
+                    {Object.entries(SEVERITY_DESCRIPTIONS).map(([k, v]) => (
                       <div key={k} style={{ marginBottom: 6, fontSize: 12, lineHeight: 1.3, padding: '4px 0', borderBottom: '1px solid var(--border)' }}>
                         <span style={{ fontWeight: 700, color: k === sigmetForm.severity ? SEV_TEXT[k] : 'var(--text-primary)' }}>{k.toUpperCase()}</span>
                         <span style={{ color: 'var(--text-secondary)' }}> {v}</span>

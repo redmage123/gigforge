@@ -1,3 +1,13 @@
+/**
+ * Carbon & Emissions dashboard.
+ *
+ * What: live CORSIA emissions view of the current airspace: KPI cards, the weather-routing
+ * benefit panel, flights by aircraft category, a compliance summary and a per-flight table.
+ * Why: gives the CAA real-time visibility of aviation CO2 under ICAO CORSIA, and links on to
+ * the CORSIA Oversight page and the external Carbon Desk.
+ * How: polls `api.currentEmissions()` and `api.emissionsSummary()` every 60 s. The category
+ * chart (Chart.js) is paired with an accessible ChartTable data-table alternative.
+ */
 import { useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { Bar } from 'react-chartjs-2'
@@ -10,14 +20,42 @@ import WeatherBenefit from '../components/emissions/WeatherBenefit'
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend)
 
+/** How each CORSIA register status from /api/emissions/summary is shown (label and stat colour). */
+const CORSIA_STATUS = {
+  compliant: { label: 'COMPLIANT', tone: 'success' },
+  under_review: { label: 'UNDER REVIEW', tone: 'warning' },
+  shortfall: { label: 'SHORTFALL', tone: 'danger' },
+  no_operators: { label: 'NO OPERATORS', tone: 'info' },
+  unknown: { label: 'UNKNOWN', tone: 'info' },
+}
+
+/**
+ * One label/value line of the CORSIA compliance summary card.
+ * @param {object} props
+ * @param {string} props.label left-hand label
+ * @param {React.ReactNode} props.children the (bold) value
+ * @param {object} [props.valueStyle] extra style for the value
+ * @param {boolean} [props.last] omit the bottom divider on the final row
+ */
+function SummaryRow({ label, children, valueStyle, last = false }) {
+  return (
+    <div style={{display: 'flex', justifyContent: 'space-between', padding: '12px 0', ...(last ? {} : {borderBottom: '1px solid var(--border)'})}}>
+      <span style={{color: 'var(--text-secondary)'}}>{label}</span>
+      <strong style={valueStyle}>{children}</strong>
+    </div>
+  )
+}
+
+/** Real-time CORSIA emissions dashboard for flights in the Bahamas FIR. */
 export default function Emissions() {
-  const { data: emData, loading } = usePolling(useCallback(() => api.currentEmissions(), []), 60000)
+  const { data: emData } = usePolling(useCallback(() => api.currentEmissions(), []), 60000)
   const { data: summaryData } = usePolling(useCallback(() => api.emissionsSummary(), []), 60000)
 
   const emissions = emData || {}
   const summary = summaryData || {}
   const flights = emissions.flights || []
   const compliance = summary.compliance || {}
+  const statusView = CORSIA_STATUS[compliance.compliance_status] || CORSIA_STATUS.unknown
   const categories = summary.categories || {}
 
   const catLabels = Object.keys(categories).map(k => k.charAt(0).toUpperCase() + k.slice(1))
@@ -62,12 +100,12 @@ export default function Emissions() {
         <div className="stat-card">
           <span className="stat-label">Monitored Flights</span>
           <span className="stat-value accent">{emissions.total_flights ?? '—'}</span>
-          <span className="stat-detail">{compliance.monitoring_coverage_pct ?? 100}% coverage</span>
+          <span className="stat-detail">{compliance.monitoring_coverage_pct != null ? `${compliance.monitoring_coverage_pct}% with known aircraft type` : '—'}</span>
         </div>
         <div className="stat-card">
           <span className="stat-label">CORSIA Status</span>
-          <span className="stat-value success">{compliance.compliance_status?.toUpperCase() ?? 'COMPLIANT'}</span>
-          <span className="stat-detail">Real-time monitoring</span>
+          <span className={`stat-value ${statusView.tone}`}>{statusView.label}</span>
+          <span className="stat-detail">{compliance.compliance_period ? `Oversight register, ${compliance.compliance_period}` : 'From the oversight register'}</span>
         </div>
       </div>
 
@@ -89,26 +127,11 @@ export default function Emissions() {
         <div className="card">
           <div className="card-header"><h3>CORSIA Compliance Summary</h3></div>
           <div style={{padding: 16}}>
-            <div style={{display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid var(--border)'}}>
-              <span style={{color: 'var(--text-secondary)'}}>CORSIA Applicable Flights</span>
-              <strong>{compliance.corsia_applicable_flights ?? '—'}</strong>
-            </div>
-            <div style={{display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid var(--border)'}}>
-              <span style={{color: 'var(--text-secondary)'}}>Monitoring Coverage</span>
-              <strong style={{color: 'var(--success-text)'}}>{compliance.monitoring_coverage_pct ?? 100}%</strong>
-            </div>
-            <div style={{display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid var(--border)'}}>
-              <span style={{color: 'var(--text-secondary)'}}>Emission Factor</span>
-              <strong>3.16 kg CO2/kg fuel</strong>
-            </div>
-            <div style={{display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid var(--border)'}}>
-              <span style={{color: 'var(--text-secondary)'}}>Methodology</span>
-              <strong>ICAO CORSIA</strong>
-            </div>
-            <div style={{display: 'flex', justifyContent: 'space-between', padding: '12px 0'}}>
-              <span style={{color: 'var(--text-secondary)'}}>Reporting Period</span>
-              <strong>{compliance.reporting_period ?? 'Real-time'}</strong>
-            </div>
+            <SummaryRow label="CORSIA Applicable Flights">{compliance.corsia_applicable_flights ?? '—'}</SummaryRow>
+            <SummaryRow label="Aircraft Type Known">{compliance.monitoring_coverage_pct != null ? `${compliance.monitoring_coverage_pct}%` : '—'}</SummaryRow>
+            <SummaryRow label="Emission Factor">3.16 kg CO2/kg fuel</SummaryRow>
+            <SummaryRow label="Methodology">ICAO CORSIA</SummaryRow>
+            <SummaryRow label="Reporting Period" last>{compliance.reporting_period ?? 'Real-time'}</SummaryRow>
           </div>
         </div>
       </div>

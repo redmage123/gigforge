@@ -24,6 +24,11 @@ Two ways to reach Claude, chosen by AI_BACKEND:
 
 If the chosen backend isn't available, both features report that AI assistance is
 not configured and the rest of the app is unaffected.
+
+Every failure the user should see is raised as ``AIUnavailable`` (a
+``BacswnUnavailableError``) carrying a user-safe message and the HTTP status to answer
+with; SDK, subprocess and JSON errors are wrapped into it at the boundary. Requests are
+rate-limited per user and globally with in-memory sliding windows.
 """
 
 from __future__ import annotations
@@ -39,6 +44,7 @@ import time
 from collections import defaultdict, deque
 
 import anthropic
+from services.errors import BacswnUnavailableError
 
 logger = logging.getLogger("bacswn.ai_assist")
 
@@ -60,19 +66,21 @@ _calls: dict[str, deque] = defaultdict(deque)
 _cli_slots = asyncio.Semaphore(2)  # at most two CLI processes at once
 
 
-class AIUnavailable(Exception):
-    """The AI request could not be served; the message is safe to show."""
+class AIUnavailable(BacswnUnavailableError):
+    """The AI request could not be served; the message is safe to show.
 
-    def __init__(self, message: str, status: int = 503):
-        super().__init__(message)
-        self.status = status
+    The status varies with the cause (400 bad upload, 429 rate limit, 502 upstream
+    error, 503 not configured, 504 timeout) and is passed to the constructor.
+    """
 
 
 def backend() -> str:
+    """The configured AI backend: ``"api"`` if ``AI_BACKEND=api``, otherwise ``"cli"``."""
     return "api" if os.getenv("AI_BACKEND", "cli").strip().lower() == "api" else "cli"
 
 
 def _cli_bin() -> str | None:
+    """Path to the ``claude`` executable (``AI_CLAUDE_BIN`` or ``$PATH``), or None."""
     return os.getenv("AI_CLAUDE_BIN") or shutil.which("claude")
 
 
@@ -84,36 +92,47 @@ def _cli_credentials() -> bool:
 
 
 def configured() -> bool:
+    """True if the selected backend has what it needs (CLI binary + login, or an API key)."""
     if backend() == "cli":
         return bool(_cli_bin()) and _cli_credentials()
     return bool(os.getenv("ANTHROPIC_API_KEY"))
 
 
 def status() -> dict:
+    """Whether AI assistance is configured, which backend is in use and which model."""
     cli = backend() == "cli"
     return {"configured": configured(), "backend": "claude -p" if cli else "api",
             "model": CLI_MODEL if cli else MODEL}
 
 
 def _get_client() -> anthropic.AsyncAnthropic:
+    """The lazily created, shared Anthropic SDK client (API backend only)."""
     global _client
     if _client is None:
         _client = anthropic.AsyncAnthropic(timeout=120.0, max_retries=2)
     return _client
 
 
-def _check_rate(user: str) -> None:
-    n, window = RATE_LIMIT
-    q = _calls[user]
-    now = time.monotonic()
+def _trim(q: deque, window: float, now: float) -> deque:
+    """Drop timestamps older than ``window`` seconds from the front of ``q``; return ``q``."""
     while q and now - q[0] > window:
         q.popleft()
+    return q
+
+
+def _check_rate(user: str) -> None:
+    """Record one AI request for ``user`` or refuse it.
+
+    Raises:
+        AIUnavailable: (429) the user's per-minute or the server's hourly limit is reached.
+    """
+    n, window = RATE_LIMIT
+    gn, gwindow = GLOBAL_LIMIT
+    now = time.monotonic()
+    q = _trim(_calls[user], window, now)
     if len(q) >= n:
         raise AIUnavailable("Too many AI requests; wait a minute and try again.", 429)
-    gn, gwindow = GLOBAL_LIMIT
-    g = _calls["*"]
-    while g and now - g[0] > gwindow:
-        g.popleft()
+    g = _trim(_calls["*"], gwindow, now)
     if len(g) >= gn:
         raise AIUnavailable("The AI assistant has reached its hourly limit; try again later.", 429)
     q.append(now)
@@ -128,6 +147,9 @@ async def _ask_claude(user: str, system: str, prompt: str, effort: str, max_toke
     attachment: (file bytes, media type) of a document Claude should read.
     attachment_name: file name (without extension) the CLI backend gives it.
     max_usd: CLI spend cap for this call (default CLI_MAX_USD).
+
+    Raises:
+        AIUnavailable: not configured (503), rate-limited (429), or the backend failed.
     """
     if not configured():
         why = ("no ANTHROPIC_API_KEY" if backend() == "api" else
@@ -142,6 +164,16 @@ async def _ask_claude(user: str, system: str, prompt: str, effort: str, max_toke
 async def _ask_cli(system: str, prompt: str, effort: str, schema: dict | None,
                    attachment: tuple[bytes, str] | None, attachment_name: str = "certificate",
                    max_usd: str | None = None) -> str:
+    """Ask Claude through ``claude -p`` in an empty temp directory and return the answer.
+
+    The attachment, if any, is the only file in the working directory and ``Read`` is
+    the only tool; without one, no tools are allowed. At most two CLI processes run at
+    once and each is killed after ``CLI_TIMEOUT_S``.
+
+    Raises:
+        AIUnavailable: timeout (504), unreadable output (502), not logged in (503),
+            spend cap hit or any other CLI error (502).
+    """
     args = [_cli_bin(), "-p", "--output-format", "json", "--no-session-persistence", "--strict-mcp-config",
             "--system-prompt", system, "--model", CLI_MODEL, "--effort", effort,
             "--max-budget-usd", max_usd or CLI_MAX_USD]
@@ -169,15 +201,15 @@ async def _ask_cli(system: str, prompt: str, effort: str, schema: dict | None,
                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
             try:
                 out, err = await asyncio.wait_for(proc.communicate(prompt.encode()), timeout=CLI_TIMEOUT_S)
-            except asyncio.TimeoutError:
+            except asyncio.TimeoutError as e:
                 proc.kill()
                 await proc.wait()
-                raise AIUnavailable("The AI took too long to answer; try again.", 504) from None
+                raise AIUnavailable("The AI took too long to answer; try again.", 504) from e
     try:
         res = json.loads(out.decode() or "{}")
-    except ValueError:
+    except ValueError as e:
         logger.warning("claude -p: unreadable output (exit %s): %s", proc.returncode, err.decode()[:300])
-        raise AIUnavailable("The AI returned an unreadable answer; try again.", 502) from None
+        raise AIUnavailable("The AI returned an unreadable answer; try again.", 502) from e
     if res.get("is_error") or (schema and "structured_output" not in res):
         msg = str(res.get("result") or res.get("subtype") or err.decode() or "unknown error")[:300]
         logger.warning("claude -p error: %s", msg)
@@ -194,6 +226,12 @@ async def _ask_cli(system: str, prompt: str, effort: str, schema: dict | None,
 
 async def _ask_api(system: str, prompt: str, effort: str, max_tokens: int, schema: dict | None,
                    attachment: tuple[bytes, str] | None) -> str:
+    """Ask Claude through the Anthropic Messages API and return the answer text.
+
+    Raises:
+        AIUnavailable: rate limit (429), refusal (422), bad key, API/connection error or
+            truncated answer (502). SDK exceptions are wrapped, never leaked.
+    """
     import base64
     content: list = []
     if attachment:
@@ -212,17 +250,17 @@ async def _ask_api(system: str, prompt: str, effort: str, max_tokens: int, schem
             output_config=output_config,
             betas=[FALLBACK_BETA], fallbacks="default",
         )
-    except anthropic.RateLimitError:
-        raise AIUnavailable("The AI service is busy; try again in a minute.", 429) from None
-    except anthropic.AuthenticationError:
+    except anthropic.RateLimitError as e:
+        raise AIUnavailable("The AI service is busy; try again in a minute.", 429) from e
+    except anthropic.AuthenticationError as e:
         logger.error("Anthropic API key rejected")
-        raise AIUnavailable("The AI service rejected this server's API key.", 502) from None
+        raise AIUnavailable("The AI service rejected this server's API key.", 502) from e
     except anthropic.APIStatusError as e:
         logger.error("Anthropic API error %s: %s (request %s)", e.status_code, e.message,
                      getattr(e, "request_id", None))
-        raise AIUnavailable(f"The AI service returned an error ({e.status_code}); try again.", 502) from None
-    except anthropic.APIConnectionError:
-        raise AIUnavailable("Could not reach the AI service; try again.", 502) from None
+        raise AIUnavailable(f"The AI service returned an error ({e.status_code}); try again.", 502) from e
+    except anthropic.APIConnectionError as e:
+        raise AIUnavailable("Could not reach the AI service; try again.", 502) from e
     if resp.stop_reason == "refusal":
         raise AIUnavailable("The AI declined this request.", 422)
     if resp.stop_reason == "max_tokens":
@@ -299,7 +337,22 @@ def _to_tonnes(value: float | None, unit: str | None) -> tuple[float | None, str
 
 async def read_fuel_certificate(user: str, filename: str, media_type: str, data_b64: str,
                                 operator: dict, existing_batches: dict[str, str], periods: list[dict]) -> dict:
-    """Pre-fill a fuel claim from a certificate. Checks are deterministic; the model only transcribes."""
+    """Pre-fill a fuel claim from a certificate. Checks are deterministic; the model only transcribes.
+
+    Args:
+        user: the signed-in user (rate limiting and provenance).
+        filename, media_type, data_b64: the uploaded document.
+        operator: the operator row the claim is for (``name``, ``icao_designator``).
+        existing_batches: lower-cased batch id -> who already claimed it.
+        periods: CORSIA compliance periods, each with ``years`` (first, last).
+
+    Returns:
+        ``fields`` for the claim form plus ``warnings``, ``notes``, the model's
+        ``evidence`` quotes and a provenance line.
+
+    Raises:
+        AIUnavailable: bad upload (400) or any AI failure (see ``_ask_claude``).
+    """
     import base64
     from services.carbon_oversight import LS_BASELINE, LS_MAX_ELIGIBLE, RECOGNISED_SCHEMES
 
@@ -308,8 +361,8 @@ async def read_fuel_certificate(user: str, filename: str, media_type: str, data_
         raise AIUnavailable("Upload a PDF, PNG, JPEG or WebP file.", 400)
     try:
         raw = base64.b64decode(data_b64, validate=True)
-    except ValueError:
-        raise AIUnavailable("The file could not be read.", 400) from None
+    except ValueError as e:
+        raise AIUnavailable("The file could not be read.", 400) from e
     if not raw:
         raise AIUnavailable("The file is empty.", 400)
     if len(raw) > MAX_UPLOAD_BYTES:
@@ -319,8 +372,8 @@ async def read_fuel_certificate(user: str, filename: str, media_type: str, data_
                              max_tokens=8000, schema=CERT_SCHEMA, attachment=(raw, media_type))
     try:
         x = json.loads(text)
-    except ValueError:
-        raise AIUnavailable("The AI returned an unreadable answer; try again.", 502) from None
+    except ValueError as e:
+        raise AIUnavailable("The AI returned an unreadable answer; try again.", 502) from e
 
     notes, warnings = [], []
     mass_t, note = _to_tonnes(x.get("quantity_value"), x.get("quantity_unit"))
@@ -360,6 +413,7 @@ async def read_fuel_certificate(user: str, filename: str, media_type: str, data_
         warnings.append(f"Year {year} is outside the CORSIA compliance periods.")
     # Whole-word match ("Test Air" must not match "Bahamasair"); generic company words don't count.
     def words(t):
+        """Distinctive lower-case words of a company name (generic words removed)."""
         return {w for w in re.findall(r"[a-z0-9]+", (t or "").lower())
                 if len(w) > 2 and w not in ("ltd", "limited", "holdings", "inc", "airline", "airlines", "airways", "the")}
     on_doc, ours = words(x.get("operator_name")), words(operator["name"])
@@ -415,6 +469,7 @@ def story_context(sim, story: str | None, station: str | None) -> dict:
     involved = set(stations)
 
     def node(code):
+        """The question-relevant view of one station: status, verdict, models and comms."""
         v = sim._node_view(sim.nodes[code])
         return {
             "station": code, "name": v.get("name"), "status": v["status"], "verdict": v["verdict"],
@@ -442,6 +497,18 @@ def story_context(sim, story: str | None, station: str | None) -> dict:
 
 
 async def ask_about_story(user: str, question: str, context: dict, step_title: str = "", step_caption: str = "") -> dict:
+    """Answer an audience question about the guided story from the supplied mesh state.
+
+    Args:
+        context: output of ``story_context`` for the current step.
+        step_title, step_caption: what the presenter is showing, if known.
+
+    Returns:
+        ``{"answer", "model", "sim_time"}``.
+
+    Raises:
+        AIUnavailable: empty or over-long question (400), or any AI failure.
+    """
     question = (question or "").strip()
     if not question:
         raise AIUnavailable("Type a question first.", 400)

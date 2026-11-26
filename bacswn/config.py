@@ -1,10 +1,33 @@
-"""BACSWN SkyWatch Bahamas — Configuration & Constants."""
+"""BACSWN SkyWatch Bahamas — configuration and shared constants.
+
+What: server settings, the JWT secret, the database path, upstream API endpoints,
+cache TTLs, CORSIA emissions constants, and the Bahamas FIR/station reference data.
+
+Why: one place for every tunable and every piece of static reference data, so services
+and routers import a name instead of re-reading the environment or hard-coding values.
+
+How: ``.env`` is loaded with python-dotenv, then values are read from the environment
+with defaults. A missing ``JWT_SECRET`` stops the import with ``MissingJWTSecretError``
+(except under ``TESTING``, which falls back to a test-only secret) so the server can
+never start with a guessable signing key.
+"""
 
 import os
 from pathlib import Path
 from dotenv import load_dotenv
 
+from services.errors import BacswnConfigError
+
 load_dotenv()
+
+
+class MissingJWTSecretError(BacswnConfigError, ValueError):
+    """``JWT_SECRET`` is unset outside of tests.
+
+    Also a ``ValueError`` so callers that guarded the import with ``except ValueError``
+    (the behaviour before the BACSWN error hierarchy) keep working.
+    """
+
 
 BASE_DIR = Path(__file__).parent
 DATA_DIR = BASE_DIR / "data"
@@ -19,7 +42,7 @@ if not _jwt_secret:
     if os.getenv("TESTING"):
         _jwt_secret = os.getenv("TEST_JWT_SECRET", "test-secret-not-for-production")  # nosec B105
     else:
-        raise ValueError(
+        raise MissingJWTSecretError(
             "JWT_SECRET environment variable is required. "
             "Generate one with: python3 -c \"import secrets; print(secrets.token_hex(64))\""
         )

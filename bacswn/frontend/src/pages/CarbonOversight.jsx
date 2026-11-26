@@ -1,3 +1,19 @@
+/**
+ * CORSIA Oversight Register page.
+ *
+ * What: the state's register of aircraft operators attributed to the Bahamas under
+ * CORSIA: verified emissions reports, offsetting requirements, unit cancellation claims,
+ * eligible-fuel (SAF/LCAF) claims, automated findings, registry cross-checks and the
+ * review decisions on every claim.
+ * Why: under CORSIA airlines buy and cancel the units; the state verifies their
+ * emissions reports and cancellation claims. Evidence is append-only: revisions add rows
+ * and reviews add decisions, so nothing is ever edited or deleted.
+ * How: loads `api.oversightPeriods()` once and `api.oversightRegister(period)` per
+ * period; the selected operator (`api.oversightOperator`) and period live in the URL.
+ * Admins record evidence through ApiForm forms and review claims in a native <dialog>.
+ * AI helpers (document readers, review briefs, finding explanations, AiTools) appear
+ * only when `api.aiStatus()` reports AI is configured.
+ */
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { api, saveBlob } from '../api/client'
 import { useSearchParams } from 'react-router-dom'
@@ -9,22 +25,20 @@ import AiTools from '../components/oversight/AiTools'
 import { useAuth } from '../App'
 import './CarbonOversight.css'
 
-/**
- * CORSIA oversight register. Under CORSIA, airlines buy and cancel the units;
- * the state verifies their emissions reports and cancellation claims. Evidence
- * is append-only: revisions add rows, reviews add decisions.
- */
-
+/** Operator compliance status -> [label, badge tone]. */
 const STATUS = {
   COVERED: ['Covered', 'ok'],
   AWAITING_REVIEW: ['Awaiting review', 'warn'],
   SHORTFALL: ['Shortfall', 'bad'],
   NO_REPORTS: ['No reports', 'muted'],
 }
+/** Claim status / review decision -> [label, badge tone]. */
 const CLAIM_STATUS = {
   PENDING: ['Pending', 'warn'], REOPENED: ['Reopened', 'warn'], VERIFIED: ['Verified', 'ok'], REJECTED: ['Rejected', 'bad'],
 }
+/** Finding severity -> [label, badge tone]. */
 const SEVERITY = { high: ['High', 'bad'], medium: ['Medium', 'warn'], low: ['Low', 'muted'] }
+/** Plain-language name per finding kind. */
 const KIND = {
   SHORTFALL: 'Shortfall', MISSING_REPORT: 'Missing report', DOUBLE_CLAIM: 'Units claimed twice',
   INELIGIBLE_UNIT: 'Ineligible units', VINTAGE_OUTSIDE_WINDOW: 'Vintage outside window', BELOW_OBSERVED: 'Below BACSWN observation',
@@ -41,25 +55,54 @@ const KIND = {
   UNUSUAL_CHANGE: 'Unusual change in emissions', UNUSUAL_GROWTH_FACTOR: 'Unusual growth factor',
   UNUSUAL_FUEL_SPLIT: 'Possible split fuel batch', UNUSUAL_OBSERVED_RATIO: 'Unusually low against observation',
 }
+/** Field labels the AI document reader uses when pre-filling the emissions-report form. */
 const REPORT_LABELS = { year: 'Year', verified_co2_t: 'Verified CO₂', verifier: 'Verification body', reference: 'Report reference' }
+/** Field labels the AI document reader uses when pre-filling the cancellation-claim form. */
 const CLAIM_LABELS = {
   registry: 'Registry', quantity: 'Quantity', vintage: 'Vintage', serial_block: 'Serial block', serial_start: 'Serial start',
   serial_end: 'Serial end', project_id: 'Project ID', project_name: 'Project name', cancelled_on: 'Cancellation date',
   registry_reference: 'Registry cancellation reference',
 }
+/** National Emissions Registry cross-check result -> [label, badge tone]. */
 const NER_CHECK = {
   MATCHED: ['Registry: matches', 'ok'], PROBLEMS: ['Registry: problems', 'bad'],
   STALE: ['Registry: statement too old', 'warn'], NO_STATEMENT: ['Registry: not checked', 'muted'],
 }
+/**
+ * Locale-formatted number, or an em dash when missing.
+ * @param {number|string|null|undefined} v
+ * @returns {string}
+ */
 const n = (v) => (v == null ? '—' : Number(v).toLocaleString())
+/** Today's date as YYYY-MM-DD (UTC). */
 const today = () => new Date().toISOString().slice(0, 10)
 
+/** The current calendar year (local time). */
+const thisYear = () => new Date().getFullYear()
+
+/** What the AI review brief's suggested decision means, as a verb phrase. */
+const SUGGEST = { VERIFIED: 'verify', REJECTED: 'reject', REOPENED: 'reopen', REQUEST_INFORMATION: 'ask the operator for more information' }
+
+/**
+ * Status pill looked up in a [label, tone] map; unknown values show as-is, muted.
+ * @param {{map: Object<string, string[]>, value: string}} props
+ */
 const Badge = ({ map, value }) => {
   const [label, tone] = map[value] || [value, 'muted']
   return <span className={`co-badge ${tone}`}>{label}</span>
 }
 
-/** Labelled input with hint and error wired up for assistive tech. */
+/**
+ * Labelled form control with hint and error wired to it via aria-describedby and
+ * aria-invalid. Extra props go to the control.
+ * @param {object} props
+ * @param {string} props.label visible label
+ * @param {string} props.name form field name
+ * @param {string} [props.hint] help text under the control
+ * @param {boolean} [props.required] marks the field required (visual asterisk too)
+ * @param {string} [props.error] error message
+ * @param {string} [props.as] element to render: 'input' (default), 'textarea' or 'select'
+ */
 function Field({ label, name, hint, required, error, as = 'input', children, ...props }) {
   const id = useId()
   const hintId = hint ? `${id}-hint` : undefined
@@ -76,11 +119,23 @@ function Field({ label, name, hint, required, error, as = 'input', children, ...
   )
 }
 
-/** Form shell: native validation, server error announced, focus kept sensible. */
+/**
+ * Form shell: native validation; on submit collects the fields (checkboxes as booleans),
+ * calls `onSubmit`, then resets the form (clearing hidden AI-provenance fields) and calls
+ * `onDone`. A server error is shown in an alert region that receives focus.
+ * @param {object} props
+ * @param {string} props.title accessible name of the form
+ * @param {string} props.submitLabel submit button text
+ * @param {function(object): Promise<any>} props.onSubmit saves the data
+ * @param {function(any): void} [props.onDone] called with the result
+ * @param {string} [props.className]
+ * @param {string} [props.id] form id (AI readers fill the form by id)
+ */
 function ApiForm({ title, submitLabel, onSubmit, onDone, children, className = '', id }) {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const errRef = useRef(null)
+  /** Submit handler; see the component description. */
   const submit = async (e) => {
     e.preventDefault()
     const form = e.currentTarget
@@ -108,12 +163,17 @@ function ApiForm({ title, submitLabel, onSubmit, onDone, children, className = '
   )
 }
 
-/** Modal review dialog (native <dialog>: focus trap + Esc built in). */
-/** AI review brief: drafted from the register's own record; the reviewer decides. */
+/**
+ * AI review brief, drafted from the register's own record; the reviewer decides.
+ * Drafting fills the review form's reason (and the decision, when the AI is confident)
+ * and stores the brief text in the hidden `ai_brief` field for provenance.
+ * @param {{claim: object, formId: string}} props
+ */
 function ReviewBrief({ claim, formId }) {
   const [brief, setBrief] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  /** Requests the brief and pre-fills the review form. */
   const draft = async () => {
     setBusy(true); setError('')
     try {
@@ -129,7 +189,6 @@ function ReviewBrief({ claim, formId }) {
       }
     } catch (e) { setError(e.message) } finally { setBusy(false) }
   }
-  const SUGGEST = { VERIFIED: 'verify', REJECTED: 'reject', REOPENED: 'reopen', REQUEST_INFORMATION: 'ask the operator for more information' }
   return (
     <div className="cert-reader">
       <button type="button" className="btn btn-sm btn-primary" onClick={draft} disabled={busy}>
@@ -157,6 +216,15 @@ function ReviewBrief({ claim, formId }) {
   )
 }
 
+/**
+ * Modal review dialog (native <dialog>: focus trap and Esc built in) for a unit or fuel
+ * claim. Offers Verified/Rejected for open claims, Reopen for decided ones.
+ * @param {object} props
+ * @param {object|null} props.claim claim under review (`kind: 'fuel'` for fuel claims); null closes the dialog
+ * @param {function} props.onClose called when the dialog closes
+ * @param {function(object): void} props.onReviewed called with the saved review
+ * @param {boolean} props.aiReady offer the AI review brief
+ */
 function ReviewDialog({ claim, onClose, onReviewed, aiReady }) {
   const fuel = claim?.kind === 'fuel'
   const ref = useRef(null)
@@ -204,10 +272,15 @@ function ReviewDialog({ claim, onClose, onReviewed, aiReady }) {
   )
 }
 
-/** One finding, with an optional AI explanation of what it could mean. */
+/**
+ * One finding, with an optional AI explanation of what it could mean and a button to
+ * open the related operator/claim. An explanation error is shown in place of the text.
+ * @param {{f: object, period: string, aiReady: boolean, onOpen: function}} props
+ */
 function FindingItem({ f, period, aiReady, onOpen }) {
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
+  /** Fetches the AI explanation for this finding. */
   const explain = async () => {
     setBusy(true)
     try { setText((await api.oversightAiExplain(period, f)).explanation) } catch (e) { setText(e.message) } finally { setBusy(false) }
@@ -228,16 +301,47 @@ function FindingItem({ f, period, aiReady, onOpen }) {
   )
 }
 
+/**
+ * Rendered review history of a claim: each decision, who made it, when, why and whether
+ * an AI brief was used.
+ * @param {{reviews: object[]}} props
+ */
+function ReviewHistory({ reviews }) {
+  if (reviews.length === 0) return <span className="co-dim">None</span>
+  return (
+    <ol className="co-history">{reviews.map((r, i) => (
+      <li key={i}><b>{CLAIM_STATUS[r.decision]?.[0] || r.decision}</b> by {r.created_by}, {r.created_at.slice(0, 10)}{r.reason && ` — ${r.reason}`}{r.ai_assisted && <small className="co-dim"> (AI brief used)</small>}</li>
+    ))}</ol>
+  )
+}
+
+/**
+ * One operator's detail for the period: emissions and requirement by year, unit
+ * cancellation claims, eligible-fuel claims (each with review history and, for admins,
+ * a Review button) and the admin evidence forms. Focus moves to its heading on first load.
+ * @param {object} props
+ * @param {number} props.operatorId
+ * @param {string} props.period compliance period id
+ * @param {number[]} props.periodYears [first, last] year of the period
+ * @param {object} [props.row] the operator's register row (per-year figures)
+ * @param {boolean} props.isAdmin may record evidence and review
+ * @param {function} props.onChanged reloads the register
+ * @param {function(object, function): void} props.onReview opens the review dialog; the callback runs after a review
+ * @param {function(string): void} props.announce screen-reader announcement
+ * @param {boolean} props.aiReady server has AI configured
+ */
 function OperatorDetail({ operatorId, period, periodYears, row, isAdmin, onChanged, onReview, announce, aiReady }) {
   const [detail, setDetail] = useState(null)
   const headingRef = useRef(null)
   const focused = useRef(false)
+  /** Loads the operator; on error clears it (the section keeps showing "Loading operator…"). */
   const load = useCallback(() => api.oversightOperator(operatorId).then(setDetail).catch(() => setDetail(null)), [operatorId])
   useEffect(() => { load() }, [load])
   // Move focus to the section once its heading exists (first load only, not on refreshes).
   useEffect(() => {
     if (detail && !focused.current) { focused.current = true; headingRef.current?.focus() }
   }, [detail])
+  /** Announces `msg`, then reloads this operator and the register. */
   const refresh = (msg) => { announce(msg); load(); onChanged() }
   if (!detail) return <section className="card" aria-busy="true"><p>Loading operator…</p></section>
   const op = detail.operator
@@ -304,11 +408,7 @@ function OperatorDetail({ operatorId, period, periodYears, row, isAdmin, onChang
                   <td>{c.project_name || c.project_id || '—'}</td>
                   <td>{c.cancelled_on}</td>
                   <td><Badge map={CLAIM_STATUS} value={c.status} /></td>
-                  <td>{c.reviews.length === 0 ? <span className="co-dim">None</span> : (
-                    <ol className="co-history">{c.reviews.map((r, i) => (
-                      <li key={i}><b>{CLAIM_STATUS[r.decision]?.[0] || r.decision}</b> by {r.created_by}, {r.created_at.slice(0, 10)}{r.reason && ` — ${r.reason}`}{r.ai_assisted && <small className="co-dim"> (AI brief used)</small>}</li>
-                    ))}</ol>
-                  )}</td>
+                  <td><ReviewHistory reviews={c.reviews} /></td>
                   {isAdmin && <td><button type="button" className="toggle-btn" onClick={() => onReview(c, () => refresh(`Claim ${c.id} reviewed`))}
                     aria-label={`Review claim ${c.id}`}>Review</button></td>}
                 </tr>
@@ -346,11 +446,7 @@ function OperatorDetail({ operatorId, period, periodYears, row, isAdmin, onChang
                   <td>{f.batch_id}<small className="co-dim"><br />{f.scheme}{f.certificate_ref && ` · ${f.certificate_ref}`}{f.producer && ` · ${f.producer}`}</small>
                     {!f.not_claimed_elsewhere && <><br /><span className="co-badge bad">May be claimed elsewhere</span></>}</td>
                   <td><Badge map={CLAIM_STATUS} value={f.status} /></td>
-                  <td>{f.reviews.length === 0 ? <span className="co-dim">None</span> : (
-                    <ol className="co-history">{f.reviews.map((r, i) => (
-                      <li key={i}><b>{CLAIM_STATUS[r.decision]?.[0] || r.decision}</b> by {r.created_by}, {r.created_at.slice(0, 10)}{r.reason && ` — ${r.reason}`}{r.ai_assisted && <small className="co-dim"> (AI brief used)</small>}</li>
-                    ))}</ol>
-                  )}</td>
+                  <td><ReviewHistory reviews={f.reviews} /></td>
                   {isAdmin && <td><button type="button" className="toggle-btn" onClick={() => onReview({ ...f, kind: 'fuel', icao_designator: op.icao_designator }, () => refresh(`Fuel claim F${f.id} reviewed`))}
                     aria-label={`Review fuel claim F${f.id}`}>Review</button></td>}
                 </tr>
@@ -360,84 +456,104 @@ function OperatorDetail({ operatorId, period, periodYears, row, isAdmin, onChang
         </div>
       )}
 
-      {isAdmin && (
-        <div className="co-forms">
-          <details>
-            <summary>Record a verified emissions report</summary>
-            {aiReady && <AiDocReader kind="report" labels={REPORT_LABELS} formId={`co-report-form-${op.id}`} operatorId={op.id}
-              period={period} onFilled={announce} />}
-            <ApiForm id={`co-report-form-${op.id}`} title="Record emissions report" submitLabel="Record report"
-              onSubmit={(d) => api.oversightAddReport(op.id, d)}
-              onDone={(r) => refresh(`Report recorded for ${r.year}, revision ${r.revision}. Requirement ${n(r.offsetting_requirement_t)} units.`)}>
-              <Field label="Year" name="year" type="number" required min={2019} max={new Date().getFullYear()} inputMode="numeric" />
-              <Field label="Verified CO₂ (tonnes)" name="verified_co2_t" type="number" required min={0} step={1} inputMode="numeric" />
-              <Field label="Growth factor" name="growth_factor" type="number" required min={0} max={1} step="any"
-                hint="The sector growth factor ICAO published for that year (0–1)." />
-              <Field label="Verification body" name="verifier" maxLength={120} />
-              <Field label="Report reference" name="reference" maxLength={120} />
-              <input type="hidden" name="notes" />
-            </ApiForm>
-            <p className="co-note">A second report for the same year supersedes the first; both stay on record.</p>
-          </details>
-          <details>
-            <summary>Record a unit cancellation claim</summary>
-            {aiReady && <AiDocReader kind="cancellation" labels={CLAIM_LABELS} formId={`co-claim-form-${op.id}`} operatorId={op.id}
-              period={period} onFilled={announce} />}
-            <ApiForm id={`co-claim-form-${op.id}`} title="Record cancellation claim" submitLabel="Record claim"
-              onSubmit={(d) => api.oversightAddClaim(op.id, { ...d, compliance_period: period })}
-              onDone={(r) => refresh(`Claim ${r.id} recorded as pending review.`)}>
-              <Field label="Registry" name="registry" required maxLength={80} list="co-registries" hint="Programme that issued and cancelled the units." />
-              <Field label="Quantity (units)" name="quantity" type="number" required min={1} step={1} inputMode="numeric" />
-              <Field label="Vintage" name="vintage" type="number" required min={2000} max={new Date().getFullYear()} inputMode="numeric" />
-              <Field label="Serial block" name="serial_block" maxLength={200} hint="Prefix shared by the serial numbers." />
-              <Field label="Serial start" name="serial_start" type="number" min={0} step={1} inputMode="numeric" />
-              <Field label="Serial end" name="serial_end" type="number" min={0} step={1} inputMode="numeric"
-                hint="If given, end − start + 1 must equal the quantity." />
-              <Field label="Project ID" name="project_id" maxLength={80} />
-              <Field label="Project name" name="project_name" maxLength={200} />
-              <Field label="Cancellation date" name="cancelled_on" type="date" required max={today()} />
-              <Field label="Registry cancellation reference" name="registry_reference" maxLength={120} />
-              <div className="co-field co-check">
-                <label><input type="checkbox" name="declared_eligible" defaultChecked /> Operator declares the units CORSIA-eligible</label>
-              </div>
-              <input type="hidden" name="notes" />
-            </ApiForm>
-          </details>
-          <details>
-            <summary>Record an eligible-fuel claim (SAF / LCAF)</summary>
-            {aiReady && <CertificateReader operatorId={op.id} formId={`co-fuel-form-${op.id}`} onFilled={announce} />}
-            <ApiForm id={`co-fuel-form-${op.id}`} title="Record eligible-fuel claim" submitLabel="Record fuel claim"
-              onSubmit={(d) => api.oversightAddFuelClaim(op.id, d)}
-              onDone={(r) => refresh(`Fuel claim F${r.id} recorded as pending review; it would reduce the requirement by ${n(r.emissions_reduction_t)} t CO₂.`)}>
-              <Field label="Year used" name="year" type="number" required min={periodYears[0]} max={Math.min(periodYears[1], new Date().getFullYear())} inputMode="numeric" />
-              <Field as="select" label="Fuel type" name="fuel_type" required defaultValue="SAF"
-                hint="SAF: sustainable aviation fuel. LCAF: lower-carbon aviation fuel (fossil).">
-                <option value="SAF">SAF</option><option value="LCAF">LCAF</option>
-              </Field>
-              <Field label="Fuel mass (tonnes)" name="mass_t" type="number" required min={0.001} step="any" inputMode="decimal" />
-              <Field label="Life-cycle emissions value (gCO₂e/MJ)" name="ls_value" type="number" required min={-100} max={88.99} step="any"
-                inputMode="decimal" hint="From the ICAO default values or the certified actual value. 80.1 or less to be eligible." />
-              <Field as="select" label="Life-cycle value basis" name="ls_basis" required defaultValue="DEFAULT">
-                <option value="DEFAULT">ICAO default value</option><option value="ACTUAL">Actual (certified) value</option>
-              </Field>
-              <Field label="Batch ID" name="batch_id" required maxLength={120} hint="Used to detect the same batch claimed twice." />
-              <Field label="Certification scheme" name="scheme" required maxLength={80} list="co-schemes" />
-              <Field label="Certificate / proof of sustainability" name="certificate_ref" maxLength={120} />
-              <Field label="Conversion pathway" name="pathway" maxLength={80} list="co-pathways" />
-              <Field label="Feedstock" name="feedstock" maxLength={120} />
-              <Field label="Producer" name="producer" maxLength={120} />
-              <div className="co-field co-check">
-                <label><input type="checkbox" name="not_claimed_elsewhere" defaultChecked /> Operator declares the batch is not claimed under any other scheme</label>
-              </div>
-              <input type="hidden" name="notes" />
-            </ApiForm>
-          </details>
-        </div>
-      )}
+      {isAdmin && <EvidenceForms op={op} period={period} periodYears={periodYears} aiReady={aiReady} announce={announce} refresh={refresh} />}
     </section>
   )
 }
 
+/**
+ * Admin forms for recording evidence against an operator: a verified emissions report,
+ * a unit cancellation claim and an eligible-fuel (SAF/LCAF) claim, each optionally
+ * pre-filled by an AI document reader when AI is configured.
+ * @param {object} props
+ * @param {object} props.op operator record
+ * @param {string} props.period compliance period id
+ * @param {number[]} props.periodYears [first, last] year of the period
+ * @param {boolean} props.aiReady server has AI configured
+ * @param {function(string): void} props.announce screen-reader announcement
+ * @param {function(string): void} props.refresh announces, then reloads the operator and register
+ */
+function EvidenceForms({ op, period, periodYears, aiReady, announce, refresh }) {
+  return (
+    <div className="co-forms">
+      <details>
+        <summary>Record a verified emissions report</summary>
+        {aiReady && <AiDocReader kind="report" labels={REPORT_LABELS} formId={`co-report-form-${op.id}`} operatorId={op.id}
+          period={period} onFilled={announce} />}
+        <ApiForm id={`co-report-form-${op.id}`} title="Record emissions report" submitLabel="Record report"
+          onSubmit={(d) => api.oversightAddReport(op.id, d)}
+          onDone={(r) => refresh(`Report recorded for ${r.year}, revision ${r.revision}. Requirement ${n(r.offsetting_requirement_t)} units.`)}>
+          <Field label="Year" name="year" type="number" required min={2019} max={thisYear()} inputMode="numeric" />
+          <Field label="Verified CO₂ (tonnes)" name="verified_co2_t" type="number" required min={0} step={1} inputMode="numeric" />
+          <Field label="Growth factor" name="growth_factor" type="number" required min={0} max={1} step="any"
+            hint="The sector growth factor ICAO published for that year (0–1)." />
+          <Field label="Verification body" name="verifier" maxLength={120} />
+          <Field label="Report reference" name="reference" maxLength={120} />
+          <input type="hidden" name="notes" />
+        </ApiForm>
+        <p className="co-note">A second report for the same year supersedes the first; both stay on record.</p>
+      </details>
+      <details>
+        <summary>Record a unit cancellation claim</summary>
+        {aiReady && <AiDocReader kind="cancellation" labels={CLAIM_LABELS} formId={`co-claim-form-${op.id}`} operatorId={op.id}
+          period={period} onFilled={announce} />}
+        <ApiForm id={`co-claim-form-${op.id}`} title="Record cancellation claim" submitLabel="Record claim"
+          onSubmit={(d) => api.oversightAddClaim(op.id, { ...d, compliance_period: period })}
+          onDone={(r) => refresh(`Claim ${r.id} recorded as pending review.`)}>
+          <Field label="Registry" name="registry" required maxLength={80} list="co-registries" hint="Programme that issued and cancelled the units." />
+          <Field label="Quantity (units)" name="quantity" type="number" required min={1} step={1} inputMode="numeric" />
+          <Field label="Vintage" name="vintage" type="number" required min={2000} max={thisYear()} inputMode="numeric" />
+          <Field label="Serial block" name="serial_block" maxLength={200} hint="Prefix shared by the serial numbers." />
+          <Field label="Serial start" name="serial_start" type="number" min={0} step={1} inputMode="numeric" />
+          <Field label="Serial end" name="serial_end" type="number" min={0} step={1} inputMode="numeric"
+            hint="If given, end − start + 1 must equal the quantity." />
+          <Field label="Project ID" name="project_id" maxLength={80} />
+          <Field label="Project name" name="project_name" maxLength={200} />
+          <Field label="Cancellation date" name="cancelled_on" type="date" required max={today()} />
+          <Field label="Registry cancellation reference" name="registry_reference" maxLength={120} />
+          <div className="co-field co-check">
+            <label><input type="checkbox" name="declared_eligible" defaultChecked /> Operator declares the units CORSIA-eligible</label>
+          </div>
+          <input type="hidden" name="notes" />
+        </ApiForm>
+      </details>
+      <details>
+        <summary>Record an eligible-fuel claim (SAF / LCAF)</summary>
+        {aiReady && <CertificateReader operatorId={op.id} formId={`co-fuel-form-${op.id}`} onFilled={announce} />}
+        <ApiForm id={`co-fuel-form-${op.id}`} title="Record eligible-fuel claim" submitLabel="Record fuel claim"
+          onSubmit={(d) => api.oversightAddFuelClaim(op.id, d)}
+          onDone={(r) => refresh(`Fuel claim F${r.id} recorded as pending review; it would reduce the requirement by ${n(r.emissions_reduction_t)} t CO₂.`)}>
+          <Field label="Year used" name="year" type="number" required min={periodYears[0]} max={Math.min(periodYears[1], thisYear())} inputMode="numeric" />
+          <Field as="select" label="Fuel type" name="fuel_type" required defaultValue="SAF"
+            hint="SAF: sustainable aviation fuel. LCAF: lower-carbon aviation fuel (fossil).">
+            <option value="SAF">SAF</option><option value="LCAF">LCAF</option>
+          </Field>
+          <Field label="Fuel mass (tonnes)" name="mass_t" type="number" required min={0.001} step="any" inputMode="decimal" />
+          <Field label="Life-cycle emissions value (gCO₂e/MJ)" name="ls_value" type="number" required min={-100} max={88.99} step="any"
+            inputMode="decimal" hint="From the ICAO default values or the certified actual value. 80.1 or less to be eligible." />
+          <Field as="select" label="Life-cycle value basis" name="ls_basis" required defaultValue="DEFAULT">
+            <option value="DEFAULT">ICAO default value</option><option value="ACTUAL">Actual (certified) value</option>
+          </Field>
+          <Field label="Batch ID" name="batch_id" required maxLength={120} hint="Used to detect the same batch claimed twice." />
+          <Field label="Certification scheme" name="scheme" required maxLength={80} list="co-schemes" />
+          <Field label="Certificate / proof of sustainability" name="certificate_ref" maxLength={120} />
+          <Field label="Conversion pathway" name="pathway" maxLength={80} list="co-pathways" />
+          <Field label="Feedstock" name="feedstock" maxLength={120} />
+          <Field label="Producer" name="producer" maxLength={120} />
+          <div className="co-field co-check">
+            <label><input type="checkbox" name="not_claimed_elsewhere" defaultChecked /> Operator declares the batch is not claimed under any other scheme</label>
+          </div>
+          <input type="hidden" name="notes" />
+        </ApiForm>
+      </details>
+    </div>
+  )
+}
+
+/**
+ * The CORSIA Oversight Register page: period picker and CSV export, totals, findings,
+ * registry (NER) panel, AI tools, operators table and the selected operator's detail.
+ */
 export default function CarbonOversight() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
@@ -464,6 +580,7 @@ export default function CarbonOversight() {
   // A shared link may name a period; ignore it if it is not a real one.
   const period = periods.some(p => p.id === urlPeriod) ? urlPeriod : defaultPeriod
   // Changing period also closes the operator: one URL update (two would overwrite each other).
+  /** Switches compliance period (omitted from the URL when it is the default). */
   const changePeriod = (p) => setParams(q => {
     const next = new URLSearchParams(q)
     if (p === defaultPeriod) next.delete('period'); else next.set('period', p)
@@ -472,21 +589,29 @@ export default function CarbonOversight() {
   }, { replace: true, preventScrollReset: true })
   const periodYears = periods.find(p => p.id === period)?.years || [0, 9999]
 
+  /** Loads the register for the current period. */
   const load = useCallback(() => {
     if (!period) return
     api.oversightRegister(period).then(d => { setReg(d); setError('') }).catch(e => setError(e.message))
   }, [period])
   useEffect(() => { load() }, [load])
 
+  /** Announces `msg` in the polite live region (cleared first so a repeat is re-read). */
   const announce = (msg) => { setMessage(''); requestAnimationFrame(() => setMessage(msg)) }
+  /** Opens the review dialog, remembering the focused element and a callback for after the review. */
   const openReview = (claim, after) => {
     reviewReturn.current = { el: document.activeElement, after }
     setReviewing(claim)
   }
+  /** Closes the review dialog and returns focus to where it was. */
   const closeReview = () => {
     setReviewing(null)
     reviewReturn.current?.el?.focus?.()
   }
+  /**
+   * Downloads the unit-claims or fuel-claims CSV for the period; errors are announced.
+   * @param {boolean} fuel true for eligible-fuel claims
+   */
   const exportCsv = async (fuel) => {
     try {
       const blob = await (fuel ? api.oversightFuelCsv(period) : api.oversightCsv(period))
@@ -494,6 +619,7 @@ export default function CarbonOversight() {
       announce(`${fuel ? 'Eligible-fuel' : 'Unit'} claims downloaded as CSV`)
     } catch (e) { announce(e.message) }
   }
+  /** Opens a finding's operator and scrolls to the related claim row once it renders. */
   const showClaim = (f) => {
     setSelected(f.operator_id)
     const target = f.claim_id ? `co-claim-${f.claim_id}` : f.fuel_claim_id ? `co-fuel-${f.fuel_claim_id}` : null

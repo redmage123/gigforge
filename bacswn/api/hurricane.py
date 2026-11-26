@@ -1,11 +1,20 @@
 """BACSWN — Hurricane Operations API router.
 
-Storm surge, evacuation, shelters, airports, historical tracks,
-and Saffir-Simpson escalation alerts.
+What: active tropical cyclones with Saffir-Simpson category, storm-surge zones,
+shelter / airport / evacuation-route status, historical analogues, an
+escalation alert that dispatches to every channel, and a combined dashboard.
+
+Why: the Hurricane Operations page coordinates the national response as a storm
+approaches; everything is keyed off the strongest active storm's category.
+
+How: storms come from ``services.hurricane_client`` (simulated when NHC has none);
+surge, shelters, airports and routes from ``storm_surge`` / ``evacuation``;
+analogues from ``hurdat``. Escalation alerts are de-duplicated per category for
+one hour via the cache.
 """
 
 from fastapi import APIRouter
-from services.hurricane_client import fetch_hurricanes
+from services.hurricane_client import fetch_hurricanes, saffir_simpson_category
 from services.storm_surge import get_storm_surge_zones
 from services.evacuation import get_shelter_status, get_airport_status, get_evacuation_routes
 from services.hurdat import get_historical_storms, find_similar_storms
@@ -29,19 +38,6 @@ SAFFIR_SIMPSON = {
 }
 
 
-def _wind_to_category(wind_mph: int) -> int:
-    """Convert wind speed (mph) to Saffir-Simpson category."""
-    if wind_mph >= 157:
-        return 5
-    if wind_mph >= 130:
-        return 4
-    if wind_mph >= 111:
-        return 3
-    if wind_mph >= 96:
-        return 2
-    if wind_mph >= 74:
-        return 1
-    return 0
 
 
 @router.get("/active")
@@ -50,7 +46,7 @@ async def get_active_hurricanes():
     storms = await fetch_hurricanes()
     result = []
     for s in storms:
-        cat = _wind_to_category(s.get("wind_mph", 0))
+        cat = saffir_simpson_category(s.get("wind_mph", 0))
         info = SAFFIR_SIMPSON.get(cat, {})
         result.append({
             **s,
@@ -168,7 +164,7 @@ async def hurricane_dashboard():
     storms = await fetch_hurricanes()
     max_cat = 0
     for s in storms:
-        cat = _wind_to_category(s.get("wind_mph", 0))
+        cat = saffir_simpson_category(s.get("wind_mph", 0))
         max_cat = max(max_cat, cat)
 
     surge = get_storm_surge_zones(max(1, max_cat))
@@ -184,7 +180,7 @@ async def hurricane_dashboard():
         comparisons.extend(similar)
 
     return {
-        "active_storms": [{**s, "category": _wind_to_category(s.get("wind_mph", 0))} for s in storms],
+        "active_storms": [{**s, "category": saffir_simpson_category(s.get("wind_mph", 0))} for s in storms],
         "max_category": max_cat,
         "saffir_simpson": SAFFIR_SIMPSON.get(max_cat, {}),
         "surge_zones": surge,

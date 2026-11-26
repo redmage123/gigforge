@@ -1,28 +1,54 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { MapContainer, TileLayer, Marker, Popup, Polyline, Polygon, useMap } from 'react-leaflet'
+/**
+ * Mesh Network Simulations page.
+ *
+ * What: a gallery of scripted scenarios (hurricane, storms, faults, network loss, fog,
+ * waves) and a step-by-step player that shows the mesh responding to the chosen one:
+ * map of stations, messages, propagation forecasts, hub links and any hurricane with its
+ * forecast track and cone, plus narration, alerts, consensus votes and communications.
+ * Why: lets a presenter walk an audience through how the distributed stations detect,
+ * vote on and escalate hazards, at their own pace.
+ * How: loads `api.simulationScenarios()` once; each step comes from
+ * `api.simulationRun(id, step)`. Play advances one step every 3 s (held while the demo
+ * is paused). The map is re-mounted per step (keyed by step) so markers reset cleanly.
+ */
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { MapContainer, TileLayer, Marker, Popup, Polyline, Polygon } from 'react-leaflet'
 import L from 'leaflet'
 import { api } from '../api/client'
 import { useDemoPaused } from '../hooks/useDemoPause'
 import LiveBadge from '../components/LiveBadge'
 import ResetViewControl from '../components/map/ResetViewControl'
 
+/** Emoji per scenario `icon` key (falls back to a satellite dish). */
 const SCENARIO_ICONS = {
   hurricane: '\u{1F300}', storm: '\u{26C8}\uFE0F', fault: '\u{26A0}\uFE0F',
   network: '\u{1F310}', fog: '\u{1F32B}\uFE0F', wave: '\u{1F30A}',
 }
+/** Marker colour per station status. */
 const STATUS_COLORS = { healthy: '#10b981', caution: '#f59e0b', degraded: '#ef4444', offline: '#374151' }
+/** Colour per inter-station message type, for lines, badges and toasts. */
 const MSG_TYPE_COLORS = {
   OBSERVATION: '#3b82f6', INFERENCE: '#8b5cf6', ALERT: '#ef4444',
   VOTE: '#f59e0b', HEARTBEAT: '#64748b', SIGMET: '#f97316',
 }
+/** Colour per station alert level (popup text). */
 const ALERT_LEVEL_COLORS = { normal: '#10b981', advisory: '#3b82f6', watch: '#f59e0b', warning: '#ef4444', emergency: '#dc2626' }
 
-// Hub location (Nassau)
+/** BACSWN hub location (Nassau, MYNN); every other station draws a link line to it. */
 const HUB = { lat: 25.039, lon: -77.466 }
 
-// Radar tower SVG path
+/** SVG path of the radar-tower glyph used for station markers. */
 const RADAR_D = 'M16 2 L16 10 M8 10 L24 10 M10 10 Q16 4 22 10 M6 12 L12 28 L20 28 L26 12 M4 28 L28 28'
 
+/**
+ * Builds the radar-tower divIcon for a station: coloured by status, glowing by alert
+ * level, with a blue (connected) or red (disconnected) hub dot and broadcast waves when
+ * cut off from the hub. Offline stations get a faded, struck-through tower.
+ * @param {string} status healthy | caution | degraded | offline
+ * @param {boolean} hubConnected station can reach the BACSWN hub
+ * @param {string} [alertLevel] normal | advisory | watch | warning | emergency
+ * @returns {L.DivIcon}
+ */
 function nodeIcon(status, hubConnected, alertLevel) {
   const c = STATUS_COLORS[status] || STATUS_COLORS.healthy
   const glow = alertLevel === 'emergency' ? '#dc2626' : alertLevel === 'warning' ? '#ef4444' : alertLevel === 'watch' ? '#f59e0b' : c
@@ -59,6 +85,11 @@ function nodeIcon(status, hubConnected, alertLevel) {
   })
 }
 
+/**
+ * Non-interactive text label (the ICAO code) placed under a station marker.
+ * @param {string} station ICAO code
+ * @returns {L.DivIcon}
+ */
 function nodeLabel(station) {
   return L.divIcon({
     className: 'station-marker',
@@ -67,9 +98,15 @@ function nodeLabel(station) {
   })
 }
 
-// Activity toast overlay on the map — shows transient dialogs near stations
+/**
+ * Map overlay of small non-interactive "toasts" next to stations: one per alert issued
+ * (offset NE) and one per ALERT/INFERENCE/SIGMET message (offset SW, at the sender).
+ * @param {object} props
+ * @param {object[]} props.alerts alerts issued this step
+ * @param {object[]} props.messages active messages this step
+ * @param {object[]} props.nodes simulation nodes (for positions)
+ */
 function ActivityToasts({ alerts, messages, nodes }) {
-  const map = useMap()
   const [toasts, setToasts] = useState([])
 
   useEffect(() => {
@@ -114,8 +151,11 @@ function ActivityToasts({ alerts, messages, nodes }) {
   ))
 }
 
-// The simulation map component — re-renders via key change per step
-// Hurricane icon — pulsing cyclone
+/**
+ * Pulsing cyclone divIcon, larger and redder with category.
+ * @param {number} category Saffir-Simpson category (1-5)
+ * @returns {L.DivIcon}
+ */
 const hurricaneMapIcon = (category) => {
   const size = 36 + category * 4
   const color = category >= 4 ? '#dc2626' : category >= 3 ? '#f97316' : category >= 2 ? '#f59e0b' : '#3b82f6'
@@ -131,8 +171,77 @@ const hurricaneMapIcon = (category) => {
   })
 }
 
+/**
+ * Popup body for a station marker: status, hub connection, alert level, observations,
+ * any detection, plus the messages this station is sending/receiving and its alerts.
+ * @param {object} props
+ * @param {object} props.n simulation node
+ * @param {object[]} props.messages active messages for the current step
+ * @param {object[]} props.alerts alerts issued in the current step
+ */
+function StationPopup({ n, messages, alerts }) {
+  return (
+    <div style={{ color: '#000', minWidth: 240, fontSize: 12, lineHeight: 1.5 }}>
+      <div style={{ fontWeight: 700, fontSize: 14, borderBottom: '1px solid #ddd', paddingBottom: 4, marginBottom: 4 }}>
+        {String(n.station)} - {String(n.name)}
+      </div>
+      <div><strong>Status:</strong> <span style={{ color: STATUS_COLORS[n.status] || '#10b981', fontWeight: 700 }}>{String(n.status).toUpperCase()}</span></div>
+      <div><strong>BACSWN hub:</strong> {n.hub_connected ? 'Connected' : 'DISCONNECTED'}{n.autonomous_mode ? ' — AUTONOMOUS MODE' : ''}</div>
+      <div><strong>Alert Level:</strong> <span style={{ color: ALERT_LEVEL_COLORS[n.alert_level] || '#10b981', fontWeight: 700 }}>{String(n.alert_level || 'normal').toUpperCase()}</span></div>
+      <div><strong>Pressure:</strong> {String(n.pressure_hpa)} hPa</div>
+      <div><strong>Wind:</strong> {String(n.wind_kt)} kt</div>
+      {n.visibility_sm != null && n.visibility_sm < 10 && <div><strong>Visibility:</strong> {String(n.visibility_sm)} SM</div>}
+      {n.ceiling_ft != null && n.ceiling_ft < 25000 && <div><strong>Ceiling:</strong> {String(n.ceiling_ft)} ft</div>}
+      {n.detection && <div style={{marginTop:4, padding:'4px 8px', borderRadius:4, background:'rgba(245,158,11,0.15)', border:'1px solid rgba(245,158,11,0.3)'}}>
+        <strong>Detection:</strong> <span style={{ color: '#f59e0b', fontWeight: 600 }}>{String(n.detection).replace(/_/g, ' ')}</span>
+      </div>}
+      {/* Show current activities from messages */}
+      {(() => {
+        const activities = (messages || []).filter(m => m.from === n.station || m.to === n.station)
+        if (activities.length === 0) return null
+        return <div style={{marginTop:6, borderTop:'1px solid #ddd', paddingTop:4}}>
+          <strong style={{fontSize:11}}>Current Activities:</strong>
+          {activities.map((a, i) => (
+            <div key={i} style={{fontSize:10, color:'#555', marginTop:2}}>
+              <span style={{color: MSG_TYPE_COLORS[a.type] || '#3b82f6', fontWeight:700, fontSize:9}}>{String(a.type)}</span>{' '}
+              {a.from === n.station ? 'Sending to ' + String(a.to) : 'Receiving from ' + String(a.from)}: {String(a.text).substring(0, 50)}
+            </div>
+          ))}
+        </div>
+      })()}
+      {/* Show alerts at this station */}
+      {(() => {
+        const stationAlerts = (alerts || []).filter(a => a.station === n.station)
+        if (stationAlerts.length === 0) return null
+        return <div style={{marginTop:6, borderTop:'1px solid #ddd', paddingTop:4}}>
+          <strong style={{fontSize:11, color:'#dc2626'}}>Active Alerts:</strong>
+          {stationAlerts.map((a, i) => (
+            <div key={i} style={{fontSize:10, color:'#dc2626', marginTop:2, fontWeight:600}}>
+              {String(a.type)}: {String(a.text).substring(0, 60)}
+            </div>
+          ))}
+        </div>
+      })()}
+    </div>
+  )
+}
+
+/** Colour per hurricane category (0-5) for the popup title, forecast track and cone. */
 const CAT_COLORS = { 0: '#3b82f6', 1: '#3b82f6', 2: '#f59e0b', 3: '#f97316', 4: '#ef4444', 5: '#dc2626' }
 
+/**
+ * The simulation map. Keyed by step so Leaflet re-mounts (and resets popups/markers) on
+ * every step change.
+ * @param {object} props
+ * @param {object[]} props.nodes simulation nodes
+ * @param {object[]} props.messageLines resolved message lines ({key, from, to, type, text})
+ * @param {object[]} props.propLines resolved propagation-forecast lines
+ * @param {object[]} props.hubLines station-to-hub lines with `connected`
+ * @param {object[]} props.alerts alerts issued this step
+ * @param {object[]} props.messages raw active messages (for popups/toasts)
+ * @param {object|null} props.hurricane hurricane overlay data, if any
+ * @param {number} props.step current step (used as the map key)
+ */
 function SimMap({ nodes, messageLines, propLines, hubLines, alerts, messages, hurricane, step }) {
   return (
     <MapContainer key={'sim-' + step} center={[24.5, -76.5]} zoom={7} style={{ height: '100%', width: '100%' }}
@@ -172,50 +281,7 @@ function SimMap({ nodes, messageLines, propLines, hubLines, alerts, messages, hu
       {nodes.map(n => (
         <Marker key={n.station} position={[n.lat, n.lon]} icon={nodeIcon(n.status, n.hub_connected, n.alert_level)}
           title={`${n.station} ${n.name}: ${n.status}, alert level ${n.alert_level || 'normal'}${n.hub_connected ? '' : ', BACSWN hub disconnected'}`}>
-          <Popup>
-            <div style={{ color: '#000', minWidth: 240, fontSize: 12, lineHeight: 1.5 }}>
-              <div style={{ fontWeight: 700, fontSize: 14, borderBottom: '1px solid #ddd', paddingBottom: 4, marginBottom: 4 }}>
-                {String(n.station)} - {String(n.name)}
-              </div>
-              <div><strong>Status:</strong> <span style={{ color: STATUS_COLORS[n.status] || '#10b981', fontWeight: 700 }}>{String(n.status).toUpperCase()}</span></div>
-              <div><strong>BACSWN hub:</strong> {n.hub_connected ? 'Connected' : 'DISCONNECTED'}{n.autonomous_mode ? ' — AUTONOMOUS MODE' : ''}</div>
-              <div><strong>Alert Level:</strong> <span style={{ color: ALERT_LEVEL_COLORS[n.alert_level] || '#10b981', fontWeight: 700 }}>{String(n.alert_level || 'normal').toUpperCase()}</span></div>
-              <div><strong>Pressure:</strong> {String(n.pressure_hpa)} hPa</div>
-              <div><strong>Wind:</strong> {String(n.wind_kt)} kt</div>
-              {n.visibility_sm != null && n.visibility_sm < 10 && <div><strong>Visibility:</strong> {String(n.visibility_sm)} SM</div>}
-              {n.ceiling_ft != null && n.ceiling_ft < 25000 && <div><strong>Ceiling:</strong> {String(n.ceiling_ft)} ft</div>}
-              {n.detection && <div style={{marginTop:4, padding:'4px 8px', borderRadius:4, background:'rgba(245,158,11,0.15)', border:'1px solid rgba(245,158,11,0.3)'}}>
-                <strong>Detection:</strong> <span style={{ color: '#f59e0b', fontWeight: 600 }}>{String(n.detection).replace(/_/g, ' ')}</span>
-              </div>}
-              {/* Show current activities from messages */}
-              {(() => {
-                const activities = (messages || []).filter(m => m.from === n.station || m.to === n.station)
-                if (activities.length === 0) return null
-                return <div style={{marginTop:6, borderTop:'1px solid #ddd', paddingTop:4}}>
-                  <strong style={{fontSize:11}}>Current Activities:</strong>
-                  {activities.map((a, i) => (
-                    <div key={i} style={{fontSize:10, color:'#555', marginTop:2}}>
-                      <span style={{color: MSG_TYPE_COLORS[a.type] || '#3b82f6', fontWeight:700, fontSize:9}}>{String(a.type)}</span>{' '}
-                      {a.from === n.station ? 'Sending to ' + String(a.to) : 'Receiving from ' + String(a.from)}: {String(a.text).substring(0, 50)}
-                    </div>
-                  ))}
-                </div>
-              })()}
-              {/* Show alerts at this station */}
-              {(() => {
-                const stationAlerts = (alerts || []).filter(a => a.station === n.station)
-                if (stationAlerts.length === 0) return null
-                return <div style={{marginTop:6, borderTop:'1px solid #ddd', paddingTop:4}}>
-                  <strong style={{fontSize:11, color:'#dc2626'}}>Active Alerts:</strong>
-                  {stationAlerts.map((a, i) => (
-                    <div key={i} style={{fontSize:10, color:'#dc2626', marginTop:2, fontWeight:600}}>
-                      {String(a.type)}: {String(a.text).substring(0, 60)}
-                    </div>
-                  ))}
-                </div>
-              })()}
-            </div>
-          </Popup>
+          <Popup><StationPopup n={n} messages={messages} alerts={alerts} /></Popup>
         </Marker>
       ))}
 
@@ -256,6 +322,20 @@ function SimMap({ nodes, messageLines, propLines, hubLines, alerts, messages, hu
   )
 }
 
+/**
+ * Positions of two stations as a line segment.
+ * @param {object[]} nodes simulation nodes
+ * @param {string} from source station code
+ * @param {string} to target station code
+ * @returns {number[][]|null} [[lat, lon], [lat, lon]], or null if either station is unknown
+ */
+function stationPair(nodes, from, to) {
+  const a = nodes.find(n => n.station === from)
+  const b = nodes.find(n => n.station === to)
+  return a && b ? [[a.lat, a.lon], [b.lat, b.lon]] : null
+}
+
+/** Scenario gallery, then the step player for the chosen scenario. */
 export default function Simulations() {
   const [scenarios, setScenarios] = useState([])
   const [loadingScenarios, setLoadingScenarios] = useState(true)
@@ -274,6 +354,7 @@ export default function Simulations() {
     }).catch(() => setLoadingScenarios(false))
   }, [])
 
+  /** Loads one step of a scenario and makes it current. Errors are ignored (the previous step stays on screen). */
   const fetchStep = useCallback(async (scenarioId, step) => {
     setLoadingStep(true)
     try {
@@ -284,6 +365,7 @@ export default function Simulations() {
     setLoadingStep(false)
   }, [])
 
+  /** Opens a scenario at step 0, stopped. */
   const startScenario = useCallback((scenario) => {
     setActiveScenario(scenario)
     setPlaying(false)
@@ -305,6 +387,7 @@ export default function Simulations() {
     return () => { if (timerRef.current) clearTimeout(timerRef.current) }
   }, [playing, demoPaused, currentStep, activeScenario, simState, fetchStep])
 
+  /** Starts playback, rewinding to step 0 first if already at the last step. */
   const handlePlay = () => {
     if (currentStep >= ((simState && simState.total_steps) || 10) - 1) {
       fetchStep(activeScenario.id, 0).then(() => setPlaying(true))
@@ -313,6 +396,7 @@ export default function Simulations() {
     }
   }
 
+  /** Stops playback and returns to the scenario gallery. */
   const handleReset = () => { setPlaying(false); setActiveScenario(null); setSimState(null); setCurrentStep(0) }
 
   if (loadingScenarios) return <div className="loading-spinner"><div className="spinner" /></div>
@@ -361,18 +445,14 @@ export default function Simulations() {
 
   // Message lines between stations
   const messageLines = messages.map((msg, i) => {
-    const fromNode = nodes.find(n => n.station === msg.from)
-    const toNode = nodes.find(n => n.station === msg.to)
-    if (!fromNode || !toNode) return null
-    return { key: 'msg-' + i, from: [fromNode.lat, fromNode.lon], to: [toNode.lat, toNode.lon], type: msg.type, text: msg.text, fromStation: msg.from, toStation: msg.to }
+    const ends = stationPair(nodes, msg.from, msg.to)
+    return ends && { key: 'msg-' + i, from: ends[0], to: ends[1], type: msg.type, text: msg.text, fromStation: msg.from, toStation: msg.to }
   }).filter(Boolean)
 
   // Propagation forecast lines
   const propLines = propagation.map((pf, i) => {
-    const fromNode = nodes.find(n => n.station === pf.from)
-    const toNode = nodes.find(n => n.station === pf.to)
-    if (!fromNode || !toNode) return null
-    return { key: 'prop-' + i, from: [fromNode.lat, fromNode.lon], to: [toNode.lat, toNode.lon] }
+    const ends = stationPair(nodes, pf.from, pf.to)
+    return ends && { key: 'prop-' + i, from: ends[0], to: ends[1] }
   }).filter(Boolean)
 
   // Hub connection lines — from each station to Nassau hub

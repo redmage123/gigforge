@@ -1,3 +1,19 @@
+/**
+ * Hurricane Operations Center page.
+ *
+ * What: a hurricane-response map and planner: animated past track, wind-field rings,
+ * forecast track and cone, evacuation zones, storm-surge zones, evacuation routes,
+ * shelters, airports, island labels and optional historical tracks; plus storm stats,
+ * a Saffir-Simpson scenario planner with "escalate and dispatch", shelter capacity and
+ * similar past storms.
+ * Why: supports NEMA/Met Department decision-making as a storm approaches, and lets a
+ * presenter show the workflow even when no storm is active.
+ * How: polls `api.hurricaneDashboard()` every 30 s. With no active storm the built-in
+ * DEMO_STORM (a Cat-4 "Helena") and demo evacuation zones are shown. Historical tracks are
+ * fetched on demand (`api.hurricaneHistorical`); escalation calls
+ * `api.hurricaneEscalate`. Point markers are nudged apart so each remains a separate
+ * >=24 px target (WCAG 2.5.8), and a "Map details as text" section mirrors the map.
+ */
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { MapContainer, TileLayer, Marker, Popup, Polygon, Polyline, Circle, useMap } from 'react-leaflet'
 import L from 'leaflet'
@@ -8,13 +24,16 @@ import LiveBadge from '../components/LiveBadge'
 import ResetViewControl from '../components/map/ResetViewControl'
 
 // ─── Category colors & labels ───────────────────────────────────────
+/** Colour per Saffir-Simpson category (0 = tropical storm). */
 const CAT_COLORS = {
   0: '#94a3b8', 1: '#3b82f6', 2: '#f59e0b', 3: '#f97316', 4: '#ef4444', 5: '#dc2626',
 }
+/** Display name per category. */
 const CAT_LABELS = {
   0: 'Tropical Storm', 1: 'Category 1', 2: 'Category 2',
   3: 'Category 3', 4: 'Category 4', 5: 'Category 5',
 }
+/** Reference wind range, surge height and recommended action per category. */
 const SAFFIR_SIMPSON_REF = {
   0: { wind_mph: '39-73', surge_ft: '1-3', action: 'Monitor & secure loose objects' },
   1: { wind_mph: '74-95', surge_ft: '4-5', action: 'Monitor & secure' },
@@ -23,9 +42,11 @@ const SAFFIR_SIMPSON_REF = {
   4: { wind_mph: '130-156', surge_ft: '13-18', action: 'Mandatory evacuation' },
   5: { wind_mph: '157+', surge_ft: '19+', action: 'Total evacuation' },
 }
+/** Metres per nautical mile. */
 const NM_TO_M = 1852
 
 // ─── Demo Cat-4 storm approaching Bahamas ───────────────────────────
+/** Fictional Cat-4 storm shown when the API reports no active storm (and source of fallback values). */
 const DEMO_STORM = {
   id: 'demo-helena', name: 'Hurricane Helena',
   category: 4, lat: 25.8, lon: -76.2,
@@ -62,6 +83,7 @@ const DEMO_STORM = {
 }
 
 // ─── Demo evacuation zones (Nassau / New Providence) ─────────────────
+/** Illustrative evacuation zones A-C around New Providence, with label position. */
 const DEMO_EVAC_ZONES = [
   {
     zone: 'A', color: '#ef4444',
@@ -94,6 +116,7 @@ const DEMO_EVAC_ZONES = [
 ]
 
 // ─── Island labels ───────────────────────────────────────────────────
+/** Positions of the main island name labels. */
 const ISLAND_LABELS = [
   { name: 'Nassau', lat: 25.04, lon: -77.35 },
   { name: 'Grand Bahama', lat: 26.55, lon: -78.35 },
@@ -107,6 +130,17 @@ const ISLAND_LABELS = [
 ]
 
 // ─── Icons ───────────────────────────────────────────────────────────
+/**
+ * Status code as words, e.g. "at_capacity" -> "at capacity".
+ * @param {string} status
+ * @returns {string}
+ */
+const statusText = (status) => String(status).replace('_', ' ')
+
+/** Style for the sub-headings in "Map details as text". */
+const DETAILS_H4 = { fontSize: 13, margin: '8px 0 4px' }
+
+/** Spinning hurricane-eye marker (spin keyframes are defined in the page's <style>). */
 const hurricaneMapIcon = L.divIcon({
   className: '',
   html: `<div style="animation:hurricane-spin 6s linear infinite;width:52px;height:52px;filter:drop-shadow(0 0 14px rgba(239,68,68,0.8))">
@@ -124,6 +158,7 @@ const hurricaneMapIcon = L.divIcon({
   iconAnchor: [26, 26],
 })
 
+/** Non-interactive dark label for an island name. */
 const islandLabelIcon = (name) => L.divIcon({
   className: '',
   html: `<div style="background:rgba(0,0,0,0.65);border:1px solid rgba(255,255,255,0.2);border-radius:3px;padding:2px 6px;font-size:10px;font-weight:600;color:#cbd5e1;white-space:nowrap;pointer-events:none;letter-spacing:0.3px">${name}</div>`,
@@ -131,6 +166,7 @@ const islandLabelIcon = (name) => L.divIcon({
   iconAnchor: [0, 0],
 })
 
+/** Round "Z<zone>" badge placed at the centre of an evacuation zone. */
 const zoneIcon = (zone, color) => L.divIcon({
   className: '',
   html: `<div style="background:${color};border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:#111827;border:2px solid rgba(255,255,255,0.9);box-shadow:0 2px 10px rgba(0,0,0,0.6)">Z${zone}</div>`,
@@ -140,13 +176,27 @@ const zoneIcon = (zone, color) => L.divIcon({
 
 // Nudge point markers that would overlap at the default zoom into free slots
 // around their location, so every marker stays a separate ≥24 px target (WCAG 2.5.8).
+/** Zoom level the overlap layout is computed for. */
 const DEFAULT_ZOOM = 7
+/**
+ * Web Mercator pixel coordinates of a point at DEFAULT_ZOOM.
+ * @param {number} lat
+ * @param {number} lon
+ * @returns {number[]} [x, y] in pixels
+ */
 const project = (lat, lon) => {
   const scale = 256 * 2 ** DEFAULT_ZOOM
   const r = (lat * Math.PI) / 180
   return [((lon + 180) / 360) * scale, (1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * scale]
 }
+/** Candidate pixel offsets tried in order when a marker would overlap one already placed. */
 const SLOTS = [[0, 0], [0, 28], [0, -28], [28, 0], [-28, 0], [28, 28], [-28, 28], [28, -28], [-28, -28], [0, 56], [0, -56]]
+/**
+ * Assigns each point the first SLOTS offset that keeps it at least 28 px from every
+ * marker already placed.
+ * @param {{key: string, lat: number, lon: number, dx: number}[]} points `dx` is the marker's own horizontal anchor offset
+ * @returns {Object<string, number[]>} key -> [dx, dy] pixel offset
+ */
 function layoutMarkers(points) {
   const placed = [], out = {}
   for (const pt of points) {
@@ -159,21 +209,49 @@ function layoutMarkers(points) {
   return out
 }
 
+/**
+ * Square white-bordered badge HTML used for shelter ("S") and airport ("AP") markers.
+ * @param {string} text badge text
+ * @param {string} background fill colour
+ * @param {number} fontSize px
+ * @returns {string}
+ */
+const squareBadgeHtml = (text, background, fontSize) =>
+  `<div style="width:26px;height:26px;display:flex;align-items:center;justify-content:center;background:${background};border-radius:4px;border:2px solid white;font-size:${fontSize}px;color:white;font-weight:700">${text}</div>`
+
+/**
+ * Shelter marker: green open, red at capacity, grey otherwise; anchored left of its point.
+ * @param {string} status
+ * @param {number[]} [offset] [dx, dy] from layoutMarkers
+ * @returns {L.DivIcon}
+ */
 const shelterIcon = (status, [ox, oy] = [0, 0]) => L.divIcon({
   className: 'station-marker',
-  html: `<div style="width:26px;height:26px;display:flex;align-items:center;justify-content:center;background:${status === 'open' ? '#047857' : status === 'at_capacity' ? '#b91c1c' : '#475569'};border-radius:4px;border:2px solid white;font-size:12px;color:white;font-weight:700">S</div>`,
+  html: squareBadgeHtml('S', status === 'open' ? '#047857' : status === 'at_capacity' ? '#b91c1c' : '#475569', 12),
   // Shelters sit just left of their point and airports just right, so a shelter
   // and an airport in the same town never stack (24 px target spacing, WCAG 2.5.8).
   iconSize: [26, 26], iconAnchor: [28 - ox, 13 - oy],
 })
 
+/**
+ * Airport marker: green operational, amber limited, red otherwise; anchored right of its point.
+ * @param {string} status
+ * @param {number[]} [offset] [dx, dy] from layoutMarkers
+ * @returns {L.DivIcon}
+ */
 const airportIcon = (status, [ox, oy] = [0, 0]) => L.divIcon({
   className: 'station-marker',
-  html: `<div style="width:26px;height:26px;display:flex;align-items:center;justify-content:center;background:${status === 'operational' ? '#047857' : status === 'limited' ? '#b45309' : '#b91c1c'};border-radius:4px;border:2px solid white;font-size:11px;color:white;font-weight:700">AP</div>`,
+  html: squareBadgeHtml('AP', status === 'operational' ? '#047857' : status === 'limited' ? '#b45309' : '#b91c1c', 11),
   iconSize: [26, 26], iconAnchor: [-2 - ox, 13 - oy],
 })
 
 // ─── Canvas: animated past track drawing ─────────────────────────────
+/**
+ * Leaflet child that draws the storm's past track on a canvas, segment by segment over
+ * ~3.8 s, each segment glowing in its category colour, then pulses rings at the current
+ * position. Reduced motion draws the finished track with static rings.
+ * @param {{pastTrack: {lat: number, lon: number, category: number}[], still: boolean}} props
+ */
 function StormTrackCanvas({ pastTrack, still }) {
   const map = useMap()
   const stillRef = useRef(still)
@@ -189,6 +267,7 @@ function StormTrackCanvas({ pastTrack, still }) {
     map.getContainer().appendChild(canvas)
     canvasRef.current = canvas
 
+    /** Matches the canvas size to the map's. */
     const resize = () => {
       const s = map.getSize()
       canvas.width = s.x
@@ -202,6 +281,7 @@ function StormTrackCanvas({ pastTrack, still }) {
     const start = Date.now()
     const DURATION = 3800 // ms for initial draw
 
+    /** Draws one frame of the track animation and schedules the next. */
     const frame = () => {
       const elapsed = Date.now() - start
       const t = stillRef.current ? 1 : Math.min(1, elapsed / DURATION)
@@ -294,6 +374,11 @@ function StormTrackCanvas({ pastTrack, still }) {
 }
 
 // ─── Historical track overlay ─────────────────────────────────────────
+/**
+ * Leaflet child that fetches and draws a historical storm's track (dashed purple line
+ * plus category-coloured points every other fix). Fetch errors are ignored.
+ * @param {{stormId: string}} props
+ */
 function HistoricalTrack({ stormId }) {
   const [trackData, setTrackData] = useState(null)
   useEffect(() => {
@@ -318,8 +403,9 @@ function HistoricalTrack({ stormId }) {
 }
 
 // ─── Main component ───────────────────────────────────────────────────
+/** The hurricane page: header, stats, scenario planner, layer toggles, map with text alternative, and side panel. */
 export default function HurricaneOps() {
-  const { data, loading } = usePolling(useCallback(() => api.hurricaneDashboard(), []), 30000)
+  const { data } = usePolling(useCallback(() => api.hurricaneDashboard(), []), 30000)
   const [selectedCat, setSelectedCat] = useState(0)
   const [showLayer, setShowLayer] = useState({
     surge: true, shelters: true, airports: true, routes: true,
@@ -347,14 +433,28 @@ export default function HurricaneOps() {
     ...(showLayer.shelters ? shelters.map(s => ({ key: 's-' + s.id, lat: s.lat, lon: s.lon, dx: -15 })) : []),
   ])
   const activeStorm = storms[0]
+  // Values shown for the active storm, falling back to the demo storm's where missing.
+  const stormCategory = activeStorm?.category ?? 4
+  const windMph = activeStorm?.wind_mph || 145
+  const pressureMb = activeStorm?.pressure_mb || 937
+  const movement = activeStorm?.movement || 'NNW at 12 mph'
+  const radius34 = activeStorm?.wind_34kt_radius_nm || DEMO_STORM.wind_34kt_radius_nm
+  const radius50 = activeStorm?.wind_50kt_radius_nm || DEMO_STORM.wind_50kt_radius_nm
+  const radius64 = activeStorm?.wind_64kt_radius_nm || DEMO_STORM.wind_64kt_radius_nm
+  const forecastTrack = (activeStorm?.forecast_track || DEMO_STORM.forecast_track).slice(1)
 
+  /**
+   * Escalates the selected category and dispatches the alert. On failure it shows a
+   * canned "dispatched 38/42" result (demo fallback) rather than an error.
+   */
   const handleEscalate = async () => {
     setEscalating(true)
     try {
       const result = await api.hurricaneEscalate(cat, storms[0]?.name || 'Hurricane Helena')
       setEscalateResult(result)
-    } catch {
-      setEscalateResult({ status: 'dispatched', channels_reached: 38, total_channels: 42 })
+    } catch (err) {
+      // Never report a dispatch that did not happen: show the failure so the operator can retry.
+      setEscalateResult({ status: 'failed', message: `Dispatch failed: ${err.message}. No channels were alerted; try again.` })
     }
     setEscalating(false)
   }
@@ -386,17 +486,17 @@ export default function HurricaneOps() {
         <div className="stat-card" style={{ borderTop: '3px solid ' + catColor }}>
           <span className="stat-label">Storm</span>
           <span className="stat-value" style={{ fontSize: 22 }}>{activeStorm?.name || 'Helena'}</span>
-          <span className="stat-detail">{CAT_LABELS[activeStorm?.category ?? 4]}</span>
+          <span className="stat-detail">{CAT_LABELS[stormCategory]}</span>
         </div>
         <div className="stat-card" style={{ borderTop: '3px solid #ef4444' }}>
           <span className="stat-label">Max Sustained Winds</span>
-          <span className="stat-value danger">{activeStorm?.wind_mph || 145} <span style={{ fontSize: 14 }}>mph</span></span>
-          <span className="stat-detail">{Math.round((activeStorm?.wind_mph || 145) * 0.868)} kt</span>
+          <span className="stat-value danger">{windMph} <span style={{ fontSize: 14 }}>mph</span></span>
+          <span className="stat-detail">{Math.round(windMph * 0.868)} kt</span>
         </div>
         <div className="stat-card" style={{ borderTop: '3px solid #f97316' }}>
           <span className="stat-label">Central Pressure</span>
-          <span className="stat-value warning">{activeStorm?.pressure_mb || 937} <span style={{ fontSize: 14 }}>mb</span></span>
-          <span className="stat-detail">Movement: {activeStorm?.movement || 'NNW at 12 mph'}</span>
+          <span className="stat-value warning">{pressureMb} <span style={{ fontSize: 14 }}>mb</span></span>
+          <span className="stat-detail">Movement: {movement}</span>
         </div>
         <div className="stat-card" style={{ borderTop: '3px solid #10b981' }}>
           <span className="stat-label">Shelters Open</span>
@@ -421,7 +521,7 @@ export default function HurricaneOps() {
             border: '1px solid ' + (escalateResult.status === 'dispatched' ? 'var(--success)' : 'var(--danger)'),
           }}>
             {escalateResult.status === 'dispatched'
-              ? `Alert dispatched to ${escalateResult.channels_reached || 38}/${escalateResult.total_channels || 42} channels`
+              ? `Alert dispatched to ${escalateResult.channels_reached ?? '?'}/${escalateResult.total_channels ?? '?'} channels`
               : escalateResult.message || 'Alert already dispatched'}
           </div>
         )}</div>
@@ -464,7 +564,7 @@ export default function HurricaneOps() {
       <div style={{ display: 'flex', gap: 12 }}>
         {/* Map */}
         <div className="card" style={{ padding: 0, overflow: 'hidden', flex: 1, position: 'relative', minWidth: 0 }}
-          role="region" aria-label={`Hurricane map: ${activeStorm?.name || 'storm'}, ${CAT_LABELS[activeStorm?.category ?? 4]}. Details as text below the map.`}>
+          role="region" aria-label={`Hurricane map: ${activeStorm?.name || 'storm'}, ${CAT_LABELS[stormCategory]}. Details as text below the map.`}>
           {/* Intensity badge overlay */}
           <div style={{
             position: 'absolute', top: 12, right: 12, zIndex: 1000,
@@ -481,15 +581,15 @@ export default function HurricaneOps() {
             <div style={{ display: 'flex', gap: 14, fontSize: 13, marginBottom: 10 }}>
               <div>
                 <div style={{ fontSize: 10.5, color: '#cbd5e1', textTransform: 'uppercase' }}>CATEGORY</div>
-                <div style={{ fontSize: 24, fontWeight: 900, color: catColor, lineHeight: 1 }}>{(activeStorm?.category ?? 4) || 'TS'}</div>
+                <div style={{ fontSize: 24, fontWeight: 900, color: catColor, lineHeight: 1 }}>{stormCategory || 'TS'}</div>
               </div>
               <div style={{ borderLeft: '1px solid var(--border)', paddingLeft: 14 }}>
                 <div style={{ fontSize: 10.5, color: '#cbd5e1', textTransform: 'uppercase' }}>WINDS</div>
-                <div style={{ fontSize: 18, fontWeight: 700, color: '#f8fafc' }}>{activeStorm?.wind_mph || 145} mph</div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: '#f8fafc' }}>{windMph} mph</div>
               </div>
               <div style={{ borderLeft: '1px solid var(--border)', paddingLeft: 14 }}>
                 <div style={{ fontSize: 10.5, color: '#cbd5e1', textTransform: 'uppercase' }}>PRESSURE</div>
-                <div style={{ fontSize: 18, fontWeight: 700, color: '#f8fafc' }}>{activeStorm?.pressure_mb || 937} mb</div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: '#f8fafc' }}>{pressureMb} mb</div>
               </div>
             </div>
             {/* Wind ring legend */}
@@ -521,19 +621,19 @@ export default function HurricaneOps() {
               {showLayer.windRings && (
                 <>
                   <Circle center={[activeStorm.lat, activeStorm.lon]}
-                    radius={(activeStorm.wind_34kt_radius_nm || DEMO_STORM.wind_34kt_radius_nm) * NM_TO_M}
+                    radius={radius34 * NM_TO_M}
                     pathOptions={{ color: '#3b82f6', fillColor: '#3b82f6', fillOpacity: 0.04, weight: 2, dashArray: '8 5' }} />
                   <Circle center={[activeStorm.lat, activeStorm.lon]}
-                    radius={(activeStorm.wind_50kt_radius_nm || DEMO_STORM.wind_50kt_radius_nm) * NM_TO_M}
+                    radius={radius50 * NM_TO_M}
                     pathOptions={{ color: '#f59e0b', fillColor: '#f59e0b', fillOpacity: 0.06, weight: 2, dashArray: '6 4' }} />
                   <Circle center={[activeStorm.lat, activeStorm.lon]}
-                    radius={(activeStorm.wind_64kt_radius_nm || DEMO_STORM.wind_64kt_radius_nm) * NM_TO_M}
+                    radius={radius64 * NM_TO_M}
                     pathOptions={{ color: '#ef4444', fillColor: '#ef4444', fillOpacity: 0.10, weight: 2.5, dashArray: '4 3' }} />
                 </>
               )}
 
               {/* Forecast track waypoint dots */}
-              {(activeStorm?.forecast_track || DEMO_STORM.forecast_track).slice(1).map((pt, i) => (
+              {forecastTrack.map((pt, i) => (
                 <Circle key={'fcst-' + i} center={[pt.lat, pt.lon]} radius={18000}
                   pathOptions={{
                     color: CAT_COLORS[pt.category ?? 3],
@@ -550,16 +650,16 @@ export default function HurricaneOps() {
 
               {/* Hurricane eye icon */}
               <Marker position={[activeStorm.lat, activeStorm.lon]} icon={hurricaneMapIcon}
-                title={`${activeStorm.name}, ${CAT_LABELS[activeStorm.category ?? 4]}, ${activeStorm.wind_mph || 145} mph`}>
+                title={`${activeStorm.name}, ${CAT_LABELS[stormCategory]}, ${windMph} mph`}>
                 <Popup>
                   <div style={{ color: '#000', minWidth: 220, fontSize: 13, lineHeight: 1.7 }}>
                     <div style={{ fontWeight: 700, fontSize: 16, color: '#dc2626', marginBottom: 4 }}>{activeStorm.name}</div>
-                    <div style={{ fontWeight: 600 }}>{CAT_LABELS[activeStorm.category ?? 4]}</div>
-                    <div><strong>Winds:</strong> {activeStorm.wind_mph || 145} mph</div>
-                    <div><strong>Pressure:</strong> {activeStorm.pressure_mb || 937} mb</div>
-                    <div><strong>Movement:</strong> {activeStorm.movement || 'NNW at 12 mph'}</div>
-                    <div><strong>34kt radius:</strong> {activeStorm.wind_34kt_radius_nm || 240} nm</div>
-                    <div><strong>64kt radius:</strong> {activeStorm.wind_64kt_radius_nm || 60} nm</div>
+                    <div style={{ fontWeight: 600 }}>{CAT_LABELS[stormCategory]}</div>
+                    <div><strong>Winds:</strong> {windMph} mph</div>
+                    <div><strong>Pressure:</strong> {pressureMb} mb</div>
+                    <div><strong>Movement:</strong> {movement}</div>
+                    <div><strong>34kt radius:</strong> {radius34} nm</div>
+                    <div><strong>64kt radius:</strong> {radius64} nm</div>
                   </div>
                 </Popup>
               </Marker>
@@ -609,7 +709,7 @@ export default function HurricaneOps() {
               {/* Shelters */}
               {showLayer.shelters && shelters.map(s => (
                 <Marker key={s.id} position={[s.lat, s.lon]} icon={shelterIcon(s.status, slots['s-' + s.id])}
-                  title={`Shelter: ${s.name}, ${String(s.status).replace('_', ' ')}, ${s.occupancy} of ${s.capacity}`}>
+                  title={`Shelter: ${s.name}, ${statusText(s.status)}, ${s.occupancy} of ${s.capacity}`}>
                   <Popup>
                     <div style={{ color: '#000', minWidth: 200 }}>
                       <div style={{ fontWeight: 700 }}>{s.name}</div>
@@ -644,34 +744,34 @@ export default function HurricaneOps() {
           </div>
           <details className="chart-data" style={{ padding: '6px 12px 10px' }}>
             <summary>Map details as text</summary>
-            <h4 style={{ fontSize: 13, margin: '8px 0 4px' }}>Storm</h4>
-            <p style={{ fontSize: 13 }}>{activeStorm?.name}: {CAT_LABELS[activeStorm?.category ?? 4]}, {activeStorm?.wind_mph || 145} mph,
-              {' '}{activeStorm?.pressure_mb || 937} mb, moving {activeStorm?.movement || 'NNW at 12 mph'}, at {activeStorm?.lat}°N {Math.abs(activeStorm?.lon)}°W.
-              {' '}Tropical-storm-force winds extend {activeStorm?.wind_34kt_radius_nm || DEMO_STORM.wind_34kt_radius_nm} nm; hurricane-force {activeStorm?.wind_64kt_radius_nm || DEMO_STORM.wind_64kt_radius_nm} nm.</p>
-            <h4 style={{ fontSize: 13, margin: '8px 0 4px' }}>Forecast track</h4>
+            <h4 style={DETAILS_H4}>Storm</h4>
+            <p style={{ fontSize: 13 }}>{activeStorm?.name}: {CAT_LABELS[stormCategory]}, {windMph} mph,
+              {' '}{pressureMb} mb, moving {movement}, at {activeStorm?.lat}°N {Math.abs(activeStorm?.lon)}°W.
+              {' '}Tropical-storm-force winds extend {radius34} nm; hurricane-force {radius64} nm.</p>
+            <h4 style={DETAILS_H4}>Forecast track</h4>
             <ul style={{ fontSize: 13, paddingLeft: 18 }}>
-              {(activeStorm?.forecast_track || DEMO_STORM.forecast_track).slice(1).map((pt, i) => (
+              {forecastTrack.map((pt, i) => (
                 <li key={i}>+{pt.hours} h: {pt.lat}°N {Math.abs(pt.lon)}°W, {CAT_LABELS[pt.category ?? 3]}</li>
               ))}
             </ul>
             {shelters.length > 0 && <>
-              <h4 style={{ fontSize: 13, margin: '8px 0 4px' }}>Shelters</h4>
+              <h4 style={DETAILS_H4}>Shelters</h4>
               <ul style={{ fontSize: 13, paddingLeft: 18 }}>{shelters.map(s => (
-                <li key={s.id}>{s.name}: {String(s.status).replace('_', ' ')}, {s.occupancy} of {s.capacity} places</li>
+                <li key={s.id}>{s.name}: {statusText(s.status)}, {s.occupancy} of {s.capacity} places</li>
               ))}</ul>
             </>}
             {airports.length > 0 && <>
-              <h4 style={{ fontSize: 13, margin: '8px 0 4px' }}>Airports</h4>
+              <h4 style={DETAILS_H4}>Airports</h4>
               <ul style={{ fontSize: 13, paddingLeft: 18 }}>{airports.map(a => <li key={a.icao}>{a.icao} {a.name}: {a.status}</li>)}</ul>
             </>}
             {(surge.zones || []).length > 0 && <>
-              <h4 style={{ fontSize: 13, margin: '8px 0 4px' }}>Storm surge zones</h4>
+              <h4 style={DETAILS_H4}>Storm surge zones</h4>
               <ul style={{ fontSize: 13, paddingLeft: 18 }}>{surge.zones.map((z, i) => (
                 <li key={i}>{z.name}: {z.risk_level} risk, {z.surge_min_ft}–{z.surge_max_ft} ft, {z.population_at_risk?.toLocaleString()} people</li>
               ))}</ul>
             </>}
             {routes.length > 0 && <>
-              <h4 style={{ fontSize: 13, margin: '8px 0 4px' }}>Evacuation routes</h4>
+              <h4 style={DETAILS_H4}>Evacuation routes</h4>
               <ul style={{ fontSize: 13, paddingLeft: 18 }}>{routes.map((r, i) => <li key={i}>{r.name} ({r.priority})</li>)}</ul>
             </>}
           </details>
@@ -721,7 +821,7 @@ export default function HurricaneOps() {
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
                     <span style={{ color: 'var(--text-secondary)' }}>{s.name}</span>
                     <span style={{ fontWeight: 700, color: s.status === 'open' ? 'var(--success-text)' : s.status === 'at_capacity' ? 'var(--danger-text)' : 'var(--text-secondary)' }}>
-                      {s.occupancy_pct}%<span className="sr-only"> full, {String(s.status).replace('_', ' ')}</span></span>
+                      {s.occupancy_pct}%<span className="sr-only"> full, {statusText(s.status)}</span></span>
                   </div>
                   <div aria-hidden="true" style={{ height: 4, background: 'var(--bg-primary)', borderRadius: 2, marginTop: 2 }}>
                     <div style={{ width: s.occupancy_pct + '%', height: '100%', borderRadius: 2, background: s.occupancy_pct > 80 ? 'var(--danger)' : s.occupancy_pct > 50 ? 'var(--warning)' : 'var(--success)', transition: 'width 0.5s' }} />

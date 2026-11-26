@@ -1,6 +1,33 @@
-"""BACSWN — Training & certification API router."""
+"""BACSWN — Training & certification API router.
+
+What: serves the meteorologist roster, the training-module catalogue and a
+certification summary, and lets an operator contact a roster member by email,
+Telegram, WhatsApp, SMS or VHF radio.
+
+Why: the Training page needs staff readiness at a glance and a one-click way to
+reach the person on duty during an event.
+
+How: the roster, modules and contact details are static demo data held in this
+module. Email goes through the host's ``send_email`` helper (found via a
+``sys.path`` entry), Telegram/WhatsApp through the ``openclaw`` CLI, and each
+contact attempt is logged best-effort to the shared RAG Postgres. A delivery
+failure marks the message "queued" rather than raising.
+"""
+
+import logging
+import os
+import subprocess
+import sys
+from datetime import datetime
 
 from fastapi import APIRouter
+from pydantic import BaseModel
+
+from services.errors import BacswnNotFoundError
+
+# The host's shared helpers (send_email) live here.
+sys.path.insert(0, "/home/aielevate")
+log = logging.getLogger("bacswn-contact")
 
 router = APIRouter()
 
@@ -73,30 +100,38 @@ CONTACT_INFO = {
 }
 
 
-from pydantic import BaseModel
-from fastapi import HTTPException
-from datetime import datetime
-import logging
-import sys
-
-sys.path.insert(0, "/home/aielevate")
-log = logging.getLogger("bacswn-contact")
-
-
 class ContactRequest(BaseModel):
+    """Body of ``POST /contact``: who to reach, over which channel, and the message."""
+
     person_id: int
     channel: str  # email, telegram, whatsapp, sms, radio
     message: str
     sender_name: str = "BACSWN Control"
 
 
+def _find_person(person_id: int) -> dict:
+    """The roster entry with ``person_id``.
+
+    Raises:
+        BacswnNotFoundError: no roster member has that id (HTTP 404).
+    """
+    person = next((r for r in ROSTER if r["id"] == person_id), None)
+    if not person:
+        raise BacswnNotFoundError("Person not found")
+    return person
+
+
 @router.post("/contact")
 async def contact_person(req: ContactRequest):
-    """Send a message to a roster member via the selected channel."""
-    # Find person
-    person = next((r for r in ROSTER if r["id"] == req.person_id), None)
-    if not person:
-        raise HTTPException(status_code=404, detail="Person not found")
+    """Send a message to a roster member via the selected channel.
+
+    Delivery problems never raise: the result's ``status`` becomes "queued"
+    (channel send failed) or "failed" (unexpected error), with a note.
+
+    Raises:
+        BacswnNotFoundError: unknown ``person_id`` (HTTP 404).
+    """
+    person = _find_person(req.person_id)
 
     contact = CONTACT_INFO.get(req.person_id, {})
     result = {"person": person["name"], "channel": req.channel, "status": "sent", "timestamp": datetime.utcnow().isoformat()}
@@ -120,7 +155,6 @@ async def contact_person(req: ContactRequest):
         elif req.channel == "telegram":
             # Send via OpenClaw Telegram channel
             try:
-                import subprocess, os
                 env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
                 tg_handle = contact.get("telegram", "")
                 subprocess.Popen(
@@ -136,7 +170,6 @@ async def contact_person(req: ContactRequest):
         elif req.channel == "whatsapp":
             # Send via OpenClaw WhatsApp channel
             try:
-                import subprocess, os
                 env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
                 phone = contact.get("phone", "")
                 subprocess.Popen(
@@ -162,14 +195,13 @@ async def contact_person(req: ContactRequest):
 
         # Log the contact attempt
         try:
-            import psycopg2
-            import os as _os
+            import psycopg2  # optional dependency: only needed for this log
             conn = psycopg2.connect(
-                host=_os.getenv("RAG_DB_HOST", "127.0.0.1"),
-                port=int(_os.getenv("RAG_DB_PORT", "5434")),
-                dbname=_os.getenv("RAG_DB_NAME", "rag"),
-                user=_os.getenv("RAG_DB_USER", "rag"),
-                password=_os.getenv("RAG_DB_PASSWORD", ""),
+                host=os.getenv("RAG_DB_HOST", "127.0.0.1"),
+                port=int(os.getenv("RAG_DB_PORT", "5434")),
+                dbname=os.getenv("RAG_DB_NAME", "rag"),
+                user=os.getenv("RAG_DB_USER", "rag"),
+                password=os.getenv("RAG_DB_PASSWORD", ""),
             )
             conn.autocommit = True
             conn.cursor().execute(
@@ -178,8 +210,9 @@ async def contact_person(req: ContactRequest):
                  f"BACSWN contact via {req.channel}: {req.message[:200]}",
                  "bacswn-training"))
             conn.close()
-        except Exception:
-            pass
+        except Exception as e:
+            # Best effort: an unreachable log store must not fail the contact.
+            log.debug(f"Contact log write skipped: {e}")
 
     except Exception as e:
         log.error(f"Contact failed: {e}")
@@ -191,10 +224,12 @@ async def contact_person(req: ContactRequest):
 
 @router.get("/contact/{person_id}")
 async def get_contact_info(person_id: int):
-    """Get available contact channels for a roster member."""
-    person = next((r for r in ROSTER if r["id"] == person_id), None)
-    if not person:
-        raise HTTPException(status_code=404, detail="Person not found")
+    """Get available contact channels for a roster member.
+
+    Raises:
+        BacswnNotFoundError: unknown ``person_id`` (HTTP 404).
+    """
+    person = _find_person(person_id)
 
     contact = CONTACT_INFO.get(person_id, {})
     channels = []

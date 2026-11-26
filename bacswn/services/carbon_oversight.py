@@ -18,6 +18,16 @@ to ICAO. This module is that state-side register:
 
 Evidence is append-only (enforced by triggers): a revised emissions report is a
 new row that supersedes the old one; a review is a new decision, never an edit.
+
+Why: the state is answerable to ICAO for the operators it administers, so it
+needs its own record of what each operator reported and claimed, what it
+verified, and what does not add up, independent of the operators' paperwork.
+
+How: writes validate their input (raising ``OversightError`` with a user-safe
+message) and insert rows into the ``carbon_*`` tables; ``register`` loads one
+compliance period, computes each operator's requirement, eligible-fuel
+reductions and shortfall, and runs the finding checks in memory. The API layer
+(api/carbon_oversight.py) is a thin wrapper over these functions.
 """
 
 from __future__ import annotations
@@ -31,6 +41,8 @@ from datetime import date, datetime, timedelta, timezone
 from config import CO2_PER_KG_FUEL, FUEL_BURN_RATES
 from services import ner_registry
 from services.database import get_db
+from services.emissions_calculator import fuel_burn_category
+from services.errors import BacswnNotFoundError, BacswnValidationError
 
 # CORSIA compliance periods. Eligible-unit vintage windows follow ICAO's
 # "CORSIA Eligible Emissions Units" document for the pilot and first phase;
@@ -69,7 +81,6 @@ FUEL_TYPES = {"SAF", "LCAF"}
 
 _DESIGNATOR_RE = re.compile(r"^[A-Z]{3}$")
 _CALLSIGN_RE = re.compile(r"^([A-Z]{3})\d[0-9A-Z]*$")
-_CATEGORY = {5: "heavy", 6: "heavy", 7: "heavy", 4: "large", 3: "medium", 2: "small", 1: "light", 0: "medium"}
 _DECISIONS = {"VERIFIED", "REJECTED", "REOPENED"}
 # Which decisions are allowed from each current status.
 _TRANSITIONS = {
@@ -80,19 +91,35 @@ _TRANSITIONS = {
 }
 
 
-class OversightError(ValueError):
-    """Validation failure; the message is safe to show to the user."""
+class OversightError(BacswnValidationError):
+    """An oversight-register request was refused; the message is safe to show to the user.
 
-    def __init__(self, message: str, status: int = 400):
-        super().__init__(message)
-        self.status = status
+    HTTP 400 by default; a conflict with the register's current state (duplicate
+    operator, disallowed status change) passes ``status=409``.
+    """
+
+
+class OversightNotFoundError(OversightError, BacswnNotFoundError):
+    """A record the request refers to (operator, claim) does not exist (HTTP 404).
+
+    Subclasses ``OversightError`` so existing ``except OversightError`` handling
+    still catches it.
+    """
+
+    status = 404
 
 
 def _now() -> datetime:
+    """Current time in UTC (one place to patch in tests)."""
     return datetime.now(timezone.utc)
 
 
 def _text(value, field: str, max_len: int, required: bool = False) -> str:
+    """Stripped text field, checked for presence (if ``required``) and length.
+
+    Raises:
+        OversightError: missing when required, or longer than ``max_len``.
+    """
     s = (value or "").strip() if isinstance(value, str) or value is None else str(value).strip()
     if required and not s:
         raise OversightError(f"{field} is required")
@@ -102,6 +129,11 @@ def _text(value, field: str, max_len: int, required: bool = False) -> str:
 
 
 def _int(value, field: str, lo: int, hi: int) -> int:
+    """Required whole number in ``lo``..``hi``; booleans and fractional values are refused.
+
+    Raises:
+        OversightError: missing, not a whole number, or out of range.
+    """
     if isinstance(value, bool) or value is None or value == "":
         raise OversightError(f"{field} is required")
     try:
@@ -114,6 +146,11 @@ def _int(value, field: str, lo: int, hi: int) -> int:
 
 
 def _date(value, field: str) -> str:
+    """ISO date (YYYY-MM-DD) that is not in the future.
+
+    Raises:
+        OversightError: not a valid date, or later than today (UTC).
+    """
     try:
         d = date.fromisoformat(str(value))
     except ValueError:
@@ -124,10 +161,16 @@ def _date(value, field: str) -> str:
 
 
 def period_for_year(year: int) -> str | None:
+    """Id of the compliance period containing ``year`` (e.g. "2024-2026"), or None."""
     return next((p for p, v in PERIODS.items() if v["years"][0] <= year <= v["years"][1]), None)
 
 
 def _period(name: str) -> dict:
+    """Definition of a compliance period by id.
+
+    Raises:
+        OversightError: the id is not one of ``PERIODS``.
+    """
     if name not in PERIODS:
         raise OversightError(f"Unknown compliance period {name!r}")
     return PERIODS[name]
@@ -142,6 +185,11 @@ def designator_for(callsign: str | None) -> str | None:
 # ── writes ──────────────────────────────────────────────────────────────────
 
 async def create_operator(data: dict, user: str) -> dict:
+    """Register an aircraft operator attributed to the Bahamas.
+
+    Raises:
+        OversightError: invalid designator or name, or (409) the designator is already registered.
+    """
     designator = _text(data.get("icao_designator"), "ICAO designator", 10, required=True).upper()
     if not _DESIGNATOR_RE.match(designator):
         raise OversightError("ICAO designator must be three letters (e.g. BHS)")
@@ -159,14 +207,37 @@ async def create_operator(data: dict, user: str) -> dict:
 
 
 async def _require_operator(db, operator_id: int) -> dict:
+    """The operator row on an open connection.
+
+    Raises:
+        OversightNotFoundError: no operator has that id.
+    """
     cur = await db.execute("SELECT * FROM carbon_operators WHERE id = ?", [operator_id])
     row = await cur.fetchone()
     if not row:
-        raise OversightError("Operator not found", status=404)
+        raise OversightNotFoundError("Operator not found")
     return dict(row)
 
 
+async def get_operator(operator_id: int) -> dict:
+    """The operator row by id.
+
+    Raises:
+        OversightNotFoundError: no operator has that id.
+    """
+    async with get_db() as db:
+        return await _require_operator(db, operator_id)
+
+
 async def add_emission_report(operator_id: int, data: dict, user: str) -> dict:
+    """Record a verified annual emissions report (a later report for the same year supersedes it).
+
+    Returns the new row id, its revision number for that year, and the offsetting
+    requirement it implies (verified CO2 x growth factor, rounded to whole tonnes).
+
+    Raises:
+        OversightError: invalid fields; OversightNotFoundError if the operator does not exist.
+    """
     year = _int(data.get("year"), "Year", 2019, _now().year)
     if not period_for_year(year) and year != 2019:
         raise OversightError("Year is outside the CORSIA compliance periods")
@@ -195,6 +266,13 @@ async def add_emission_report(operator_id: int, data: dict, user: str) -> dict:
 
 
 async def add_unit_claim(operator_id: int, data: dict, user: str) -> dict:
+    """Record an operator's claim to have cancelled emissions units; it starts PENDING review.
+
+    A numeric serial range, if given, must hold exactly ``quantity`` units.
+
+    Raises:
+        OversightError: invalid fields; OversightNotFoundError if the operator does not exist.
+    """
     period = _text(data.get("compliance_period"), "Compliance period", 9, required=True)
     _period(period)
     registry = _text(data.get("registry"), "Registry", 80, required=True)
@@ -228,6 +306,16 @@ async def add_unit_claim(operator_id: int, data: dict, user: str) -> dict:
 
 
 async def _review(claims_table: str, reviews_table: str, claim_id: int, data: dict, user: str) -> dict:
+    """Append a review decision to a unit or fuel claim, enforcing the allowed status transitions.
+
+    The existence check, current-status check and insert run in one immediate
+    transaction so two reviewers cannot both move a claim from the same status.
+
+    Raises:
+        OversightError: invalid decision or missing reason; (409) the transition is
+            not allowed from the claim's current status.
+        OversightNotFoundError: no claim has that id.
+    """
     decision = _text(data.get("decision"), "Decision", 10, required=True).upper()
     if decision not in _DECISIONS:
         raise OversightError("Decision must be VERIFIED, REJECTED or REOPENED")
@@ -241,7 +329,7 @@ async def _review(claims_table: str, reviews_table: str, claim_id: int, data: di
         try:
             cur = await db.execute(f"SELECT id FROM {claims_table} WHERE id = ?", [claim_id])
             if not await cur.fetchone():
-                raise OversightError("Claim not found", status=404)
+                raise OversightNotFoundError("Claim not found")
             status = await _claim_status(db, claim_id, reviews_table)
             if decision not in _TRANSITIONS[status]:
                 raise OversightError(f"A {status.lower()} claim cannot be marked {decision.lower()}", status=409)
@@ -256,14 +344,21 @@ async def _review(claims_table: str, reviews_table: str, claim_id: int, data: di
 
 
 async def review_claim(claim_id: int, data: dict, user: str) -> dict:
+    """Record a decision (VERIFIED / REJECTED / REOPENED) on a unit-cancellation claim. See ``_review``."""
     return await _review("carbon_unit_claims", "carbon_claim_reviews", claim_id, data, user)
 
 
 async def review_fuel_claim(claim_id: int, data: dict, user: str) -> dict:
+    """Record a decision (VERIFIED / REJECTED / REOPENED) on an eligible-fuel claim. See ``_review``."""
     return await _review("carbon_fuel_claims", "carbon_fuel_reviews", claim_id, data, user)
 
 
 def _float(value, field: str, lo: float, hi: float, hi_inclusive: bool = True) -> float:
+    """Required finite number from ``lo`` up to ``hi`` (inclusive unless ``hi_inclusive`` is False).
+
+    Raises:
+        OversightError: missing, not a number, or out of range.
+    """
     if isinstance(value, bool) or value is None or value == "":
         raise OversightError(f"{field} is required")
     try:
@@ -281,10 +376,18 @@ def emissions_reduction_t(mass_t: float, ls_value: float) -> float:
 
 
 def _scheme_recognised(scheme: str) -> bool:
+    """Does a certification-scheme name mention one of the ICAO-approved schemes on file?"""
     return any(s in scheme.upper() for s in RECOGNISED_SCHEMES)
 
 
 async def add_fuel_claim(operator_id: int, data: dict, user: str) -> dict:
+    """Record an operator's claim for CORSIA eligible fuel (SAF or LCAF); it starts PENDING review.
+
+    Returns the new row id and the emissions reduction the claim would earn if verified.
+
+    Raises:
+        OversightError: invalid fields; OversightNotFoundError if the operator does not exist.
+    """
     year = _int(data.get("year"), "Year", 2021, _now().year)
     if not period_for_year(year):
         raise OversightError("Year is outside the CORSIA compliance periods")
@@ -318,6 +421,7 @@ async def add_fuel_claim(operator_id: int, data: dict, user: str) -> dict:
 
 
 async def _claim_status(db, claim_id: int, reviews_table: str = "carbon_claim_reviews") -> str:
+    """Current status of a claim: its latest review decision, or PENDING if never reviewed."""
     cur = await db.execute(
         f"SELECT decision FROM {reviews_table} WHERE claim_id = ? ORDER BY id DESC LIMIT 1", [claim_id])
     row = await cur.fetchone()
@@ -339,8 +443,7 @@ async def record_observations(flights: list[dict], now: datetime | None = None) 
             icao24 = (f.get("icao24") or "").strip().lower()
             if not designator or not icao24 or f.get("on_ground"):
                 continue
-            raw = f.get("category", "medium")
-            category = _CATEGORY.get(raw, "medium") if isinstance(raw, int) else (raw if raw in FUEL_BURN_RATES else "medium")
+            category = fuel_burn_category(f.get("category", "medium"))
             cur = await db.execute(
                 "SELECT id FROM carbon_fir_observations WHERE icao24 = ? AND callsign = ? AND last_seen >= ?"
                 " ORDER BY id DESC LIMIT 1", [icao24, callsign, cutoff])
@@ -386,10 +489,34 @@ _FUEL_SELECT = (
 
 
 async def _load_fuel(db) -> list[dict]:
+    """Every fuel claim with its operator's designator and current status, in id order."""
     return [dict(r) for r in await (await db.execute(_FUEL_SELECT + " ORDER BY f.id")).fetchall()]
 
 
+async def fuel_certificate_context(operator_id: int) -> tuple[dict, dict[str, str]]:
+    """What the fuel-certificate reader needs: the operator and the batch ids already claimed.
+
+    Returns:
+        (operator row, {lower-cased batch id: "claim F<id> by <designator>, <status>"})
+        for every fuel claim not rejected, so a certificate for a batch already
+        claimed can be flagged.
+
+    Raises:
+        OversightNotFoundError: no operator has that id.
+    """
+    async with get_db() as db:
+        op = await _require_operator(db, operator_id)
+        fuel = await _load_fuel(db)
+    batches = {f["batch_id"].strip().lower(): f"claim F{f['id']} by {f['icao_designator']}, {f['status'].lower()}"
+               for f in fuel if f["status"] != "REJECTED"}
+    return op, batches
+
+
 async def _load(db, period: str) -> tuple[list[dict], list[dict], list[dict]]:
+    """Operators, the period's emissions reports (with revision numbers) and every unit claim with its status.
+
+    Claims from all periods are returned because double claims are checked across periods.
+    """
     p = _period(period)
     y0, y1 = p["years"]
     ops = [dict(r) for r in await (await db.execute("SELECT * FROM carbon_operators ORDER BY icao_designator")).fetchall()]
@@ -406,6 +533,11 @@ async def _load(db, period: str) -> tuple[list[dict], list[dict], list[dict]]:
 
 
 def _overlaps(a: dict, b: dict) -> bool:
+    """Do two unit claims cover any of the same units in the same registry?
+
+    Numeric serial ranges are compared when both claims have them; otherwise the
+    claims overlap only if they name the same non-empty serial block.
+    """
     if a["registry"].strip().lower() != b["registry"].strip().lower():
         return False
     if a["serial_start"] is not None and b["serial_start"] is not None:
@@ -416,7 +548,17 @@ def _overlaps(a: dict, b: dict) -> bool:
 
 
 async def register(period: str) -> dict:
-    """Per-operator position for a compliance period, plus findings."""
+    """Per-operator position for a compliance period, plus findings.
+
+    For each operator: yearly reports and offsetting requirement, verified and
+    pending eligible-fuel reductions, verified/pending/rejected units, shortfall
+    and a status (NO_REPORTS, COVERED, AWAITING_REVIEW, SHORTFALL). Findings are
+    sorted high to low severity. Unit-claim findings carry ``claim_id``;
+    fuel-claim findings carry ``fuel_claim_id``.
+
+    Raises:
+        OversightError: unknown compliance period.
+    """
     p = _period(period)
     y0, y1 = p["years"]
     this_year = _now().year
@@ -442,6 +584,7 @@ async def register(period: str) -> dict:
     findings: list[dict] = []
 
     def finding(severity, kind, op, message, claim_id=None):
+        """Add a finding; ``claim_id`` is a unit-claim id, or minus a fuel-claim id."""
         findings.append({"severity": severity, "kind": kind, "operator": op["icao_designator"],
                          "operator_id": op["id"], "claim_id": claim_id, "message": message})
 
@@ -482,6 +625,7 @@ async def register(period: str) -> dict:
         pending = units["PENDING"] + units["REOPENED"]
 
         def reduction(statuses):
+            """Emissions reduction (t CO2) from this operator's eligible fuel claims in ``statuses``."""
             return sum(emissions_reduction_t(f["mass_t"], f["ls_value"]) for f in my_fuel
                        if f["status"] in statuses and f["ls_value"] <= LS_MAX_ELIGIBLE)
         cef_verified = round(reduction({"VERIFIED"}))
@@ -579,6 +723,18 @@ RATIO_FRACTION = 0.5          # report/observed ratio under half the median of o
 
 
 def _unusual_figures(ops, latest, prev_reports, fuel, observed, years, finding) -> None:
+    """Add low-severity statistical findings for a reviewer to look at (not breaches in themselves).
+
+    Flags large year-on-year changes in verified CO2, growth factors that differ
+    between operators in a year, possible fuel-batch splitting, and reports far
+    lower relative to BACSWN's FIR observations than other operators' reports.
+
+    Args:
+        ops: operator rows; latest: {(operator_id, year): latest report} for the period;
+        prev_reports: reports for the year before the period; fuel: the period's fuel claims;
+        observed: {year: observed_emissions(year)}; years: (first, last) year of the period;
+        finding: the ``register`` callback that records a finding.
+    """
     y0, y1 = years
     by_id = {o["id"]: o for o in ops}
     reported = dict(latest)
@@ -638,6 +794,7 @@ def _unusual_figures(ops, latest, prev_reports, fuel, observed, years, finding) 
 
 
 def _claim_view(c: dict, ner_checks: dict[int, dict] | None = None) -> dict:
+    """The public fields of a unit claim, with its NER check result attached (if any)."""
     keys = ("id", "operator_id", "icao_designator", "compliance_period", "registry", "serial_block", "serial_start",
             "serial_end", "quantity", "vintage", "project_id", "project_name", "declared_eligible", "cancelled_on",
             "registry_reference", "notes", "status", "created_by", "created_at")
@@ -648,6 +805,7 @@ def _claim_view(c: dict, ner_checks: dict[int, dict] | None = None) -> dict:
 
 
 def _fuel_view(f: dict) -> dict:
+    """The public fields of a fuel claim, with eligibility and its emissions reduction computed."""
     keys = ("id", "operator_id", "icao_designator", "year", "fuel_type", "pathway", "feedstock", "batch_id", "mass_t",
             "ls_value", "ls_basis", "scheme", "certificate_ref", "producer", "not_claimed_elsewhere", "notes",
             "status", "created_by", "created_at")
@@ -658,7 +816,21 @@ def _fuel_view(f: dict) -> dict:
     return v
 
 
+def _review_history(reviews: list[dict]) -> dict[int, list[dict]]:
+    """Group review rows by claim id, keeping the public fields and whether an AI brief was used."""
+    by_claim: dict[int, list] = {}
+    for v in reviews:
+        by_claim.setdefault(v["claim_id"], []).append(
+            {**{k: v[k] for k in ("decision", "reason", "created_by", "created_at")}, "ai_assisted": bool(v["ai_brief"])})
+    return by_claim
+
+
 async def operator_detail(operator_id: int) -> dict:
+    """One operator's full record: every report revision, unit and fuel claim, and their review history.
+
+    Raises:
+        OversightNotFoundError: no operator has that id.
+    """
     async with get_db() as db:
         op = await _require_operator(db, operator_id)
         reports = [dict(r) for r in await (await db.execute(
@@ -683,38 +855,43 @@ async def operator_detail(operator_id: int) -> dict:
     latest_ids = {max(r["id"] for r in reports if r["year"] == y) for y in seen}
     for r in reports:
         r["superseded"] = r["id"] not in latest_ids
-    by_claim: dict[int, list] = {}
-    for v in reviews:
-        by_claim.setdefault(v["claim_id"], []).append(
-            {**{k: v[k] for k in ("decision", "reason", "created_by", "created_at")}, "ai_assisted": bool(v["ai_brief"])})
-    by_fuel: dict[int, list] = {}
-    for v in fuel_reviews:
-        by_fuel.setdefault(v["claim_id"], []).append(
-            {**{k: v[k] for k in ("decision", "reason", "created_by", "created_at")}, "ai_assisted": bool(v["ai_brief"])})
+    by_claim = _review_history(reviews)
+    by_fuel = _review_history(fuel_reviews)
     return {"operator": op, "reports": reports,
             "claims": [{**_claim_view(c, ner_checks), "reviews": by_claim.get(c["id"], [])} for c in claims],
             "fuel_claims": [{**_fuel_view(f), "reviews": by_fuel.get(f["id"], [])} for f in fuel]}
 
 
-def _csv_safe(v) -> str:
-    """Neutralise spreadsheet formula injection in exported text."""
+def csv_safe(v) -> str:
+    """Neutralise spreadsheet formula injection in exported text (prefix a quote to =, +, -, @, tab, CR)."""
     s = "" if v is None else str(v)
     return "'" + s if s[:1] in ("=", "+", "-", "@", "\t", "\r") else s
 
 
-async def export_csv(period: str) -> str:
-    reg = await register(period)
+def _flagged(findings: list[dict], key: str) -> dict[int, list[str]]:
+    """Finding kinds per claim, keyed by ``key`` ("claim_id" or "fuel_claim_id")."""
     flagged: dict[int, list[str]] = {}
-    for f in reg["findings"]:
-        if f["claim_id"]:
-            flagged.setdefault(f["claim_id"], []).append(f["kind"])
+    for f in findings:
+        if f[key]:
+            flagged.setdefault(f[key], []).append(f["kind"])
+    return flagged
+
+
+async def export_csv(period: str) -> str:
+    """The period's unit-cancellation claims as CSV, with status, NER check and finding kinds.
+
+    Raises:
+        OversightError: unknown compliance period.
+    """
+    reg = await register(period)
+    flagged = _flagged(reg["findings"], "claim_id")
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(["claim_id", "operator", "compliance_period", "registry", "serial_block", "serial_start", "serial_end",
                 "quantity", "vintage", "project_id", "project_name", "declared_eligible", "cancelled_on",
                 "registry_reference", "status", "ner_check", "findings", "recorded_by", "recorded_at"])
     for c in reg["claims"]:
-        w.writerow([_csv_safe(x) for x in (
+        w.writerow([csv_safe(x) for x in (
             c["id"], c["icao_designator"], c["compliance_period"], c["registry"], c["serial_block"], c["serial_start"],
             c["serial_end"], c["quantity"], c["vintage"], c["project_id"], c["project_name"],
             "yes" if c["declared_eligible"] else "no", c["cancelled_on"], c["registry_reference"], c["status"],
@@ -723,18 +900,51 @@ async def export_csv(period: str) -> str:
     return buf.getvalue()
 
 
+async def compliance_overview() -> dict:
+    """Headline CORSIA position for the current compliance period, from the oversight register.
+
+    Why: dashboards used to show a hard-coded "compliant"; this reports what the register
+    actually says. How: the worst operator status wins — any SHORTFALL makes the period
+    "shortfall", else any operator awaiting review or without reports makes it
+    "under_review", else "compliant". With no operators registered it is "no_operators".
+
+    Returns:
+        ``{"period", "status", "operators", "by_status"}``; ``status`` is "unknown" when
+        there is no current period.
+    """
+    current = next((p["id"] for p in periods() if p["current"]), None)
+    if not current:
+        return {"period": None, "status": "unknown", "operators": 0, "by_status": {}}
+    reg = await register(current)
+    by_status: dict[str, int] = {}
+    for op in reg["operators"]:
+        by_status[op["status"]] = by_status.get(op["status"], 0) + 1
+    if not by_status:
+        status = "no_operators"
+    elif by_status.get("SHORTFALL"):
+        status = "shortfall"
+    elif set(by_status) - {"COVERED"}:
+        status = "under_review"
+    else:
+        status = "compliant"
+    return {"period": current, "status": status, "operators": len(reg["operators"]), "by_status": by_status}
+
+
 def periods() -> list[dict]:
+    """The compliance periods, with their vintage windows and which one is current."""
     this_year = _now().year
     return [{"id": k, "label": v["label"], "years": v["years"], "vintages": v["vintages"],
              "current": v["years"][0] <= this_year <= v["years"][1]} for k, v in PERIODS.items()]
 
 
 async def export_fuel_csv(period: str) -> str:
+    """The period's eligible-fuel claims as CSV, with reduction, eligibility, status and finding kinds.
+
+    Raises:
+        OversightError: unknown compliance period.
+    """
     reg = await register(period)
-    flagged: dict[int, list[str]] = {}
-    for f in reg["findings"]:
-        if f["fuel_claim_id"]:
-            flagged.setdefault(f["fuel_claim_id"], []).append(f["kind"])
+    flagged = _flagged(reg["findings"], "fuel_claim_id")
     buf = io.StringIO()
     w = csv.writer(buf)
     cols = ("id", "icao_designator", "year", "fuel_type", "pathway", "feedstock", "batch_id", "mass_t", "ls_value",
@@ -743,6 +953,6 @@ async def export_fuel_csv(period: str) -> str:
     w.writerow(["fuel_claim_id" if c == "id" else "operator" if c == "icao_designator" else c for c in cols]
                + ["findings", "recorded_by", "recorded_at"])
     for f in reg["fuel_claims"]:
-        w.writerow([_csv_safe("yes" if f[c] is True else "no" if f[c] is False else f[c]) for c in cols]
-                   + [" ".join(flagged.get(f["id"], [])), _csv_safe(f["created_by"]), f["created_at"]])
+        w.writerow([csv_safe("yes" if f[c] is True else "no" if f[c] is False else f[c]) for c in cols]
+                   + [" ".join(flagged.get(f["id"], [])), csv_safe(f["created_by"]), f["created_at"]])
     return buf.getvalue()

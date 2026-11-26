@@ -1,10 +1,26 @@
-"""BACSWN — SQLite database layer (aiosqlite + WAL mode)."""
+"""BACSWN — SQLite database layer (aiosqlite + WAL mode).
+
+What: the schema (tables, indexes, append-only triggers, additive column migrations),
+a connection context manager, small CRUD helpers (``db_insert``, ``db_select``,
+``db_update``, ``db_delete``, ``db_execute``) and the first-boot demo seed.
+
+Why: every service shares one SQLite file; keeping the schema and the helpers here
+means there is one place that opens connections, enables foreign keys and guards the
+dynamic parts of SQL (table and ORDER BY names) against injection.
+
+How: ``init_db`` runs the idempotent schema script and adds any missing migration
+columns. Each helper opens a short-lived ``aiosqlite`` connection with ``Row``
+factories. Table names are checked against an allow-list and ORDER BY terms against
+an identifier regex; a bad name raises ``BacswnValidationError`` (a ``ValueError``).
+Values are always passed as bound parameters.
+"""
 
 import re
 import aiosqlite
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 from config import DATA_DIR, DB_PATH
+from services.errors import BacswnValidationError
 
 # ── SQL injection guards (S1-003) ────────────────────────────────────────────
 _ALLOWED_TABLES = {
@@ -33,16 +49,27 @@ _ALLOWED_TABLES = {
 }
 # Allows: column, column ASC, column DESC (case-insensitive)
 _COL_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*(\s+(ASC|DESC))?$", re.IGNORECASE)
+_IDENT_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 
 
 def _validate_table(table: str) -> None:
+    """Reject a table name that is not in the allow-list.
+
+    Raises:
+        BacswnValidationError: ``table`` is not a known BACSWN table.
+    """
     if table not in _ALLOWED_TABLES:
-        raise ValueError(f"Unknown table: {table!r}")
+        raise BacswnValidationError(f"Unknown table: {table!r}")
 
 
 def _validate_column(col: str) -> None:
+    """Reject anything but a bare identifier, optionally followed by ASC/DESC.
+
+    Raises:
+        BacswnValidationError: ``col`` could smuggle SQL into an ORDER BY clause.
+    """
     if not _COL_RE.match(col.strip()):
-        raise ValueError(f"Invalid column name: {col!r}")
+        raise BacswnValidationError(f"Invalid column name: {col!r}")
 
 _SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS users (
@@ -487,9 +514,25 @@ async def get_db() -> AsyncIterator[aiosqlite.Connection]:
         await db.close()
 
 
+def _validate_keys(*mappings: dict | None) -> None:
+    """Reject column names in ``data``/``where`` dicts that are not bare identifiers.
+
+    Why: the generic helpers interpolate these keys into SQL (values are always bound
+    parameters), so a key taken from user input could otherwise inject SQL.
+
+    Raises:
+        BacswnValidationError: a key is not a plain column identifier.
+    """
+    for mapping in mappings:
+        for key in (mapping or {}):
+            if not isinstance(key, str) or not _IDENT_RE.match(key):
+                raise BacswnValidationError(f"Invalid column name: {key!r}")
+
+
 async def db_insert(table: str, data: dict) -> int:
     """Insert a row and return the new rowid."""
     _validate_table(table)
+    _validate_keys(data)
     columns = ", ".join(data.keys())
     placeholders = ", ".join("?" for _ in data)
     async with get_db() as db:
@@ -504,6 +547,7 @@ async def db_insert(table: str, data: dict) -> int:
 async def db_select(table: str, where: dict | None = None, order_by: str = "", limit: int = 100) -> list[dict]:
     """Select rows as list of dicts."""
     _validate_table(table)
+    _validate_keys(where)
     if order_by:
         _validate_column(order_by)
     sql = f"SELECT * FROM {table}"
@@ -514,7 +558,7 @@ async def db_select(table: str, where: dict | None = None, order_by: str = "", l
         params = list(where.values())
     if order_by:
         sql += f" ORDER BY {order_by}"
-    sql += f" LIMIT {limit}"
+    sql += f" LIMIT {int(limit)}"
     async with get_db() as db:
         cursor = await db.execute(sql, params)
         rows = await cursor.fetchall()
@@ -524,6 +568,9 @@ async def db_select(table: str, where: dict | None = None, order_by: str = "", l
 async def db_update(table: str, data: dict, where: dict) -> int:
     """Update rows and return affected count."""
     _validate_table(table)
+    _validate_keys(data, where)
+    if not data or not where:
+        raise BacswnValidationError("db_update needs both data and a where clause")
     set_clause = ", ".join(f"{k} = ?" for k in data)
     where_clause = " AND ".join(f"{k} = ?" for k in where)
     params = list(data.values()) + list(where.values())
@@ -538,6 +585,9 @@ async def db_update(table: str, data: dict, where: dict) -> int:
 async def db_delete(table: str, where: dict) -> int:
     """Delete rows and return affected count."""
     _validate_table(table)
+    _validate_keys(where)
+    if not where:
+        raise BacswnValidationError("db_delete needs a where clause")
     where_clause = " AND ".join(f"{k} = ?" for k in where)
     async with get_db() as db:
         cursor = await db.execute(
@@ -662,29 +712,25 @@ _DEMO_INCIDENTS = [
 ]
 
 
+async def _seed_if_empty(db: aiosqlite.Connection, table: str, rows: list[dict]) -> None:
+    """Insert ``rows`` into ``table`` only when the table has no rows yet.
+
+    Columns come from the first row's keys; every row must share them. Does not commit.
+    """
+    _validate_table(table)
+    cursor = await db.execute(f"SELECT COUNT(*) FROM {table}")
+    row = await cursor.fetchone()
+    if not rows or not row or row[0] != 0:
+        return
+    cols = list(rows[0].keys())
+    sql = f"INSERT INTO {table} ({', '.join(cols)}) VALUES ({', '.join('?' for _ in cols)})"
+    for r in rows:
+        await db.execute(sql, [r[c] for c in cols])
+
+
 async def seed_demo_data() -> None:
     """Insert demo advisories and incidents on first boot (no-op if rows already exist)."""
     async with get_db() as db:
-        cursor = await db.execute("SELECT COUNT(*) FROM advisories")
-        row = await cursor.fetchone()
-        if row and row[0] == 0:
-            _ADV_COLS = "advisory_type, hazard_type, raw_text, severity, area, valid_from, valid_to, generated_by, status"
-            _ADV_PHS = "?, ?, ?, ?, ?, ?, ?, ?, ?"
-            for adv in _DEMO_ADVISORIES:
-                await db.execute(
-                    f"INSERT INTO advisories ({_ADV_COLS}) VALUES ({_ADV_PHS})",
-                    [adv[k] for k in ("advisory_type", "hazard_type", "raw_text", "severity", "area", "valid_from", "valid_to", "generated_by", "status")],
-                )
-
-        cursor = await db.execute("SELECT COUNT(*) FROM incidents")
-        row = await cursor.fetchone()
-        if row and row[0] == 0:
-            _INC_COLS = ", ".join(_DEMO_INCIDENTS[0].keys()) if _DEMO_INCIDENTS else ""
-            _INC_PHS = ", ".join("?" for _ in _DEMO_INCIDENTS[0]) if _DEMO_INCIDENTS else ""
-            for inc in _DEMO_INCIDENTS:
-                await db.execute(
-                    "INSERT INTO incidents (" + _INC_COLS + ") VALUES (" + _INC_PHS + ")",
-                    list(inc.values()),
-                )
-
+        await _seed_if_empty(db, "advisories", _DEMO_ADVISORIES)
+        await _seed_if_empty(db, "incidents", _DEMO_INCIDENTS)
         await db.commit()

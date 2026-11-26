@@ -1,25 +1,32 @@
-import { useId, useState } from 'react'
-import { api, saveBlob } from '../../api/client'
-import { ACCEPT_DOCS, uploadBody } from './aiUpload'
-
 /**
  * AI tools for the CORSIA oversight register: questions answered from the register,
  * drafts of outgoing documents, and a check of an ICAO document against the rules
  * on file. Everything here is advice or a draft; nothing is recorded or sent.
+ *
+ * Why: reviewers spend time finding figures and drafting routine letters; the AI
+ * answers from the register's own records and leaves every decision to them.
+ * How: three small forms (ask, draft, rules check), the last two for
+ * administrators only, each calling one /api/carbon-oversight/ai endpoint.
  */
+import { useId, useState } from 'react'
+import { api, saveBlob } from '../../api/client'
+import { ACCEPT_DOCS, uploadBody } from './aiUpload'
 
+/** Draftable documents: label, and whether an operator must be chosen. */
 const DRAFTS = {
   shortfall_notice: { label: 'Shortfall notice to an operator', operator: true },
   information_request: { label: 'Information request to an operator', operator: true },
   state_report_cover: { label: 'Cover note for the state report to the registry', operator: false },
 }
 
+/** Free-text question answered by AI from the register's current records. */
 function AskRegister({ announce }) {
   const id = useId()
   const [q, setQ] = useState('')
   const [busy, setBusy] = useState(false)
   const [answer, setAnswer] = useState(null)
   const [error, setError] = useState('')
+  /** Submit the question and show the answer. */
   const ask = async (e) => {
     e.preventDefault()
     setBusy(true); setError(''); setAnswer(null)
@@ -46,6 +53,7 @@ function AskRegister({ announce }) {
   )
 }
 
+/** Draft a notice, information request or cover note for `period`; editable, then copy or download. */
 function DraftDocument({ period, operators, announce }) {
   const kindId = useId(), opId = useId(), textId = useId()
   const [kind, setKind] = useState('shortfall_notice')
@@ -54,6 +62,7 @@ function DraftDocument({ period, operators, announce }) {
   const [draft, setDraft] = useState(null)
   const [error, setError] = useState('')
   const needsOp = DRAFTS[kind].operator
+  /** Request the draft. */
   const make = async (e) => {
     e.preventDefault()
     setBusy(true); setError(''); setDraft(null)
@@ -63,6 +72,7 @@ function DraftDocument({ period, operators, announce }) {
       announce('Draft ready; edit it before using it')
     } catch (err) { setError(err.message) } finally { setBusy(false) }
   }
+  /** Save the (edited) draft as a .txt file named after the kind, period and operator. */
   const download = () => {
     const op = operators.find(o => String(o.id) === String(operatorId))
     saveBlob(new Blob([draft.text], { type: 'text/plain' }), `${kind}-${period}${needsOp && op ? `-${op.icao_designator}` : ''}.txt`)
@@ -106,12 +116,14 @@ function DraftDocument({ period, operators, announce }) {
   )
 }
 
+/** Compare an uploaded ICAO rules document with the rules on file and list the claims affected. */
 function RulesCheck({ announce }) {
   const id = useId()
   const [file, setFile] = useState(null)
   const [busy, setBusy] = useState(false)
   const [res, setRes] = useState(null)
   const [error, setError] = useState('')
+  /** Upload the document and show the differences. */
   const run = async () => {
     setBusy(true); setError(''); setRes(null)
     try {
@@ -160,6 +172,10 @@ function RulesCheck({ announce }) {
   )
 }
 
+/**
+ * The "AI assistant" card on the CORSIA Oversight page.
+ * @param {{period: string, operators: object[], isAdmin: boolean, announce: (message: string) => void}} props
+ */
 export default function AiTools({ period, operators, isAdmin, announce }) {
   return (
     <section className="card" aria-labelledby="co-ai-h">

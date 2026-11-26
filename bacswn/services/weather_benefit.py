@@ -23,21 +23,33 @@ clears the hazard ("hold or divert") and aircraft already inside a hazard are
 logged but earn no credit, although avoided holding and diversions are where
 the largest real savings are. Each flight/hazard pair is counted once, at the
 first (earliest) warning.
+
+Why: the fuel and CO2 an operator never burns because of an early warning is a
+climate benefit of the network that should be shown with its working, not
+asserted.
+
+How: ``record`` is called with each airspace picture; it assesses every
+conflict, writes one row per flight/hazard pair to ``wx_benefit_events`` (INSERT
+OR IGNORE on the run/flight/hazard key) and marks the minute as monitored in
+``wx_benefit_coverage``. ``summary`` and ``export_csv`` read the ledger back.
 """
 
 from __future__ import annotations
 
+import csv
+import io
 import math
 import time
 from datetime import datetime, timedelta, timezone
 
 from config import CO2_PER_KG_FUEL, FUEL_BURN_RATES
+from services.carbon_oversight import csv_safe
 from services.database import get_db
+from services.emissions_calculator import fuel_burn_category
 
 BASELINE_DECISION_NM = 25.0     # assumption: tactical deviation range without ground-based warning
 MAX_LEAD_NM = 80.0              # never credit an earlier start than this
 MIN_OFFSET_NM = 1.0
-_CATEGORY = {5: "heavy", 6: "heavy", 7: "heavy", 4: "large", 3: "medium", 2: "small", 1: "light", 0: "medium"}
 
 # One run of the mesh simulation: hazard ids restart when the server restarts.
 RUN_ID = time.strftime("%Y%m%dT%H%M%S")
@@ -52,10 +64,15 @@ ASSUMPTIONS = {
 
 
 def _category(flight: dict | None) -> str:
-    raw = (flight or {}).get("category", "medium")
-    if isinstance(raw, int):
-        return _CATEGORY.get(raw, "medium")
-    return raw if raw in FUEL_BURN_RATES else "medium"
+    """Fuel-burn class of the flight in the conflict ("medium" when the flight is unknown)."""
+    return fuel_burn_category((flight or {}).get("category", "medium"))
+
+
+def _window(days, now: datetime | None) -> tuple[int, str]:
+    """Clamp a look-back window to 1–366 days; return it with its ISO start timestamp."""
+    days = max(1, min(int(days), 366))
+    now = now or datetime.now(timezone.utc)
+    return days, (now - timedelta(days=days)).isoformat(timespec="seconds")
 
 
 def dogleg_extra_nm(lead_nm: float, offset_nm: float) -> float:
@@ -136,9 +153,12 @@ async def record(result: dict, flights: list[dict], now: datetime | None = None)
 
 
 async def summary(days: int = 30, now: datetime | None = None) -> dict:
-    days = max(1, min(int(days), 366))
-    now = now or datetime.now(timezone.utc)
-    since = (now - timedelta(days=days)).isoformat(timespec="seconds")
+    """Totals, daily series and recent entries of the ledger for the last ``days`` days (1–366).
+
+    The annualised figure is extrapolated from the minutes actually monitored and
+    is only given once at least an hour of monitoring is on record.
+    """
+    days, since = _window(days, now)
     async with get_db() as db:
         rows = [dict(r) for r in await (await db.execute(
             "SELECT * FROM wx_benefit_events WHERE recorded_at >= ? ORDER BY recorded_at DESC", [since])).fetchall()]
@@ -148,6 +168,7 @@ async def summary(days: int = 30, now: datetime | None = None) -> dict:
     credited = [r for r in rows if r["credited"]]
 
     def tot(rs, k):
+        """Sum field ``k`` over rows ``rs``, rounded to 0.1."""
         return round(sum(r[k] for r in rs), 1)
 
     daily: dict[str, dict] = {}
@@ -185,12 +206,8 @@ CSV_COLUMNS = ("recorded_at", "callsign", "icao24", "category", "simulated", "ha
 
 
 async def export_csv(days: int = 30, now: datetime | None = None) -> str:
-    import csv
-    import io
-    from services.carbon_oversight import _csv_safe
-    days = max(1, min(int(days), 366))
-    now = now or datetime.now(timezone.utc)
-    since = (now - timedelta(days=days)).isoformat(timespec="seconds")
+    """The ledger entries of the last ``days`` days (1–366) as CSV, oldest first, formula-safe."""
+    _, since = _window(days, now)
     async with get_db() as db:
         rows = await (await db.execute(
             f"SELECT {', '.join(CSV_COLUMNS)} FROM wx_benefit_events WHERE recorded_at >= ? ORDER BY recorded_at",
@@ -199,5 +216,5 @@ async def export_csv(days: int = 30, now: datetime | None = None) -> str:
     w = csv.writer(buf)
     w.writerow(CSV_COLUMNS)
     for r in rows:
-        w.writerow([_csv_safe(v) for v in r])
+        w.writerow([csv_safe(v) for v in r])
     return buf.getvalue()

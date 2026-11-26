@@ -8,12 +8,19 @@ it. Three candidate correctors compete, the winner chosen on a validation split:
   * gbm        — gradient-boosted trees over the same features (conditional,
                  non-linear bias; e.g. over-forecasting only strong winds)
 
-Honesty guardrails:
-  * Reporting is OUT-OF-SAMPLE via a 3-way temporal split — train (60%) fits the
-    candidates, validation (20%) picks the method, and the untouched test (20%)
-    measures raw-vs-corrected error. The model never sees the test period.
+Why: raw model output carries station-specific systematic errors (e.g. a coastal
+warm bias); removing them makes the forecasts the platform serves more accurate,
+and measuring the gain honestly shows whether the correction is worth trusting.
+
+How / honesty guardrails:
+  * Reporting is OUT-OF-SAMPLE via a temporal split per (station, variable, lead):
+    the oldest 80% is the development set, where the method is chosen by 4-fold
+    contiguous time-series cross-validation (simplest model within a 5% margin of
+    the best wins) and then refit; the newest 20% is held out and measures
+    raw-vs-corrected error. The model never sees the test period.
   * The deployable corrector (applied to live forecasts at capture time) is the
-    val-selected method refit on all available history, persisted to disk.
+    CV-selected method refit on all available history, pickled to disk.
+  * The scoreboard is expensive, so it is computed on a schedule and cached.
 
 scikit-learn is optional — if unavailable the GBM candidate is skipped and we
 fall back to linear / mean-bias, so the feature degrades gracefully.
@@ -21,6 +28,7 @@ fall back to linear / mean-bias, so the feature degrades gracefully.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import math
 import pickle
@@ -47,6 +55,7 @@ except Exception:  # pragma: no cover
     import contextlib
 
     def threadpool_limits(*a, **k):  # type: ignore
+        """No-op stand-in when threadpoolctl is not installed."""
         return contextlib.nullcontext()
 
 _MODELS_PATH = str(DATA_DIR / "correctors.pkl")
@@ -62,32 +71,43 @@ _MIN_GBM = 80            # GBM only fits where a cell has enough training rows
 
 # ── Features ─────────────────────────────────────────────────────────────────
 def _hour_of(valid_at: str) -> float:
+    """UTC hour of an ISO timestamp, or 12 (midday) if it cannot be parsed."""
     try:
         return datetime.fromisoformat(valid_at).astimezone(timezone.utc).hour
     except Exception:
         return 12.0
 
 
+def _feature_vector(forecast_value, lead_h, valid_at: str) -> list[float]:
+    """Model inputs for one forecast: value, lead (h), and the hour of day as sin/cos.
+
+    Column 0 must stay the raw forecast value: the identity / mean-bias
+    correctors and the GBM monotonic constraint rely on it.
+    """
+    h = _hour_of(valid_at)
+    return [float(forecast_value), float(lead_h),
+            math.sin(2 * math.pi * h / 24), math.cos(2 * math.pi * h / 24)]
+
+
 def _features(rows: list[dict]):
-    X, y = [], []
-    for r in rows:
-        h = _hour_of(r["valid_at"])
-        X.append([
-            float(r["forecast_value"]), float(r["lead_h"]),
-            math.sin(2 * math.pi * h / 24), math.cos(2 * math.pi * h / 24),
-        ])
-        y.append(float(r["observed_value"]))
+    """Feature matrix X and observed-value target y for verified ledger rows."""
+    X = [_feature_vector(r["forecast_value"], r["lead_h"], r["valid_at"]) for r in rows]
+    y = [float(r["observed_value"]) for r in rows]
     return np.array(X, dtype=float), np.array(y, dtype=float)
 
 
 def _feature_row(forecast_value: float, lead_h: float, valid_at: str):
-    h = _hour_of(valid_at)
-    return np.array([[float(forecast_value), float(lead_h),
-                      math.sin(2 * math.pi * h / 24), math.cos(2 * math.pi * h / 24)]], dtype=float)
+    """A 1-row feature matrix for correcting a single live forecast."""
+    return np.array([_feature_vector(forecast_value, lead_h, valid_at)], dtype=float)
 
 
 # ── Candidate correctors ─────────────────────────────────────────────────────
 def _fit_candidates(X, y) -> dict:
+    """Fit every available corrector on (X, y); returns {name: (kind, model)}.
+
+    GBM is included only when scikit-learn is installed and there are at least
+    ``_MIN_GBM`` rows; a failed linear or GBM fit is simply left out.
+    """
     cands = {}
     cands["identity"] = ("identity", None)          # raw forecast, no correction
     cands["mean-bias"] = ("meanbias", float(np.mean(X[:, 0] - y)))
@@ -117,10 +137,12 @@ def _fit_candidates(X, y) -> dict:
 
 
 def _fit_one(name: str, X, y):
+    """Fit the named corrector, falling back to mean-bias if it could not be fitted."""
     return _fit_candidates(X, y).get(name) or ("meanbias", float(np.mean(X[:, 0] - y)))
 
 
 def _predict(model, X):
+    """Corrected values for feature matrix X using a ``(kind, model)`` pair."""
     kind, obj = model
     if kind == "identity":
         return X[:, 0]
@@ -151,6 +173,7 @@ def _select(cands: dict, Xva, yva):
 
 
 def _pick_simplest(maes: dict) -> str:
+    """Simplest method (per ``_COMPLEXITY_ORDER``) whose MAE is within ``_SELECT_MARGIN`` of the best."""
     if not maes:
         return "identity"
     best = min(maes.values())
@@ -202,7 +225,12 @@ def _select_cv(X, y) -> str:
 
 # ── Out-of-sample evaluation (3-way temporal split) ──────────────────────────
 def train_eval_group(rows: list[dict]) -> dict | None:
-    """rows sorted by valid_at. Returns out-of-sample raw/corrected errors."""
+    """Choose, fit and score a corrector for one (station, variable, lead) group.
+
+    ``rows`` must be sorted by ``valid_at``. The oldest 80% selects (via CV) and
+    fits the method; the newest 20% is the held-out test. Returns the method and
+    raw/corrected test errors, or None if the group is too small.
+    """
     n = len(rows)
     if n < _MIN_GROUP:
         return None
@@ -238,6 +266,21 @@ def get_cached_scoreboard() -> dict:
     return _SCOREBOARD_CACHE
 
 
+async def _verified_rows_by_var(window_hours: int) -> dict[str, list[dict]]:
+    """Verified forecast/observation pairs per continuous variable over the window, for fitting."""
+    since = _iso(_now() - timedelta(hours=window_hours))
+    rows_by_var = {}
+    for var in VARIABLES:
+        rows_by_var[var] = await db_execute(
+            "SELECT station_id, lead_h, valid_at, forecast_value, observed_value "
+            "FROM forecast_verifications WHERE status='verified' AND variable=? "
+            "AND valid_at>=? AND forecast_value IS NOT NULL AND observed_value IS NOT NULL "
+            "ORDER BY station_id, valid_at ASC",
+            [var, since],
+        )
+    return rows_by_var
+
+
 async def refresh_scoreboard(window_hours: int = 720) -> dict:
     """Compute the scoreboard and store it in the cache. Run off the request path."""
     global _SCOREBOARD_CACHE
@@ -252,59 +295,50 @@ async def compute_scoreboard(window_hours: int = 720) -> dict:
     (via asyncio.to_thread) to avoid blocking the async event loop, and threads
     are capped to keep it from oversubscribing cores on a busy host.
     """
-    since = _iso(_now() - timedelta(hours=window_hours))
-    rows_by_var = {}
-    for var in VARIABLES:
-        rows_by_var[var] = await db_execute(
-            "SELECT station_id, lead_h, valid_at, forecast_value, observed_value "
-            "FROM forecast_verifications WHERE status='verified' AND variable=? "
-            "AND valid_at>=? AND forecast_value IS NOT NULL AND observed_value IS NOT NULL "
-            "ORDER BY station_id, valid_at ASC",
-            [var, since],
-        )
+    rows_by_var = await _verified_rows_by_var(window_hours)
     live = await _live_applied_stats()
-    import asyncio
     return await asyncio.to_thread(_scoreboard_sync, rows_by_var, window_hours, live)
 
 
 def _scoreboard_sync(rows_by_var: dict, window_hours: int, live: dict) -> dict:
+    """CPU-bound body of ``compute_scoreboard``: evaluate every group and aggregate per variable and lead."""
     variables = {}
     method_counts: dict[str, int] = {}
     lead_raw: dict[int, list] = {}
     lead_corr: dict[int, list] = {}
 
     with threadpool_limits(limits=1):
-      for var, meta in VARIABLES.items():
-        rows = rows_by_var.get(var, [])
-        raw_chunks, corr_chunks = [], []
-        rows.sort(key=lambda r: (r["station_id"], r["lead_h"], r["valid_at"]))
-        for (sid, lead), grp in groupby(rows, key=lambda r: (r["station_id"], r["lead_h"])):
-            res = train_eval_group(list(grp))
-            if not res:
-                continue
-            method_counts[res["method"]] = method_counts.get(res["method"], 0) + 1
-            raw_chunks.append(res["raw_err"])
-            corr_chunks.append(res["corr_err"])
-            if var == "temp_c":
-                for lead, re_, ce in zip(res["test_leads"], res["raw_err"], res["corr_err"]):
-                    lead_raw.setdefault(int(lead), []).append(re_)
-                    lead_corr.setdefault(int(lead), []).append(ce)
-        if not raw_chunks:
-            continue
-        raw = np.concatenate(raw_chunks)
-        corr = np.concatenate(corr_chunks)
-        raw_mae, corr_mae = float(np.mean(np.abs(raw))), float(np.mean(np.abs(corr)))
-        variables[var] = {
-            "label": meta["label"], "unit": meta["unit"],
-            "raw_mae": round(raw_mae, 2), "corr_mae": round(corr_mae, 2),
-            "raw_bias": round(float(np.mean(raw)), 2), "corr_bias": round(float(np.mean(corr)), 2),
-            "raw_rmse": round(float(np.sqrt(np.mean(raw ** 2))), 2),
-            "corr_rmse": round(float(np.sqrt(np.mean(corr ** 2))), 2),
-            "n_eval": int(raw.size),
-            "improvement_pct": round((raw_mae - corr_mae) / raw_mae * 100, 1) if raw_mae > 0 else 0.0,
-            "raw_accuracy_pct": _accuracy_pct(raw_mae, meta["good"]),
-            "corr_accuracy_pct": _accuracy_pct(corr_mae, meta["good"]),
-        }
+        for var, meta in VARIABLES.items():
+          rows = rows_by_var.get(var, [])
+          raw_chunks, corr_chunks = [], []
+          rows.sort(key=lambda r: (r["station_id"], r["lead_h"], r["valid_at"]))
+          for (sid, lead), grp in groupby(rows, key=lambda r: (r["station_id"], r["lead_h"])):
+              res = train_eval_group(list(grp))
+              if not res:
+                  continue
+              method_counts[res["method"]] = method_counts.get(res["method"], 0) + 1
+              raw_chunks.append(res["raw_err"])
+              corr_chunks.append(res["corr_err"])
+              if var == "temp_c":
+                  for lead, re_, ce in zip(res["test_leads"], res["raw_err"], res["corr_err"]):
+                      lead_raw.setdefault(int(lead), []).append(re_)
+                      lead_corr.setdefault(int(lead), []).append(ce)
+          if not raw_chunks:
+              continue
+          raw = np.concatenate(raw_chunks)
+          corr = np.concatenate(corr_chunks)
+          raw_mae, corr_mae = float(np.mean(np.abs(raw))), float(np.mean(np.abs(corr)))
+          variables[var] = {
+              "label": meta["label"], "unit": meta["unit"],
+              "raw_mae": round(raw_mae, 2), "corr_mae": round(corr_mae, 2),
+              "raw_bias": round(float(np.mean(raw)), 2), "corr_bias": round(float(np.mean(corr)), 2),
+              "raw_rmse": round(float(np.sqrt(np.mean(raw ** 2))), 2),
+              "corr_rmse": round(float(np.sqrt(np.mean(corr ** 2))), 2),
+              "n_eval": int(raw.size),
+              "improvement_pct": round((raw_mae - corr_mae) / raw_mae * 100, 1) if raw_mae > 0 else 0.0,
+              "raw_accuracy_pct": _accuracy_pct(raw_mae, meta["good"]),
+              "corr_accuracy_pct": _accuracy_pct(corr_mae, meta["good"]),
+          }
 
     by_lead = []
     for lead in sorted(lead_raw):
@@ -356,6 +390,7 @@ async def _live_applied_stats() -> dict:
 
 # ── Deployable registry (applied to live forecasts at capture time) ──────────
 def load_registry() -> None:
+    """Load pickled correctors from disk; start empty if the file is missing or unreadable."""
     global _REGISTRY
     try:
         with open(_MODELS_PATH, "rb") as f:
@@ -366,6 +401,7 @@ def load_registry() -> None:
 
 
 def save_registry() -> None:
+    """Pickle the corrector registry to disk; logs and continues on failure."""
     try:
         with open(_MODELS_PATH, "wb") as f:
             pickle.dump(_REGISTRY, f)
@@ -374,6 +410,7 @@ def save_registry() -> None:
 
 
 def _train_sync(rows_by_var: dict) -> tuple[dict, dict]:
+    """CPU-bound body of ``train_correctors``: CV-select and fit one corrector per group on all history."""
     reg: dict = {}
     method_counts: dict[str, int] = {}
     with threadpool_limits(limits=1):
@@ -397,17 +434,7 @@ async def train_correctors(window_hours: int = 720) -> dict:
 
     CPU-bound fitting runs in a worker thread so it never blocks the event loop.
     """
-    import asyncio
-    since = _iso(_now() - timedelta(hours=window_hours))
-    rows_by_var = {}
-    for var in VARIABLES:
-        rows_by_var[var] = await db_execute(
-            "SELECT station_id, lead_h, valid_at, forecast_value, observed_value "
-            "FROM forecast_verifications WHERE status='verified' AND variable=? "
-            "AND valid_at>=? AND forecast_value IS NOT NULL AND observed_value IS NOT NULL "
-            "ORDER BY station_id, valid_at ASC",
-            [var, since],
-        )
+    rows_by_var = await _verified_rows_by_var(window_hours)
     reg, method_counts = await asyncio.to_thread(_train_sync, rows_by_var)
     global _REGISTRY
     _REGISTRY = reg
@@ -436,6 +463,7 @@ def apply_to_forecast(station: str, variable: str, lead_h: float,
 
 
 def has_models() -> bool:
+    """True if any deployable corrector is loaded."""
     return bool(_REGISTRY)
 
 

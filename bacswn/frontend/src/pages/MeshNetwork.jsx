@@ -1,3 +1,18 @@
+/**
+ * Distributed AI Mesh page.
+ *
+ * What: live view of the simulated 15-station weather mesh: KPIs, a Leaflet map of
+ * stations, storm cells, comms links, the selected station's route to the BACSWN hub and
+ * animated message pulses, plus the selected station's "precog chamber" (its three AI
+ * models and vote), its sensor dashboard and the mesh logs.
+ * Why: demonstrates 2-of-3 model consensus, peer verification and self-healing routing,
+ * and gives presenters controls (scenarios, guided stories, storm spawning, fault
+ * injection) to show each behaviour live.
+ * How: polls `api.meshStatus()` every 1.5 s. Actions go through `run()`, which calls the
+ * mesh API, shows a toast and refreshes. Map shapes are decorative for assistive tech
+ * (the tables in MeshLogs are the equivalent); station markers are keyboard buttons and
+ * verdict changes of the selected station are announced in a live region.
+ */
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { MapContainer, TileLayer, Marker, Polyline, Circle, CircleMarker, Tooltip, useMap, useMapEvents } from 'react-leaflet'
 import L from 'leaflet'
@@ -14,7 +29,13 @@ import LiveBadge from '../components/LiveBadge'
 import ResetViewControl from '../components/map/ResetViewControl'
 import { CommsFilterControl, useCommsFilter, visibleLinks, CHANNEL_BY_ID, linkState } from '../components/map/CommsChannels'
 
+/** Pulse colour per mesh message type. */
 const MSG_COLORS = { ALERT: '#ef4444', HAZARD: '#f59e0b', VOTE: '#facc15', PROPAGATION: '#c084fc', MAINT: '#fb923c', HEARTBEAT: '#94a3b8' }
+/** Initial (and reset) map bounds covering the whole Bahamas mesh. */
+const MESH_BOUNDS = [[20.7, -79.8], [27.1, -72.8]]
+/** Storm-cell kinds the presenter can spawn. */
+const SPAWN_KINDS = ['squall', 'convective', 'fog']
+/** Presenter scenarios: [backend id, button label, tooltip/toast hint]. */
 const SCENARIOS = [
   ['squall_line', 'Squall line from Florida', 'Three squall cells sweep SE across Grand Bahama, Abaco and Nassau'],
   ['rogue_precog', 'Rogue model @ Nassau', 'Corrupt the LEXIS model at the BACSWN hub — watch it get outvoted, then quarantined'],
@@ -22,8 +43,11 @@ const SCENARIOS = [
   ['partition', 'Partition the south', 'Cut Inagua, Mayaguana & Ragged Island off — alerts queue (store-and-forward)'],
 ]
 
-// Map shapes with hover tooltips: Chrome makes them Tab stops with no accessible name.
-// They're visual only — the Stations / Storm cells / Links tables are the equivalent.
+/**
+ * Leaflet event handlers that hide a map shape from keyboard and assistive tech.
+ * Shapes with hover tooltips become Tab stops with no accessible name in Chrome; they're
+ * visual only, and the Stations / Storm cells / Links tables are the equivalent.
+ */
 const decorative = {
   add: (e) => {
     const el = e.target.getElement?.()
@@ -31,7 +55,7 @@ const decorative = {
   },
 }
 
-/** Name the map container (a Tab stop for keyboard panning) and give instructions. */
+/** Leaflet child that names the map container (a Tab stop for keyboard panning) and gives instructions; renders nothing. */
 function MapA11y() {
   const map = useMap()
   useEffect(() => {
@@ -42,9 +66,23 @@ function MapA11y() {
   return null
 }
 
+/**
+ * Fill colour for a storm cell: grey for fog, otherwise by radar reflectivity
+ * (>=52 magenta, >=45 red, >=38 amber, else green).
+ * @param {{kind: string, intensity: number}} c storm cell
+ * @returns {string} hex colour
+ */
 const dbzColor = (c) => c.kind === 'fog' ? '#cbd5e1'
   : c.intensity >= 52 ? '#d946ef' : c.intensity >= 45 ? '#ef4444' : c.intensity >= 38 ? '#f59e0b' : '#22c55e'
 
+/**
+ * Builds the Leaflet divIcon for a station marker: coloured by verdict (grey when
+ * offline), with hub/alarm/selected classes, a "!" (degraded) or "?" (split) flag and a
+ * station/verdict tag.
+ * @param {object} n mesh node from meshStatus
+ * @param {boolean} selected whether this is the selected station
+ * @returns {L.DivIcon}
+ */
 function nodeIcon(n, selected) {
   const color = n.alive ? HAZARD_COLORS[n.verdict.call] : '#475569'
   const alarm = n.alive && n.verdict.call !== 'CLEAR'
@@ -58,7 +96,15 @@ function nodeIcon(n, selected) {
   })
 }
 
-/** Animated dots travelling hop-by-hop along recent message paths. */
+/**
+ * Animated dots travelling hop-by-hop along recent message paths (at most 18, from the
+ * last tick). With reduced motion the dots sit still mid-route.
+ * @param {object} props
+ * @param {object[]} props.messages mesh messages/heartbeats with `path`, `tick`, `type`
+ * @param {Object<string, number[]>} props.coords station -> [lat, lon]
+ * @param {number} props.tick current simulation tick
+ * @param {boolean} props.reducedMotion user prefers reduced motion
+ */
 function MessagePulses({ messages, coords, tick, reducedMotion }) {
   const [phase, setPhase] = useState(0.5)
   useEffect(() => {
@@ -66,6 +112,7 @@ function MessagePulses({ messages, coords, tick, reducedMotion }) {
     // Anchor to the first frame's timestamp: rAF times can precede performance.now(),
     // which would make the phase negative.
     let raf, start = null
+    /** Advances the pulse phase (one route traversal per 1.6 s) each frame. */
     const loop = (t) => {
       start ??= t
       setPhase(((t - start) % 1600) / 1600)
@@ -88,11 +135,16 @@ function MessagePulses({ messages, coords, tick, reducedMotion }) {
   })
 }
 
+/**
+ * Leaflet child that calls `onSpawn(latlng)` on map clicks while a spawn mode is active.
+ * @param {{mode: string|null, onSpawn: function}} props
+ */
 function ClickToSpawn({ mode, onSpawn }) {
   useMapEvents({ click: (e) => { if (mode) onSpawn(e.latlng) } })
   return null
 }
 
+/** The mesh page: KPIs, presenter toolbar, map, precog chamber, station dashboard and logs. */
 export default function MeshNetwork() {
   const { data, refresh } = usePolling(useCallback(() => api.meshStatus(), []), 1500)
   const [selected, setSelected] = useState('MYNN')
@@ -132,6 +184,12 @@ export default function MeshNetwork() {
   const quarantined = nodes.reduce((a, n) => a + n.precogs.filter(p => p.quarantined).length, 0)
   const openReports = (d.minority_reports || []).filter(r => r.status === 'OPEN').length
 
+  /**
+   * Runs a mesh action with the toolbar disabled, shows a 5 s toast, then refreshes the
+   * status. Errors are shown in the toast with a warning sign.
+   * @param {function(): Promise<any>} fn the API call
+   * @param {string|function(any): string} [msg] toast text, or a function of the result
+   */
   const run = async (fn, msg) => {
     setBusy(true)
     try {
@@ -195,7 +253,7 @@ export default function MeshNetwork() {
         ))}
         <span className="sep" />
         <span className="label" id="spawn-click-label">Click map to spawn</span>
-        {['squall', 'convective', 'fog'].map(k => (
+        {SPAWN_KINDS.map(k => (
           <button key={k} type="button" className={`mesh-chip ${spawnMode === k ? 'on' : ''}`} aria-pressed={spawnMode === k}
             aria-describedby="spawn-click-label" onClick={() => setSpawnMode(spawnMode === k ? null : k)}>{k}</button>
         ))}
@@ -209,7 +267,7 @@ export default function MeshNetwork() {
           }}>
           <label htmlFor="spawn-kind">Spawn</label>
           <select id="spawn-kind" value={spawnKind} onChange={e => setSpawnKind(e.target.value)}>
-            <option value="squall">squall</option><option value="convective">convective</option><option value="fog">fog</option>
+            {SPAWN_KINDS.map(k => <option key={k} value={k}>{k}</option>)}
           </select>
           <label htmlFor="spawn-near">near</label>
           <select id="spawn-near" value={spawnNear} onChange={e => setSpawnNear(e.target.value)}>
@@ -228,9 +286,9 @@ export default function MeshNetwork() {
             Station markers can be reached with Tab and opened with Enter. Everything on the map is also listed in the
             Stations, Storm cells and Links tabs below.
           </p>
-          <MapContainer bounds={[[20.7, -79.8], [27.1, -72.8]]} style={{ height: '100%', width: '100%' }} zoomControl={false}
+          <MapContainer bounds={MESH_BOUNDS} style={{ height: '100%', width: '100%' }} zoomControl={false}
             zoomAnimation={!reducedMotion} fadeAnimation={!reducedMotion} markerZoomAnimation={!reducedMotion}>
-            <ResetViewControl bounds={[[20.7, -79.8], [27.1, -72.8]]} />
+            <ResetViewControl bounds={MESH_BOUNDS} />
             <CommsFilterControl status={d} filter={commsFilter} onChange={setCommsFilter} position="bottomright" defaultOpen={false} />
             <MapA11y />
             <TileLayer url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" />

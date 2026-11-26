@@ -1,18 +1,21 @@
-import { api } from '../api/client'
-import { emitTour } from './bus'
-
 /**
- * The guided demo script. Each step opens a page, optionally does something
- * (`action`), then highlights `target` and shows the caption. `seconds` is how
- * long auto-advance waits on the step. Mesh scenarios run on the shared
- * simulation (1 real second = 5 simulated minutes), so they keep developing
- * while the caption is read.
+ * The guided demo script (TOUR_STEPS), played by components/tour/GuidedTour.
+ *
+ * What: an ordered list of steps. Each step opens a page (`path`), optionally
+ * does something (`action`), then highlights `target` (a CSS selector) and shows
+ * the caption (`title`, `body`). `seconds` is how long auto-advance waits on the
+ * step; `settleMs` pauses after the action so the live simulation (polled every
+ * 1.5 s) already shows what the caption describes when it appears.
+ *
+ * Why: data, not code, so the tour can be rewritten without touching the player.
+ *
+ * How: actions start mesh scenarios through the API and steer the Mesh page via
+ * the tour bus. Mesh scenarios run on the shared simulation (1 real second =
+ * 5 simulated minutes), so they keep developing while the caption is read.
  */
-const meshStation = (station) => emitTour('mesh-select', { station })
-const meshTab = (tab) => emitTour('mesh-tab', { tab })
-// settleMs: pause after the action so the live simulation (polled every 1.5 s)
-// already shows what the caption describes when it appears.
-
+import { api } from '../api/client'
+import { emitTour, selectMeshStation as meshStation, showMeshTab as meshTab } from './bus'
+/** The guided demo, in order. */
 export const TOUR_STEPS = [
   {
     id: 'welcome', path: '/', title: 'Welcome to SkyWatch Bahamas', seconds: 14,

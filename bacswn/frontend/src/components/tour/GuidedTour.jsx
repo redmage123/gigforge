@@ -1,3 +1,17 @@
+/**
+ * GuidedTour: the player for the guided demo and for guided stories.
+ *
+ * What: a non-modal caption panel that steps through a list of steps (by
+ * default TOUR_STEPS; stories pass their own), driving the app as it goes.
+ *
+ * Why: lets a presenter (or a visitor on their own) see the platform's key
+ * features in order, with the screen set up to match each caption.
+ *
+ * How: entering a step navigates, runs its action, waits for its target to
+ * render, highlights it and places the panel beside it. Auto-advance and
+ * narration both stop with the shared demo pause. An optional AI box answers
+ * questions about the current mesh step.
+ */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { TOUR_STEPS } from '../../tour/steps'
@@ -5,7 +19,9 @@ import { api } from '../../api/client'
 import { useA11yPrefs, usePrefersReducedMotion } from '../../hooks/useA11yPrefs'
 import { useDemoPaused } from '../../hooks/useDemoPause'
 
+/** Whether this browser can read captions aloud. */
 const SPEECH_OK = typeof window !== 'undefined' && 'speechSynthesis' in window
+/** How long to wait for a step's highlight target to appear on the new page. */
 const TARGET_WAIT_MS = 6000
 
 /**
@@ -15,6 +31,8 @@ const TARGET_WAIT_MS = 6000
  * focus moves to the caption only when the user advanced it, Esc exits.
  * Auto-advance can be paused at any time (WCAG 2.2.1 / 2.2.2); captions can be
  * read aloud at the user's preferred speaking rate.
+ * @param {{open: boolean, onClose: () => void, steps?: object[], label?: string,
+ *   onEnd?: () => void, storyId?: string}} props `onEnd` runs on Finish/Exit (stories reset the mesh)
  */
 export default function GuidedTour({ open, onClose, steps = TOUR_STEPS, label = 'Guided demo', onEnd, storyId }) {
   const navigate = useNavigate()
@@ -42,6 +60,7 @@ export default function GuidedTour({ open, onClose, steps = TOUR_STEPS, label = 
   const [askError, setAskError] = useState('')
   useEffect(() => { if (open) api.aiStatus().then(r => setAiReady(!!r.configured)).catch(() => {}) }, [open])
   useEffect(() => { setAnswer(null); setAskError(''); setQuestion('') }, [index])
+  /** Send the question about the current step to the AI and show its answer. */
   const ask = async (e) => {
     e.preventDefault()
     if (!question.trim() || asking) return
@@ -54,6 +73,7 @@ export default function GuidedTour({ open, onClose, steps = TOUR_STEPS, label = 
   const step = steps[index]
   const last = index === steps.length - 1
 
+  /** Remove the highlight from the previous step's target. */
   const clearHighlight = () => {
     highlighted.current.forEach(el => el.classList.remove('tour-highlight'))
     highlighted.current = []
@@ -138,12 +158,14 @@ export default function GuidedTour({ open, onClose, steps = TOUR_STEPS, label = 
     else window.speechSynthesis.resume()
   }, [demoPaused])
 
+  /** Move `delta` steps (user action): focus follows the caption and any held countdown is dropped. */
   const go = useCallback((delta) => {
     focusOnChange.current = true
     carry.current = null
     setIndex(i => Math.max(0, Math.min(steps.length - 1, i + delta)))
   }, [steps.length])
 
+  /** Leave the tour: stop pending work and speech, rewind, then onEnd and onClose. */
   const exit = useCallback(() => {
     runId.current++
     clearHighlight()

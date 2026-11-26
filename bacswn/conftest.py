@@ -1,4 +1,16 @@
-"""BACSWN test fixtures — shared across all test modules."""
+"""BACSWN test fixtures — shared across all test modules.
+
+What: a session event loop, an autouse fresh-database fixture, an ASGI test client
+and fixtures that create a user or an admin and return their credentials.
+
+Why: every test must run against an isolated SQLite file and never against the real
+data directory, and API tests need an authenticated client without boilerplate.
+
+How: ``TESTING`` and ``JWT_SECRET`` are set before any app import so ``config`` loads
+in test mode; ``DB_PATH`` is monkeypatched to a per-test temp file and the schema is
+created; each client gets a distinct fake IP so the per-IP rate limiter never carries
+hits from one test to the next.
+"""
 
 import os
 
@@ -17,6 +29,7 @@ from config import DATA_DIR, DB_PATH
 
 @pytest.fixture(scope="session")
 def event_loop():
+    """One event loop for the whole session, so app-level singletons stay usable."""
     loop = asyncio.new_event_loop()
     yield loop
     loop.close()

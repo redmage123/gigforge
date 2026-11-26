@@ -1,21 +1,30 @@
-import { api } from '../api/client'
-import { emitTour } from './bus'
-
 /**
  * Guided stories: short, focused walk-throughs that drive the live mesh.
- * Each step's action asks the server to stage one beat (POST /api/mesh/story):
- * the server sets the scene with the ordinary mechanisms, runs the simulation
- * the few ticks they need, then holds the mesh still, so what is on screen
- * matches the caption however long it is discussed. Ending a story releases
- * the hold and resets the mesh (onEnd).
+ *
+ * What: STORIES (each a list of steps in the same shape as tour/steps.js),
+ * plus helpers to look one up and to start one from anywhere in the app.
+ *
+ * Why: a story shows one mechanism end to end (a squall caught, a stuck sensor
+ * rejected…) and must look the same however long the presenter talks.
+ *
+ * How: each step's action asks the server to stage one beat (POST
+ * /api/mesh/story): the server sets the scene with the ordinary mechanisms,
+ * runs the simulation the few ticks they need, then holds the mesh still, so
+ * what is on screen matches the caption. Ending a story releases the hold and
+ * resets the mesh (GuidedTour's onEnd). Stories are started by dispatching
+ * STORY_EVENT, which the app Layout listens for.
  */
+import { api } from '../api/client'
+import { emitTour, selectMeshStation as station, showMeshTab as tab } from './bus'
+
+/** Stage one beat of a story on the server. */
 const beat = (story, b) => api.meshStory(story, b)
-const station = (s) => emitTour('mesh-select', { station: s })
-const tab = (t) => emitTour('mesh-tab', { tab: t })
-// Traffic tab without the constant keepalives, so the alert / ticket the caption names is on top.
+/** Traffic tab without the constant keepalives, so the alert / ticket the caption names is on top. */
 const traffic = () => { tab('traffic'); setTimeout(() => emitTour('mesh-heartbeats', { show: false }), 50) }
+/** Highlight target: the Mesh page's log tab panel. */
 const LOG = '#mesh-tabpanel'
 
+/** Story steps: a squall line caught by VISTA, confirmed by peers, and passed down the track. */
 const SQUALL = [
   {
     id: 'sq-1', path: '/mesh', title: 'A squall line heads for Abaco', seconds: 16, settleMs: 1200,
@@ -72,6 +81,7 @@ const SQUALL = [
   },
 ]
 
+/** Story steps: a stuck sensor fools two models; neighbours reject the false alarm. */
 const STUCK = [
   {
     id: 'ss-1', path: '/mesh', title: 'Exuma on a clear day', seconds: 14, settleMs: 1200,
@@ -117,6 +127,7 @@ const STUCK = [
   },
 ]
 
+/** Story steps: the southern islands are cut off, queue their alerts and deliver them later. */
 const CUT_OFF = [
   {
     id: 'co-1', path: '/mesh', title: 'The southern islands', seconds: 14, settleMs: 1200,
@@ -161,6 +172,7 @@ const CUT_OFF = [
   },
 ]
 
+/** Story steps: a VHF mast is lost, links fail over to satellite and switch back once stable. */
 const RADIO = [
   {
     id: 'ra-1', path: '/mesh', title: 'Chub Cay on a normal day', seconds: 16, settleMs: 1200,
@@ -206,6 +218,7 @@ const RADIO = [
   },
 ]
 
+/** Every story, in the order shown by StoryLauncher. */
 export const STORIES = [
   { id: 'squall', title: 'How a squall line is caught', minutes: 2, steps: SQUALL,
     summary: 'VISTA sees the storm first, the other models catch up, neighbours confirm, the hub is alerted and the next station is warned.' },
@@ -217,6 +230,9 @@ export const STORIES = [
     summary: 'The southern islands lose every link, keep working through a storm, queue their alerts and deliver them when links return.' },
 ]
 
+/** The story with this id, or undefined. */
 export const storyById = (id) => STORIES.find(s => s.id === id)
+/** Window event that asks the app Layout to start a story (`detail.id`). */
 export const STORY_EVENT = 'bacswn:play-story'
+/** Start the story `id` from anywhere (closes the guided tour if it is open). */
 export const playStory = (id) => window.dispatchEvent(new CustomEvent(STORY_EVENT, { detail: { id } }))

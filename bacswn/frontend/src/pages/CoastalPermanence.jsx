@@ -1,4 +1,17 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+/**
+ * Coastal carbon permanence replay ("Is the carbon still there?").
+ *
+ * What: a real hurricane (NOAA best track for Dorian, 2019) replayed hour by hour over an
+ * illustrative portfolio of coastal (blue-carbon) credit projects, showing how much of
+ * the portfolio sat under hurricane-force winds, and for how long.
+ * Why: presentation view for a carbon-markets talk. The subject is the credits and the
+ * contrast with a static buffer pool that treats every project alike. Deliberately
+ * unbranded and outside the app layout (no sidebar) so it can be shown on stage.
+ * How: loads GET /api/hurricane/coastal-replay once (`api.coastalReplay`), then `Replay`
+ * drives a Leaflet map, a per-project exposure table and a Chart.js line chart from the
+ * selected hour.
+ */
+import { useEffect, useMemo, useState } from 'react'
 import { MapContainer, TileLayer, Polygon, Polyline, CircleMarker, Tooltip } from 'react-leaflet'
 import { Line } from 'react-chartjs-2'
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Legend, Tooltip as ChartTooltip } from 'chart.js'
@@ -8,29 +21,40 @@ import ChartTable, { chartTextColor } from '../components/a11y/ChartTable'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Legend, ChartTooltip)
 
-/**
- * Presentation view for a carbon-markets talk: a real hurricane (NOAA best
- * track for Dorian, 2019) replayed hour by hour over an illustrative portfolio
- * of coastal (blue-carbon) credit projects. The subject is the credits: how
- * much of the portfolio sat under hurricane-force winds, and for how long,
- * against a static buffer pool that treats every project alike.
- * Deliberately unbranded and outside the app layout (no sidebar), so it can be
- * shown on stage. Data: GET /api/hurricane/coastal-replay.
- */
+/** Wind band threshold (kt) -> [legend label, colour]. */
 const BAND = {
   64: ['Hurricane-force winds (64 kt or more)', '#ef4444'],
   50: ['Storm-force winds (50–63 kt)', '#f97316'],
   34: ['Gale-force winds (34–49 kt)', '#facc15'],
   0: ['Below gale force', '#22c55e'],
 }
+/** Outline colour per project, by index in `data.projects`. */
 const PROJECT_COLOURS = ['#38bdf8', '#c4b5fd', '#5eead4', '#f9a8d4']
+/** Playback speeds offered, in storm-hours per second. */
 const SPEEDS = [1, 3, 6]
+/** Map bounds framing the four project areas. */
 const VIEW = [[24.75, -79.0], [27.25, -76.6]]
+/** Side of each project polygon its permanent map label sits on, chosen so labels don't overlap. */
 const LABEL_SIDE = { 'abaco-marls': 'right', 'gb-north': 'bottom', 'lbb-seagrass': 'top', 'andros-north': 'right' }
+/** Talk title, shown as the page heading. */
 const TITLE = 'Is the carbon still there?'
+/**
+ * Saffir-Simpson category as words.
+ * @param {number|null} c category 1-5, or falsy below hurricane strength
+ * @returns {string}
+ */
 const catLabel = (c) => (c ? `Category ${c} hurricane` : 'Below hurricane strength')
+/**
+ * Pluralised hour count, e.g. "1 hour", "5 hours".
+ * @param {number} x
+ * @returns {string}
+ */
 const hours = (x) => `${x} hour${x === 1 ? '' : 's'}`
 
+/**
+ * Route component: sets the tab title, loads the replay once and renders it, or a
+ * loading/error message.
+ */
 export default function CoastalPermanence() {
   const [data, setData] = useState(null)
   const [error, setError] = useState('')
@@ -47,6 +71,13 @@ export default function CoastalPermanence() {
   return <Replay data={data} />
 }
 
+/**
+ * The interactive replay: map of the wind field over the projects, the exposure table,
+ * the cumulative-hours chart (with ChartTable alternative) and the playback controls.
+ * The current hour lives in local state while playing and is mirrored to the `?h=` URL
+ * parameter when paused, so a specific moment can be shared.
+ * @param {{data: object}} props the coastal-replay payload (steps, projects, summary, portfolio, source, method)
+ */
 function Replay({ data }) {
   const n = data.steps.length
   const [hUrl, setHUrl] = useUrlState('h', 0, (s) => (/^\d+$/.test(s) && Number(s) < n ? Number(s) : undefined))
@@ -67,7 +98,6 @@ function Replay({ data }) {
 
   const s = data.steps[h]
   const projects = data.projects
-  const summary = useMemo(() => Object.fromEntries(data.summary.map(x => [x.id, x])), [data])
   const maxHours = Math.max(...data.summary.map(x => x.hours_hurricane))
   const minHours = Math.min(...data.summary.map(x => x.hours_hurricane))
   const done = h === n - 1
@@ -75,6 +105,7 @@ function Replay({ data }) {
   const fullTrack = useMemo(() => data.steps.map(x => [x.lat, x.lon]), [data])
   const peakIdx = useMemo(() => data.steps.reduce((b, x, k) => (x.portfolio_pct_hurricane > data.steps[b].portfolio_pct_hurricane ? k : b), 0), [data])
 
+  /** Stops playback and moves to hour `k`, clamped to the replay range. */
   const jump = (k) => { setPlaying(false); setH(Math.max(0, Math.min(n - 1, k))) }
   const tick = chartTextColor()
   const labels = data.steps.map(x => x.local)

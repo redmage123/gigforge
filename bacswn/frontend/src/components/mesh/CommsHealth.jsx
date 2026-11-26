@@ -1,11 +1,19 @@
-import { useState } from 'react'
-import { api } from '../../api/client'
-
 /**
  * Channel-health monitoring (Master Plan §5.5): what the network can observe
  * about its own radios and what it concludes. Data: status.comms_health from
  * services/mesh_health.py.
+ *
+ * Why: shows that the hub can tell a broken BACSWN component from a carrier
+ * outage, interference or a bad path, and only tickets its own equipment.
+ * How: renders the server's diagnoses, unhealthy links and per-station radio
+ * telemetry; out-of-range readings are emphasised in text (not colour alone).
+ * Presenter buttons inject comms faults through /api/mesh/fault.
  */
+import { useState } from 'react'
+import { api } from '../../api/client'
+import { CHANNEL_BY_ID } from '../map/CommsChannels'
+
+/** Diagnosis class -> [label, badge colour]. */
 const CLASS = {
   equipment: ['Equipment fault', 'red'],
   'channel-wide': ['Channel-wide outage', 'amber'],
@@ -13,11 +21,14 @@ const CLASS = {
   local: ['Network operator', 'blue'],
   path: ['Path problem', 'grey'],
 }
+/** Link channel state -> [label, badge colour]. */
 const STATE = { down: ['Down', 'red'], degraded: ['Degraded', 'amber'] }
-const CH = { vhf: 'VHF', cellular: 'Cellular', satellite: 'Satellite', wired: 'Wired' }
+/** Coloured badge for key `k` of a [label, colour] map (grey with the raw key if unknown). */
 const Badge = ({ map, k }) => { const [l, c] = map[k] || [k, 'grey']; return <span className={`mbadge ${c}`}>{l}</span> }
+/** `text`, emphasised as a problem when `bad`. */
 const warn = (bad, text) => (bad ? <b className="ch-bad">{text}</b> : text)
 
+/** VHF radio telemetry: power, VSWR, received signal and noise floor. */
 function Vhf({ t }) {
   if (!t) return <span className="dim">—</span>
   if (!t.powered) return warn(true, `No power (${t.supply_v} V)${t.surge_tripped ? ', surge protector tripped' : ''}`)
@@ -26,21 +37,28 @@ function Vhf({ t }) {
     {warn(t.noise_dbm - -118 >= 10, `noise ${t.noise_dbm} dBm`)}
   </>
 }
+/** Cellular modem telemetry: registration, carrier and signal. */
 function Cell({ t }) {
   if (!t) return <span className="dim">none</span>
   if (!t.registered) return warn(true, `Not registered (carrier ${t.carrier})`)
   return <>{warn(t.carrier !== 'A', `Carrier ${t.carrier}`)} · {t.rsrp_dbm} dBm</>
 }
+/** Satellite terminal telemetry: antenna current, signal bars and last short-burst-data result. */
 function Sat({ t }) {
   if (!t) return <span className="dim">—</span>
   return <>{warn(t.antenna_ma === 0, `antenna ${t.antenna_ma} mA`)} · {t.bars}/5 · {warn(t.last_sbd !== 'OK', t.last_sbd)}</>
 }
 
+/**
+ * The comms-health tab of the mesh logs.
+ * @param {{health: object|null, nodes?: object[], onSelect?: (station: string) => void}} props
+ */
 export default function CommsHealth({ health, nodes, onSelect }) {
   const [station, setStation] = useState('MYEG')
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState('')
   if (!health) return <p className="dim" style={{ padding: 12 }}>Channel-health data is not available.</p>
+  /** Inject a comms fault (at the chosen station unless network-wide) and report the outcome. */
   const run = async (kind, label, withStation = true) => {
     setBusy(true); setMsg('')
     try {
@@ -83,7 +101,7 @@ export default function CommsHealth({ health, nodes, onSelect }) {
             <th scope="col">Heartbeat loss</th><th scope="col">Missed in a row</th><th scope="col">Telemetry alarm</th></tr></thead>
           <tbody>{health.links.slice(0, 40).map(l => (
             <tr key={l.a + l.b + l.channel}>
-              <td className="mono">{l.a}–{l.b}</td><td>{CH[l.channel]}</td><td><Badge map={STATE} k={l.state} /></td>
+              <td className="mono">{l.a}–{l.b}</td><td>{CHANNEL_BY_ID[l.channel]?.short}</td><td><Badge map={STATE} k={l.state} /></td>
               <td>{l.loss_pct}%</td><td>{l.missed_in_row}</td><td className="dim">{l.alarm || 'none (heartbeats only)'}</td>
             </tr>
           ))}</tbody>

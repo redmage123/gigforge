@@ -16,6 +16,10 @@ Turns the mesh's storm picture into what air traffic control needs:
 Note: the mesh's *simulation clock* is compressed (1 s = 5 sim-min), but the
 prediction uses physical speeds in real minutes, so the geometry is right for
 the picture shown at the moment it is computed.
+
+How: pure functions over the simulation's cells/consensus log and a list of
+OpenSky-shaped flight dicts, on a flat-earth approximation (fine at these
+distances). Nothing here mutates the simulation or draws random numbers.
 """
 
 from __future__ import annotations
@@ -33,6 +37,7 @@ TURNS = (20, -20, 40, -40, 60, -60)
 
 
 def _move(lat: float, lon: float, track_deg: float, nm: float) -> tuple[float, float]:
+    """Point reached after `nm` nautical miles from (lat, lon) along `track_deg`."""
     r = math.radians(track_deg)
     dlat = nm * math.cos(r) / 60
     dlon = nm * math.sin(r) / 60 / max(0.2, math.cos(math.radians(lat)))
@@ -40,16 +45,19 @@ def _move(lat: float, lon: float, track_deg: float, nm: float) -> tuple[float, f
 
 
 def _dist_nm(lat1, lon1, lat2, lon2) -> float:
+    """Flat-earth distance in nautical miles between two points."""
     dx = (lon2 - lon1) * math.cos(math.radians((lat1 + lat2) / 2))
     return math.hypot(lat2 - lat1, dx) * 60
 
 
 def _bearing(lat1, lon1, lat2, lon2) -> float:
+    """Bearing in degrees (0 = north) from point 1 to point 2."""
     dx = (lon2 - lon1) * math.cos(math.radians((lat1 + lat2) / 2))
     return math.degrees(math.atan2(dx, lat2 - lat1)) % 360
 
 
 def hazards(sim) -> list[dict]:
+    """Current hazard areas from the simulation's cells, each with a confirmed/detected/tracked status."""
     out = []
     recent = [e for e in sim.consensus_log
               if e.get("result") == "CONFIRMED" and sim.tick - e.get("tick", -999) <= CONFIRM_WINDOW_TICKS]
@@ -92,10 +100,16 @@ def hazards(sim) -> list[dict]:
 
 
 def _hazard_at(h: dict, minutes: float) -> tuple[float, float]:
+    """Hazard centre `minutes` from now, moving at its speed and heading."""
     return _move(h["lat"], h["lon"], h["heading"], h["speed_kt"] * minutes / 60)
 
 
 def _first_entry(lat, lon, track, gs_kt, alt_ft, hz_list) -> tuple[dict, int, tuple] | None:
+    """First predicted entry into a hazard (plus buffer) over the horizon.
+
+    Returns (hazard, minutes, entry point) or None. Low-level hazards are ignored
+    for aircraft at or above LOW_LEVEL_FT.
+    """
     for t in range(0, HORIZON_MIN + 1, STEP_MIN):
         alat, alon = _move(lat, lon, track, gs_kt * t / 60)
         for h in hz_list:
@@ -108,6 +122,12 @@ def _first_entry(lat, lon, track, gs_kt, alt_ft, hz_list) -> tuple[dict, int, tu
 
 
 def conflicts(flights: list[dict], hz_list: list[dict]) -> list[dict]:
+    """Airborne flights predicted to enter a hazard, with severity and avoidance advice, soonest first.
+
+    Flight dicts use OpenSky units (velocity m/s, altitude m); either latitude/longitude or
+    lat/lon, true_track or track, baro_altitude or altitude. Aircraft on the ground or without
+    position, speed or track are skipped.
+    """
     out = []
     for f in flights:
         lat = f.get("latitude", f.get("lat"))
@@ -153,6 +173,7 @@ def conflicts(flights: list[dict], hz_list: list[dict]) -> list[dict]:
 
 
 def airspace(sim, flights: list[dict]) -> dict:
+    """The airspace picture for GET /api/mesh/airspace: hazards, conflicts and counts."""
     hz = hazards(sim)
     cf = conflicts(flights, hz)
     return {

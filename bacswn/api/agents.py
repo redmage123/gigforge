@@ -1,4 +1,14 @@
-"""BACSWN — AI Agent console API router."""
+"""BACSWN — AI agent console API router.
+
+What: agent status, manual triggers, the activity log and the scripted weather-event
+pipeline (monitor → chief → QC → SIGMET drafter → emissions → dispatch).
+
+Why: the agent console lets operators see and drive the seven agents, and the pipeline
+endpoint demonstrates them working together end to end.
+
+How: delegates to the shared ``orchestrator``; the activity log is read from the
+``agent_activity`` table.
+"""
 
 from fastapi import APIRouter
 from pydantic import BaseModel
@@ -8,6 +18,8 @@ router = APIRouter()
 
 
 class AgentTrigger(BaseModel):
+    """Agent to run and the optional context passed to it."""
+
     agent_name: str
     context: dict | None = None
 
@@ -36,38 +48,31 @@ async def get_agent_activity(agent_name: str = "", limit: int = 50):
 
 @router.post("/pipeline/weather-event")
 async def trigger_weather_pipeline(context: dict = None):
-    """Trigger the full weather event pipeline: detect → evaluate → draft → dispatch."""
+    """Trigger the full weather event pipeline: detect → evaluate → draft → dispatch.
+
+    ``context`` (optional) overrides the SIGMET drafter's hazard; each step's result is
+    returned in order with its step number and agent name.
+    """
     results = []
 
-    # Step 1: Weather monitor detects
-    wx_result = await orchestrator.trigger_agent("bacswn-wx-monitor")
-    results.append({"step": 1, "agent": "bacswn-wx-monitor", **wx_result})
+    async def step(agent: str, ctx: dict | None = None) -> dict:
+        """Run one pipeline agent, append its numbered result and return the raw result."""
+        result = await orchestrator.trigger_agent(agent, ctx)
+        results.append({"step": len(results) + 1, "agent": agent, **result})
+        return result
 
-    # Step 2: Chief evaluates
-    chief_result = await orchestrator.trigger_agent("bacswn-chief", {"event_type": "wx_change"})
-    results.append({"step": 2, "agent": "bacswn-chief", **chief_result})
-
-    # Step 3: QC validates data
-    qc_result = await orchestrator.trigger_agent("bacswn-qc")
-    results.append({"step": 3, "agent": "bacswn-qc", **qc_result})
-
-    # Step 4: SIGMET drafter creates advisory
-    sigmet_result = await orchestrator.trigger_agent("bacswn-sigmet-drafter", context or {
+    await step("bacswn-wx-monitor")                                  # 1. detect
+    await step("bacswn-chief", {"event_type": "wx_change"})          # 2. evaluate
+    await step("bacswn-qc")                                          # 3. validate data
+    sigmet_result = await step("bacswn-sigmet-drafter", context or {  # 4. draft advisory
         "hazard_type": "TS",
         "description": "Embedded thunderstorms developing over northern Bahamas",
     })
-    results.append({"step": 4, "agent": "bacswn-sigmet-drafter", **sigmet_result})
-
-    # Step 5: Emissions analyst calculates impact
-    em_result = await orchestrator.trigger_agent("bacswn-emissions-analyst")
-    results.append({"step": 5, "agent": "bacswn-emissions-analyst", **em_result})
-
-    # Step 6: Dispatch sends alerts
-    dispatch_result = await orchestrator.trigger_agent("bacswn-dispatch", {
+    await step("bacswn-emissions-analyst")                           # 5. emissions impact
+    await step("bacswn-dispatch", {                                  # 6. send alerts
         "subject": "SIGMET — Thunderstorm Activity",
         "body": sigmet_result.get("sigmet", {}).get("raw_text", "Advisory generated"),
         "severity": "warning",
     })
-    results.append({"step": 6, "agent": "bacswn-dispatch", **dispatch_result})
 
     return {"pipeline": "weather_event", "steps": len(results), "results": results}

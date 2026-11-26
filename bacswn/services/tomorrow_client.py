@@ -44,10 +44,12 @@ _backoff_until = 0.0
 
 
 def configured() -> bool:
+    """True if a Tomorrow.io API key is set."""
     return bool(TOMORROW_API_KEY)
 
 
 def _budget_left(now: float) -> bool:
+    """True if another call fits the hourly and daily budgets; drops call stamps older than 24 h."""
     while _calls and now - _calls[0] > 86400:
         _calls.popleft()
     last_hour = sum(1 for t in _calls if now - t <= 3600)
@@ -55,7 +57,9 @@ def _budget_left(now: float) -> bool:
 
 
 def _normalise(values: dict) -> dict:
+    """Map Tomorrow.io realtime ``values`` to BACSWN units (kt, SM, ft) and field names."""
     def r(v, k=1.0, nd=1):
+        """``v`` scaled by ``k`` and rounded to ``nd`` digits, or None if missing."""
         return None if v is None else round(v * k, nd)
     rain = values.get("rainIntensity", values.get("precipitationIntensity"))
     code = values.get("weatherCode")
@@ -88,6 +92,7 @@ async def realtime(station: str, lat: float, lon: float) -> dict:
         return {**hit[1], "cached": True, "age_min": round((now - hit[0]) / 60)}
 
     def fallback(status: str, message: str) -> dict:
+        """The last cached reading tagged with ``status``/``message``, or just the status if none."""
         if hit:      # an older reading beats none; say how old it is
             return {**hit[1], "cached": True, "age_min": round((now - hit[0]) / 60), "status": status,
                     "message": message}

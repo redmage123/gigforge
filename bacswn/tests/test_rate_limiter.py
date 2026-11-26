@@ -33,25 +33,20 @@ def _make_limiter(max_requests: int = 100, window_seconds: int = 60):
 
 @pytest.mark.asyncio
 async def test_stale_ip_removed_from_buckets():
-    """After a window expires, an IP with no recent hits is removed from _buckets."""
+    """Expired hits are dropped, the new request is counted, and idle IPs are swept away.
+
+    The limiter used to delete an expired bucket and let that request through uncounted.
+    """
     limiter = _make_limiter(max_requests=100, window_seconds=60)
-    old_ip = "10.0.0.1"
-    new_ip = "10.0.0.2"
-
-    # Plant a stale entry for old_ip (timestamp > 60s ago)
     stale_time = time.time() - 120  # well outside the 60s window
-    limiter._buckets[old_ip] = [stale_time]
+    limiter._buckets["10.0.0.1"] = [stale_time]
+    limiter._buckets["10.0.0.9"] = [stale_time]  # an idle IP that never returns
 
-    # Trigger a request from new_ip — this causes the limiter to process new_ip's bucket,
-    # but the old_ip bucket only gets cleaned when it's visited.
-    # To exercise cleanup we need to send a request from old_ip so its bucket is evaluated.
-    req_old = _make_request(ip=old_ip)
-    await limiter.dispatch(req_old, _dummy_call_next)
+    await limiter.dispatch(_make_request(ip="10.0.0.1"), _dummy_call_next)
 
-    # After dispatch, old_ip's bucket should be empty and key should be deleted
-    assert old_ip not in limiter._buckets, (
-        f"Stale IP {old_ip} should have been removed but found: {limiter._buckets.get(old_ip)}"
-    )
+    hits = limiter._buckets["10.0.0.1"]
+    assert len(hits) == 1 and hits[0] > stale_time, "the returning request must be counted"
+    assert "10.0.0.9" not in limiter._buckets, "idle IPs are swept to bound memory"
 
 
 @pytest.mark.asyncio

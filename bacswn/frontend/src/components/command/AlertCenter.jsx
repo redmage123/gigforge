@@ -1,19 +1,41 @@
+/**
+ * Operational alerts on the Command Center: AlertCenter (banners, history and
+ * the user's sound / pulse switches) and useChime (the optional alert sound).
+ *
+ * Why: alerts must reach every user: shown on screen, announced to screen
+ * readers, and optionally sounded and pulsed, with sound and pulse under the
+ * user's control (WCAG 1.4.2, 2.3.1).
+ *
+ * How: the parent owns the alert list; this component announces each new alert
+ * once (assertive live region), shows at most MAX_BANNERS banners and keeps the
+ * full session history in a table.
+ */
 import { useEffect, useRef, useState } from 'react'
 
-const SEVERITY_LABEL = { severe: 'SEVERE', high: 'HIGH', moderate: 'MODERATE', low: 'ADVISORY' }
+/** Display wording for each alert severity (also used by AlertDetails). */
+export const SEVERITY_LABEL = { severe: 'SEVERE', high: 'HIGH', moderate: 'MODERATE', low: 'ADVISORY' }
 // At most this many alert banners at once; the rest wait in the history.
 const MAX_BANNERS = 2
+/** 24-hour HH:MM in the user's locale. */
 const fmtTime = (d) => d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
 
-/** Short two-tone chime; resumes the AudioContext (browsers suspend it until a user gesture). */
+/** The AudioContext held in `ref`, created on first use (throws where Web Audio is unavailable). */
+function audioContext(ref) {
+  if (!ref.current) ref.current = new (window.AudioContext || window.webkitAudioContext)()
+  return ref.current
+}
+
+/**
+ * Short two-tone chime; resumes the AudioContext (browsers suspend it until a user gesture).
+ * @returns {() => void} play the chime (silently does nothing where audio is unavailable)
+ */
 export function useChime() {
   const ctxRef = useRef(null)
   useEffect(() => {
     // Unlock audio on the first interaction so later alerts can sound.
     const unlock = () => {
       try {
-        if (!ctxRef.current) ctxRef.current = new (window.AudioContext || window.webkitAudioContext)()
-        ctxRef.current.resume?.()
+        audioContext(ctxRef).resume?.()
       } catch { /* no audio */ }
     }
     window.addEventListener('pointerdown', unlock, { once: true })
@@ -22,8 +44,7 @@ export function useChime() {
   }, [])
   return () => {
     try {
-      if (!ctxRef.current) ctxRef.current = new (window.AudioContext || window.webkitAudioContext)()
-      const ctx = ctxRef.current
+      const ctx = audioContext(ctxRef)
       if (ctx.state === 'suspended') ctx.resume()
       ;[[880, 0], [660, 0.18]].forEach(([freq, at]) => {
         const osc = ctx.createOscillator()
@@ -45,6 +66,8 @@ export function useChime() {
  * optional chime is never the only signal (WCAG 1.1.1 / hearing impairment).
  * alerts: [{id, title, detail, severity, time: Date, source, conflict?, hazard?}] newest first.
  * Each alert's text is a button that opens its details (onOpen).
+ * @param {{alerts: object[], onDismiss: (id: any) => void, onDismissAll: () => void, onOpen?: (alert: object) => void,
+ *   prefs: object, setPref: (key: string, value: any) => void}} props `prefs`/`setPref` from useA11yPrefs
  */
 export default function AlertCenter({ alerts, onDismiss, onDismissAll, onOpen, prefs, setPref }) {
   const [showLog, setShowLog] = useState(false)

@@ -1,10 +1,25 @@
-"""BACSWN — Distributed Mesh Network API router."""
+"""BACSWN — Distributed Mesh Network API router (``/api/mesh``).
+
+What: HTTP endpoints for the mesh simulation — status and per-station detail, the
+airspace picture, presenter controls (faults, storms, scenarios, chosen verdicts,
+guided stories) and an AI question-answering helper for the stories.
+
+Why: the frontend's mesh view and presenter panel drive the shared simulation
+in services/mesh_network.py; this module is the only HTTP surface for it.
+
+How: each handler first catches the simulation up to wall-clock time
+(``mesh.advance()``) and then delegates. The simulation reports bad presenter
+input as an ``{"error": msg}`` dict; ``_result`` raises that as a
+``BacswnValidationError`` (HTTP 400) and unknown stations raise
+``BacswnNotFoundError`` (404), both rendered by the global handler in main.py.
+"""
 
 import logging
 
 from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+
+from services.errors import BacswnNotFoundError, BacswnValidationError
 
 from services.mesh_network import mesh, get_mesh_status, get_node_detail, trigger_consensus
 
@@ -13,6 +28,8 @@ logger = logging.getLogger("bacswn.mesh")
 
 
 class FaultRequest(BaseModel):
+    """Body of POST /fault: the fault kind and its target."""
+
     kind: str                     # node_down|node_up|link_down|link_up|sensor_fault|corrupt_precog|comms_down|comms_up|clear
     station: str | None = None
     peer: str | None = None
@@ -22,6 +39,8 @@ class FaultRequest(BaseModel):
 
 
 class PresentRequest(BaseModel):
+    """Body of POST /present: the verdict and voting outcome a station should show."""
+
     station: str
     call: str                     # CLEAR|SHOWERS|IFR|TSRA|SQUALL
     outcome: str                  # agree|dissent|split|peers_confirm|peers_reject
@@ -29,6 +48,8 @@ class PresentRequest(BaseModel):
 
 
 class StormRequest(BaseModel):
+    """Body of POST /storm: storm kind and optional position, heading and speed."""
+
     kind: str = "squall"          # convective|squall|fog
     lat: float | None = None
     lon: float | None = None
@@ -36,8 +57,15 @@ class StormRequest(BaseModel):
     speed_kt: float | None = None
 
 
-def _result(r: dict):
-    return JSONResponse(status_code=400 if "error" in r else 200, content=r)
+def _result(r: dict) -> dict:
+    """Return a simulation result, or raise its ``{"error": msg}`` as an HTTP 400.
+
+    Raises:
+        BacswnValidationError: the simulation rejected the request.
+    """
+    if "error" in r:
+        raise BacswnValidationError(r["error"])
+    return r
 
 
 @router.get("/status")
@@ -51,7 +79,7 @@ async def node_detail(station_id: str):
     """Detailed info for a single mesh node."""
     node = get_node_detail(station_id.upper())
     if not node:
-        return JSONResponse(status_code=404, content={"error": "Node not found"})
+        raise BacswnNotFoundError("Node not found")
     return node
 
 
@@ -66,7 +94,7 @@ async def mesh_airspace():
     try:
         from services import weather_benefit
         await weather_benefit.record(result, flights)
-    except Exception as e:  # the ledger must never break the live picture
+    except Exception as e:  # deliberately broad: the ledger must never break the live picture; logged
         logger.error(f"Weather-benefit ledger error: {e}")
     return result
 
@@ -79,7 +107,7 @@ async def node_live_weather(station_id: str):
     code = station_id.upper()
     info = STATION_COORDS.get(code)
     if not info:
-        return JSONResponse(status_code=404, content={"error": "Node not found"})
+        raise BacswnNotFoundError("Node not found")
     return {"station": code, **await tomorrow_client.realtime(code, info["lat"], info["lon"])}
 
 
@@ -121,6 +149,8 @@ async def present(req: PresentRequest):
 
 
 class StoryRequest(BaseModel):
+    """Body of POST /story: the story name and the beat to stage."""
+
     story: str                    # squall|stuck_sensor|cut_off
     beat: str                     # see MeshSimulation.STORIES
 
@@ -139,6 +169,8 @@ async def story_end():
 
 
 class AskRequest(BaseModel):
+    """Body of POST /ask: the question plus the story step the presenter is on."""
+
     question: str
     story: str | None = None
     station: str | None = None
@@ -148,12 +180,14 @@ class AskRequest(BaseModel):
 
 @router.post("/ask")
 async def ask(req: AskRequest, request: Request):
-    """AI-assisted: answer a question about the current story step from the live mesh state."""
+    """AI-assisted: answer a question about the current story step from the live mesh state.
+
+    Raises:
+        AIUnavailable: the AI backend is not configured or failed (a BacswnError, so
+            the global handler answers with its own status, e.g. 503).
+    """
     from services import ai_assist
     user = (getattr(request.state, "user", None) or {}).get("sub", "?")
     ctx = ai_assist.story_context(mesh, req.story, req.station and req.station.upper())
-    try:
-        return await ai_assist.ask_about_story(user, req.question, ctx, (req.step_title or "")[:200],
-                                               (req.step_caption or "")[:1500])
-    except ai_assist.AIUnavailable as e:
-        return JSONResponse(status_code=e.status, content={"error": str(e)})
+    return await ai_assist.ask_about_story(user, req.question, ctx, (req.step_title or "")[:200],
+                                           (req.step_caption or "")[:1500])

@@ -88,6 +88,7 @@ def category(vmax_kt: float) -> int:
 
 
 def _parse(t: str) -> datetime:
+    """Parse a best-track time such as "2019-09-01T16:40Z" as an aware UTC datetime."""
     return datetime.strptime(t, "%Y-%m-%dT%H:%MZ").replace(tzinfo=timezone.utc)
 
 
@@ -161,6 +162,7 @@ def hourly_track() -> list[dict]:
 
 
 def _inside(lat, lon, poly) -> bool:
+    """Point-in-polygon test (ray casting) for a [lat, lon] outline."""
     inside = False
     for (y1, x1), (y2, x2) in zip(poly, poly[1:] + poly[:1]):
         if (y1 > lat) != (y2 > lat) and lon < (x2 - x1) * (lat - y1) / (y2 - y1) + x1:
@@ -169,6 +171,11 @@ def _inside(lat, lon, poly) -> bool:
 
 
 def _samples(poly, step=0.01) -> list[tuple[float, float]]:
+    """Grid points (cell centres, ``step`` degrees apart) that fall inside the outline.
+
+    The share of these points under a wind band is used as the share of the
+    project's area, and so of its credits, exposed to that band.
+    """
     lats = [p[0] for p in poly]
     lons = [p[1] for p in poly]
     pts = []
@@ -192,6 +199,7 @@ def area_ha(poly) -> float:
 
 
 def _local(t: datetime) -> str:
+    """Format a UTC time as Bahamas local time (EDT, ``LOCAL_OFFSET_H``) for display."""
     return (t + timedelta(hours=LOCAL_OFFSET_H)).strftime("%a %d %b %H:%M")
 
 

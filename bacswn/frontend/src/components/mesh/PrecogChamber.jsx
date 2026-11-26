@@ -1,5 +1,21 @@
+/**
+ * PrecogChamber: the selected station's detail panel on the Mesh page.
+ *
+ * What: the station's weather verdict, its three-model ensemble (with minority
+ * reports, quarantine and corruption shown), instruments, route to the hub,
+ * peer review, presenter controls and fault injection. Also exports the hazard
+ * colour / wording helpers used across the mesh pages.
+ *
+ * Why: it is where a presenter explains how a station reaches a decision and
+ * how the network survives faults.
+ * How: renders one node from /api/mesh/status; actions go to the parent's
+ * onFault / onVerify / onPresent callbacks.
+ */
 import PresenterPanel from './PresenterPanel'
-const COMMS_NAME = { wired: 'Wired', vhf: 'VHF', cellular: 'Cellular', satellite: 'Satellite' }
+import { CHANNEL_BY_ID } from '../map/CommsChannels'
+
+/** Compact channel name for the comms buttons. */
+const commsName = (type) => CHANNEL_BY_ID[type]?.short
 /** Bright hazard colours for map symbols drawn over satellite imagery. */
 export const HAZARD_COLORS = {
   CLEAR: '#10b981', SHOWERS: '#3b82f6', IFR: '#a855f7', TSRA: '#f59e0b', SQUALL: '#ef4444',
@@ -15,6 +31,7 @@ export const VERDICT_EXAMPLES = {
 /** Hazard colour for TEXT on page surfaces — a CSS variable that meets 4.5:1 in both themes. */
 export const hz = (call) => `var(--hz-${String(call || 'clear').toLowerCase()})`
 
+/** Instruments shown in the chamber: [reading key, label, unit, sensor-fault name that affects it]. */
 const SENSOR_FIELDS = [
   ['temp_c', 'Temp', '°C', null],
   ['pressure_hpa', 'Pressure', 'hPa', 'pressure'],
@@ -26,6 +43,10 @@ const SENSOR_FIELDS = [
   ['humidity_pct', 'RH', '%', null],
 ]
 
+/**
+ * One model of the ensemble: its call, confidence meter, status badges and reasoning.
+ * A model dissents when it is active, the vote is not split and its call differs from the majority.
+ */
 function Precog({ pc, majority, split }) {
   const color = hz(pc.call)
   const dissent = !pc.quarantined && !split && pc.call !== majority
@@ -50,7 +71,11 @@ function Precog({ pc, majority, split }) {
   )
 }
 
-/** Selected station: its 2-of-3 ensemble, sensors, route to hub, and fault controls. */
+/**
+ * Selected station: its 2-of-3 ensemble, sensors, route to hub, and fault controls.
+ * @param {{node: object|null, hub: string, onFault: (fault: object) => void, onVerify: (station: string) => void,
+ *   onPresent?: (request: object) => void, busy: boolean}} props presenter controls only when `onPresent` is given
+ */
 export default function PrecogChamber({ node, hub, onFault, onVerify, onPresent, busy }) {
   if (!node) {
     return (
@@ -63,6 +88,7 @@ export default function PrecogChamber({ node, hub, onFault, onVerify, onPresent,
   const vColor = hz(v.call)
   const statusBadge = { healthy: 'green', caution: 'amber', degraded: 'red', offline: 'grey' }[node.status]
   const faulted = new Set(node.sensor_faults)
+  /** Inject a fault (or clear / restore) at this station. */
   const act = (fault) => onFault({ station: node.station, ...fault })
 
   return (
@@ -185,9 +211,9 @@ export default function PrecogChamber({ node, hub, onFault, onVerify, onPresent,
               <span className="fault-line-label" aria-hidden="true">Comms</span>
               {node.comms.map(c => (
                 <button key={c.type} className={`mesh-chip ${c.up ? 'danger' : ''}`} disabled={busy} aria-pressed={!c.up}
-                  aria-label={`${c.up ? 'Knock out' : 'Restore'} ${COMMS_NAME[c.type]}`} title={c.up ? undefined : c.cause}
+                  aria-label={`${c.up ? 'Knock out' : 'Restore'} ${commsName(c.type)}`} title={c.up ? undefined : c.cause}
                   onClick={() => act({ kind: c.up ? 'comms_down' : 'comms_up', channel: c.type })}>
-                  {c.up ? COMMS_NAME[c.type] : `Restore ${COMMS_NAME[c.type]}`}
+                  {c.up ? commsName(c.type) : `Restore ${commsName(c.type)}`}
                 </button>
               ))}
             </div>

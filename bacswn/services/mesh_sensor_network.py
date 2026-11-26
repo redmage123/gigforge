@@ -11,6 +11,14 @@ Status is the network's own view — OK, STALE (missed reports) or SUSPECT
 (contradicted by satellite). Injected faults are hidden from that view and
 reported separately as presenter ground truth, so the demo shows the network
 *detecting* a bad sensor rather than being told about it.
+
+Why: the station dashboard needs a believable instrument-level picture, and the
+satellite cross-check needs per-instrument status to flag.
+
+How: ``SensorNetwork.build`` attaches ``node["sensor_net"]`` (one dict per
+instrument, with bounded reading histories); ``update`` refreshes it each tick
+from the station's sensor readings and the simulation's weather field, using the
+simulation's auxiliary random stream so a seeded run's weather is unaffected.
 """
 
 from __future__ import annotations
@@ -51,11 +59,13 @@ FAULT_SENSORS = {"visibility": ("VIS", "CEI"), "wind": ("WND",), "pressure": ("B
 
 
 def _offset(lat: float, lon: float, bearing: float, dist: float) -> tuple[float, float]:
+    """Point `dist` degrees from (lat, lon) along `bearing`, with longitude scaled by cos(lat)."""
     r = math.radians(bearing)
     return lat + math.cos(r) * dist, lon + math.sin(r) * dist / math.cos(math.radians(lat))
 
 
 def _poisson(rng, lam: float) -> int:
+    """Poisson draw with mean `lam` (Knuth's method; lam capped at 30). Uses `rng` only."""
     if lam <= 0:
         return 0
     n, p, threshold = 0, 1.0, math.exp(-min(lam, 30))
@@ -67,11 +77,15 @@ def _poisson(rng, lam: float) -> int:
 
 
 class SensorNetwork:
+    """The mock field-sensor network around every station: build, per-tick update and views."""
+
     def __init__(self, sim, rng):
+        """Bind the network to a ``MeshSimulation`` and the random stream for sensor noise."""
         self.sim = sim
         self.rng = rng
 
     def build(self, node: dict) -> None:
+        """Create the station's instruments and outstations at their positions."""
         nodes = {}
         for code, (label, metrics, primary) in SENSOR_TYPES.items():
             lat, lon = node["lat"], node["lon"]
@@ -92,6 +106,12 @@ class SensorNetwork:
 
     # ── per tick ────────────────────────────────────────────────────────
     def update(self, n: dict) -> None:
+        """One tick: derive every instrument's readings, apply random report dropouts, and
+        drift battery and signal strength.
+
+        Outstation readings are drawn even for a sensor that then misses its report,
+        so the number of random draws per tick stays fixed.
+        """
         sim, s, tick = self.sim, n["sensors"], self.sim.tick
         hour = sim.sim_time().hour
         rains = [h["rain_mm_h"] for h in list(n["history"])[-12:]]
@@ -136,6 +156,7 @@ class SensorNetwork:
             sensor["rssi_dbm"] = max(-105, min(-55, sensor["rssi_dbm"] + self.rng.choice((-1, 0, 0, 1))))
 
     def _outstation(self, sensor: dict) -> dict:
+        """Readings of a remote outstation, sampled from the weather field at its own position."""
         f = self.sim._field(sensor["lat"], sensor["lon"])
         from services.mesh_network import _dbz_to_rain
         return {
@@ -147,6 +168,7 @@ class SensorNetwork:
 
     @staticmethod
     def _present_weather(s: dict) -> str:
+        """Present-weather text for the VIS sensor from rain rate and visibility."""
         if s["rain_mm_h"] >= 20:
             return "Heavy rain"
         if s["rain_mm_h"] >= 4:
@@ -160,10 +182,13 @@ class SensorNetwork:
         return "None"
 
     def flag(self, n: dict, code: str, text: str | None) -> None:
+        """Set (or clear, with None) the satellite contradiction flag on one instrument."""
         n["sensor_net"][code]["sat_flag"] = text
 
     # ── views ───────────────────────────────────────────────────────────
     def view(self, n: dict) -> list[dict]:
+        """Every instrument with its status as the network sees it (OK/STALE/SUSPECT/OFFLINE),
+        plus the injected fault as separate presenter ground truth."""
         tick, out = self.sim.tick, []
         injected = {code: kind for kind in n["sensor_faults"] for code in FAULT_SENSORS.get(kind, ())}
         for code, s in n["sensor_net"].items():
@@ -187,5 +212,6 @@ class SensorNetwork:
         return out
 
     def summary(self, n: dict) -> dict:
+        """Instrument counts by status, for the station list."""
         v = self.view(n)
         return {"total": len(v), **{k.lower(): sum(x["status"] == k for x in v) for k in ("OK", "STALE", "SUSPECT", "OFFLINE")}}

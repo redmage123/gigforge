@@ -20,6 +20,16 @@ Two population paths:
      the trailing window, so the scoreboard is populated with genuine numbers
      on day one. If those APIs are unreachable it falls back to a clearly
      LABELLED deterministic seed — never silently mixed with real data.
+
+Why: an operational forecast product must prove its skill; these metrics feed
+the verification page, the bias-correction trainer (``forecast_correction``)
+and the operations briefing.
+
+How: every forecast/observation pair is a row in the ``forecast_verifications``
+table (status pending -> verified, ``source`` live / backfill / seed). Forecasts
+come from Open-Meteo; observations from AWC METARs, with the flight category
+derived from the raw METAR via MetPy. Upstream failures are logged and skipped,
+never raised.
 """
 
 from __future__ import annotations
@@ -80,14 +90,17 @@ _CEILING_COVERS = {"BKN", "OVC", "VV"}
 
 # ── Small helpers ────────────────────────────────────────────────────────────
 def _now() -> datetime:
+    """Current time in UTC."""
     return datetime.now(timezone.utc)
 
 
 def _iso(dt: datetime) -> str:
+    """UTC ISO-8601 string with an explicit +00:00 offset (the ledger's timestamp format)."""
     return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
 
 
 def _round_hour(dt: datetime) -> datetime:
+    """``dt`` truncated to the start of its hour."""
     return dt.replace(minute=0, second=0, microsecond=0)
 
 
@@ -178,6 +191,7 @@ def flight_category(vis_sm: float | None, cloud_cover_pct: float | None,
 
 
 def _isnan(x) -> bool:
+    """True if ``x`` is numeric NaN; False for non-numeric values."""
     try:
         return math.isnan(float(x))
     except (TypeError, ValueError):
@@ -215,6 +229,16 @@ def _index_for(times: list[str], target: datetime) -> int | None:
     return None
 
 
+async def _already_captured(station: str, issued: datetime, lead: int, variable: str) -> bool:
+    """True if a row for this station / issue time / lead / variable is already in the ledger."""
+    dup = await db_execute(
+        "SELECT id FROM forecast_verifications WHERE station_id=? AND issued_at=? "
+        "AND lead_h=? AND variable=? LIMIT 1",
+        [station, _iso(issued), lead, variable],
+    )
+    return bool(dup)
+
+
 async def capture_forecasts() -> int:
     """Store a pending forecast row per (station, variable, lead). Hourly."""
     issued = _round_hour(_now())
@@ -231,24 +255,12 @@ async def capture_forecasts() -> int:
             idx = _index_for(times, valid)
             if idx is None:
                 continue
-            # Skip if we already captured this exact forecast.
-            existing = await db_execute(
-                "SELECT id FROM forecast_verifications WHERE station_id=? AND issued_at=? "
-                "AND lead_h=? AND variable=? LIMIT 1",
-                [station, _iso(issued), lead, "temp_c"],
-            )
-            if existing and lead == LEAD_TIMES[0]:
-                pass  # allow per-variable check below
             for var, meta in VARIABLES.items():
                 series = h.get(meta["om_field"], [])
                 if idx >= len(series) or series[idx] is None:
                     continue
-                dup = await db_execute(
-                    "SELECT id FROM forecast_verifications WHERE station_id=? AND issued_at=? "
-                    "AND lead_h=? AND variable=? LIMIT 1",
-                    [station, _iso(issued), lead, var],
-                )
-                if dup:
+                # Skip if we already captured this exact forecast.
+                if await _already_captured(station, issued, lead, var):
                     continue
                 from services import forecast_correction as fc  # lazy: avoids import cycle
                 fval = float(series[idx])
@@ -267,12 +279,7 @@ async def capture_forecasts() -> int:
             cc_pct = cc[idx] if idx < len(cc) and cc[idx] is not None else None
             fcat = flight_category(vis_sm, cc_pct)
             if fcat:
-                dup = await db_execute(
-                    "SELECT id FROM forecast_verifications WHERE station_id=? AND issued_at=? "
-                    "AND lead_h=? AND variable=? LIMIT 1",
-                    [station, _iso(issued), lead, CATEGORICAL],
-                )
-                if not dup:
+                if not await _already_captured(station, issued, lead, CATEGORICAL):
                     await db_insert("forecast_verifications", {
                         "station_id": station, "variable": CATEGORICAL, "lead_h": lead,
                         "issued_at": _iso(issued), "valid_at": _iso(valid),
@@ -314,8 +321,9 @@ async def _store_observations() -> dict[str, dict]:
                 "cloud_layers": p.get("cloud_layers", ""),
                 "observed_at": p.get("observed_at") or _iso(_now()),
             })
-        except Exception:
-            pass
+        except Exception as e:
+            # Persisting the observation is a side benefit; verification still uses it.
+            logger.debug(f"Could not store METAR for {sid}: {e}")
     return obs_by_station
 
 
@@ -380,6 +388,7 @@ async def match_pending(grace_min: int = 45) -> int:
 
 # ── Metrics ──────────────────────────────────────────────────────────────────
 def _stats(errors: list[float]) -> dict:
+    """Sample size, bias, MAE and RMSE (rounded to 0.01) of signed errors; None metrics if empty."""
     n = len(errors)
     if n == 0:
         return {"n": 0, "bias": None, "mae": None, "rmse": None}
@@ -387,6 +396,21 @@ def _stats(errors: list[float]) -> dict:
     mae = sum(abs(e) for e in errors) / n
     rmse = math.sqrt(sum(e * e for e in errors) / n)
     return {"n": n, "bias": round(bias, 2), "mae": round(mae, 2), "rmse": round(rmse, 2)}
+
+
+def _errors(rows: list[dict], variable: str) -> list[float]:
+    """Signed errors of the given continuous variable's rows (missing errors skipped)."""
+    return [r["signed_error"] for r in rows if r["variable"] == variable and r["signed_error"] is not None]
+
+
+def _cat_rows(rows: list[dict]) -> list[dict]:
+    """Flight-category rows that have a hit/miss result."""
+    return [r for r in rows if r["variable"] == CATEGORICAL and r["cat_hit"] is not None]
+
+
+def _hit_rate(cat_rows: list[dict]) -> float | None:
+    """Percentage of category rows that were hits (0.1 precision), or None if there are none."""
+    return round(100.0 * sum(r["cat_hit"] for r in cat_rows) / len(cat_rows), 1) if cat_rows else None
 
 
 def _accuracy_pct(mae: float | None, good: float) -> float | None:
@@ -421,8 +445,7 @@ async def scoreboard(window_hours: int = 168) -> dict:
     variables = {}
     acc_components = []
     for var, meta in VARIABLES.items():
-        errs = [r["signed_error"] for r in rows if r["variable"] == var and r["signed_error"] is not None]
-        s = _stats(errs)
+        s = _stats(_errors(rows, var))
         s["accuracy_pct"] = _accuracy_pct(s["mae"], meta["good"])
         s.update({"label": meta["label"], "unit": meta["unit"]})
         variables[var] = s
@@ -430,10 +453,9 @@ async def scoreboard(window_hours: int = 168) -> dict:
             acc_components.append(s["accuracy_pct"])
 
     # Categorical hit rate
-    cat_rows = [r for r in rows if r["variable"] == CATEGORICAL and r["cat_hit"] is not None]
+    cat_rows = _cat_rows(rows)
     cat_n = len(cat_rows)
-    cat_hits = sum(r["cat_hit"] for r in cat_rows)
-    cat_rate = round(100.0 * cat_hits / cat_n, 1) if cat_n else None
+    cat_rate = _hit_rate(cat_rows)
     if cat_rate is not None:
         acc_components.append(cat_rate)
 
@@ -444,17 +466,11 @@ async def scoreboard(window_hours: int = 168) -> dict:
     by_lead = []
     for lead in present_leads:
         lead_rows = [r for r in rows if r["lead_h"] == lead]
-        temp_errs = [r["signed_error"] for r in lead_rows
-                     if r["variable"] == "temp_c" and r["signed_error"] is not None]
-        wind_errs = [r["signed_error"] for r in lead_rows
-                     if r["variable"] == "wind_speed_kt" and r["signed_error"] is not None]
-        lead_cat = [r for r in lead_rows if r["variable"] == CATEGORICAL and r["cat_hit"] is not None]
-        lc_n = len(lead_cat)
         by_lead.append({
             "lead_h": lead,
-            "temp_mae": _stats(temp_errs)["mae"],
-            "wind_mae": _stats(wind_errs)["mae"],
-            "cat_hit_rate": round(100.0 * sum(r["cat_hit"] for r in lead_cat) / lc_n, 1) if lc_n else None,
+            "temp_mae": _stats(_errors(lead_rows, "temp_c"))["mae"],
+            "wind_mae": _stats(_errors(lead_rows, "wind_speed_kt"))["mae"],
+            "cat_hit_rate": _hit_rate(_cat_rows(lead_rows)),
             "n": len([r for r in lead_rows if r["status"] == "verified"]),
         })
 
@@ -513,6 +529,7 @@ async def warning_scoreboard(window_hours: int = 168) -> dict:
     )
 
     def tally(rs):
+        """Contingency-table counts (hits, false alarms, misses, correct negatives) for rows ``rs``."""
         a = b = c = d = 0
         for r in rs:
             f = r["forecast_cat"] in WARN_CATS
@@ -545,6 +562,10 @@ async def warning_scoreboard(window_hours: int = 168) -> dict:
 
 
 async def station_leaderboard(window_hours: int = 168) -> list[dict]:
+    """Per-station temp/wind MAE, category hit rate and combined accuracy, best first.
+
+    Stations with no verified rows in the window are omitted.
+    """
     since = _iso(_now() - timedelta(hours=window_hours))
     rows = await db_execute(
         "SELECT * FROM forecast_verifications WHERE status='verified' AND valid_at>=?",
@@ -555,12 +576,9 @@ async def station_leaderboard(window_hours: int = 168) -> list[dict]:
         srows = [r for r in rows if r["station_id"] == sid]
         if not srows:
             continue
-        temp = _stats([r["signed_error"] for r in srows
-                       if r["variable"] == "temp_c" and r["signed_error"] is not None])
-        wind = _stats([r["signed_error"] for r in srows
-                       if r["variable"] == "wind_speed_kt" and r["signed_error"] is not None])
-        cat = [r for r in srows if r["variable"] == CATEGORICAL and r["cat_hit"] is not None]
-        cat_rate = round(100.0 * sum(r["cat_hit"] for r in cat) / len(cat), 1) if cat else None
+        temp = _stats(_errors(srows, "temp_c"))
+        wind = _stats(_errors(srows, "wind_speed_kt"))
+        cat_rate = _hit_rate(_cat_rows(srows))
         comps = [c for c in (
             _accuracy_pct(temp["mae"], VARIABLES["temp_c"]["good"]),
             _accuracy_pct(wind["mae"], VARIABLES["wind_speed_kt"]["good"]),
@@ -606,9 +624,9 @@ async def station_detail(station_id: str, window_hours: int = 168) -> dict:
         if s["accuracy_pct"] is not None:
             acc_components.append(s["accuracy_pct"])
 
-    cat_rows = [r for r in rows if r["variable"] == CATEGORICAL and r["cat_hit"] is not None]
+    cat_rows = _cat_rows(rows)
     cat_n = len(cat_rows)
-    cat_rate = round(100.0 * sum(r["cat_hit"] for r in cat_rows) / cat_n, 1) if cat_n else None
+    cat_rate = _hit_rate(cat_rows)
     if cat_rate is not None:
         acc_components.append(cat_rate)
     # Confusion summary: how observed conditions were forecast.
@@ -622,14 +640,11 @@ async def station_detail(station_id: str, window_hours: int = 168) -> dict:
     by_lead = []
     for lead in sorted({r["lead_h"] for r in rows}):
         lr = [r for r in rows if r["lead_h"] == lead]
-        t = _stats([r["signed_error"] for r in lr
-                    if r["variable"] == "temp_c" and r["signed_error"] is not None])
-        w = _stats([r["signed_error"] for r in lr
-                    if r["variable"] == "wind_speed_kt" and r["signed_error"] is not None])
-        lc = [r for r in lr if r["variable"] == CATEGORICAL and r["cat_hit"] is not None]
         by_lead.append({
-            "lead_h": lead, "temp_mae": t["mae"], "wind_mae": w["mae"],
-            "cat_hit_rate": round(100.0 * sum(r["cat_hit"] for r in lc) / len(lc), 1) if lc else None,
+            "lead_h": lead,
+            "temp_mae": _stats(_errors(lr, "temp_c"))["mae"],
+            "wind_mae": _stats(_errors(lr, "wind_speed_kt"))["mae"],
+            "cat_hit_rate": _hit_rate(_cat_rows(lr)),
             "n": len(lr),
         })
 
@@ -647,6 +662,7 @@ async def station_detail(station_id: str, window_hours: int = 168) -> dict:
 
 
 async def timeseries(station: str, variable: str, lead_h: int, limit: int = 48) -> dict:
+    """The latest ``limit`` verified forecast/observed pairs for one station, variable and lead, oldest first."""
     rows = await db_execute(
         "SELECT valid_at, forecast_value, observed_value, forecast_cat, observed_cat "
         "FROM forecast_verifications WHERE station_id=? AND variable=? AND lead_h=? "
@@ -740,6 +756,7 @@ async def _backfill_previous_runs_station(sid: str, info: dict, past_days: int =
     inserted = 0
 
     def _val(field, i):
+        """Value of hourly ``field`` at index ``i``, or None if absent."""
         ser = h.get(field, [])
         return ser[i] if i < len(ser) and ser[i] is not None else None
 
@@ -851,6 +868,7 @@ async def _seed() -> int:
 
 
 async def count_rows() -> int:
+    """Total rows in the verification ledger."""
     r = await db_execute("SELECT COUNT(*) AS c FROM forecast_verifications", [])
     return r[0]["c"] if r else 0
 

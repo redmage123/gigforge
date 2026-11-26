@@ -1,8 +1,15 @@
 """BACSWN — Operations briefing generator.
 
-Synthesizes the platform's real data (current conditions, forecast skill,
+What: synthesizes the platform's real data (current conditions, forecast skill,
 climate context, active tropical systems) into a plain-language operations
 briefing for the watch officer.
+
+Why: a watch officer coming on shift needs the situation in one paragraph per
+topic, with recommended actions, rather than a dozen dashboards.
+
+How: ``_gather`` collects the facts (each source optional — a failing source just
+drops its section), ``_compose`` writes the sections deterministically, and
+``_polish_with_llm`` may rephrase the result.
 
 By default the briefing is DETERMINISTIC — composed directly from the data, so
 it is always accurate with zero hallucination risk (the right default for an
@@ -33,6 +40,7 @@ _NASSAU = "MYNN"
 
 
 def _utc_now():
+    """Current time in UTC."""
     return datetime.now(timezone.utc)
 
 
@@ -82,10 +90,13 @@ async def _gather():
 
     # Active tropical systems
     try:
-        from services.hurricane_client import fetch_hurricanes
+        from services.hurricane_client import fetch_hurricanes, saffir_simpson_category
         storms = await fetch_hurricanes()
-        facts["storms"] = [{"name": s.get("name"), "category": s.get("category"),
-                            "wind_kt": s.get("wind_kt")} for s in (storms or [])]
+        # The hurricane feed reports `classification` and `wind_mph`; the category is derived.
+        facts["storms"] = [{"name": s.get("name"), "classification": s.get("classification") or "",
+                            "wind_mph": s.get("wind_mph") or 0,
+                            "category": saffir_simpson_category(s.get("wind_mph") or 0)}
+                           for s in (storms or []) if s.get("name")]
     except Exception:
         facts["storms"] = []
     return facts
@@ -139,12 +150,17 @@ def _compose(facts: dict) -> dict:
 
     # Tropical
     storms = facts.get("storms", [])
-    active = [s for s in storms if s.get("category") and s.get("category") != 0]
-    if active:
-        s = active[0]
+    if storms:
+        # Strongest first; tropical storms (category 0) are still active systems worth reporting.
+        storms = sorted(storms, key=lambda s: (s.get("category") or 0, s.get("wind_mph") or 0), reverse=True)
+        parts = []
+        for s in storms[:3]:
+            kind = f"Cat {s['category']} hurricane" if s.get("category") else (s.get("classification") or "tropical system")
+            parts.append(f"{s['name']} ({kind}, {s.get('wind_mph')} mph)")
+        more = f" and {len(storms) - 3} more" if len(storms) > 3 else ""
         sections.append({
             "title": "Tropical Activity",
-            "body": (f"{s['name']} active (Cat {s['category']}, {s.get('wind_kt')}kt). "
+            "body": (f"Active: {'; '.join(parts)}{more}. "
                      "Review surge zones, shelter status and evacuation routes."),
         })
     else:
@@ -155,7 +171,7 @@ def _compose(facts: dict) -> dict:
     if impacted:
         recs.append(f"Issue/monitor advisories for {', '.join(impacted)}.")
         recs.append("Brief inbound traffic on instrument approaches.")
-    if active:
+    if any(st.get("category") for st in storms):  # hurricane strength, not just a tropical storm
         recs.append("Activate hurricane operations checklist.")
     if not recs:
         recs.append("Routine operations — continue standard monitoring.")
@@ -173,6 +189,7 @@ def _compose(facts: dict) -> dict:
 
 
 def _to_markdown(facts, headline, sections, recs):
+    """Render the briefing as Markdown: title, headline, one bold-titled paragraph per section, actions list."""
     lines = [f"**BACSWN Operations Briefing — {facts['generated_at']}**", "", f"_{headline}_", ""]
     for s in sections:
         lines.append(f"**{s['title']}.** {s['body']}")
@@ -221,6 +238,11 @@ async def _polish_with_llm(text: str) -> tuple[str, bool]:
 
 
 async def generate_briefing(use_llm: bool = True) -> dict:
+    """Build the operations briefing from live data, optionally rephrased by an LLM.
+
+    The deterministic text is always produced first; if ``use_llm`` and an LLM is
+    configured, ``text`` is replaced by the rephrased version and ``llm_used`` is set.
+    """
     facts = await _gather()
     briefing = _compose(facts)
     briefing["llm_used"] = False

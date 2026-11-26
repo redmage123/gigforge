@@ -1,13 +1,33 @@
+/**
+ * MeshLogs: the tabbed data and log tables under the Mesh page map.
+ *
+ * What: stations, storm cells and links (the text equivalent of the map), comms
+ * health, minority reports, consensus votes, message traffic, the warning audit
+ * trail and the event log.
+ *
+ * Why: everything the animated map shows must also be available as text
+ * (WCAG 1.1.1), and presenters need the logs to explain what just happened.
+ *
+ * How: the ARIA tabs pattern (arrow keys, Home, End); one tab panel renders
+ * from the latest /api/mesh/status `data`. Guided tours switch tabs and the
+ * heartbeat filter through the tour bus. Station codes are buttons that
+ * select the station in the precog chamber.
+ */
 import { useEffect, useRef, useState } from 'react'
 import { hz, VERDICT_EXAMPLES } from './PrecogChamber'
 import { useTourEvent } from '../../tour/bus'
 import { CHANNEL_BY_ID, linkState } from '../map/CommsChannels'
 import CommsHealth from './CommsHealth'
 
+/** Simulation time as HH:MMZ. */
 const simClock = (iso) => new Date(iso).toISOString().slice(11, 16) + 'Z'
+/** A weather call in its hazard text colour. */
 const Hz = ({ h }) => <b style={{ color: hz(h) }}>{h}</b>
+/** Minority-report status -> badge colour. */
 const STATUS_BADGE = { OPEN: 'blue', VINDICATED: 'green', DISMISSED: 'grey' }
+/** Peer-verification result -> badge colour. */
 const RESULT_BADGE = { CONFIRMED: 'green', REJECTED: 'red', UNVERIFIED: 'amber' }
+/** Station status wording. */
 const STATUS_TEXT = { healthy: 'Healthy', caution: 'Caution', degraded: 'Degraded', offline: 'Offline' }
 
 /** Station code as a real button (keyboard + screen reader), selecting it in the chamber. */
@@ -17,8 +37,10 @@ const StationBtn = ({ code, onSelect }) => (
     : <span>{code}</span>
 )
 
+/** Visually hidden table caption (the tab name is the visible title). */
 const Caption = ({ children }) => <caption className="sr-only">{children}</caption>
 
+/** Every station: status, verdict, agreement, route to the hub, queue and faults. */
 function Stations({ nodes, onSelect }) {
   return (
     <table>
@@ -46,6 +68,7 @@ function Stations({ nodes, onSelect }) {
   )
 }
 
+/** Storm cells and fog banks on the map. */
 function Cells({ cells }) {
   if (!cells.length) return <p className="dim" style={{ padding: 12 }}>No storm cells or fog banks in the region.</p>
   return (
@@ -68,7 +91,9 @@ function Cells({ cells }) {
   )
 }
 
+/** Every link: channel in use, backups, state, distance, latency and traffic. */
 function Links({ links }) {
+  /** Channel label for an id. */
   const name = (id) => CHANNEL_BY_ID[id]?.label || id
   return (
     <table>
@@ -94,6 +119,7 @@ function Links({ links }) {
   )
 }
 
+/** How many minority reports are held still for a walkthrough. */
 export const PINNED_REPORTS = 5
 
 /**
@@ -101,6 +127,8 @@ export const PINNED_REPORTS = 5
  * it fills up to the newest PINNED_REPORTS, then keeps those same reports (their
  * outcomes still update) until the presenter asks for the latest. `live` shows the
  * full, constantly updating list instead.
+ * @param {object[]} rows minority reports from the server, newest first (at most 40)
+ * @returns {{shown: object[], newer: number, live: boolean, setLive: (v: boolean) => void, showLatest: () => void}}
  */
 export function usePinnedReports(rows) {
   const [pins, setPins] = useState([])
@@ -122,10 +150,12 @@ export function usePinnedReports(rows) {
   const shown = shownIds.map(id => known.current[id]).filter(Boolean)
     .sort((a, b) => (b.tick ?? 0) - (a.tick ?? 0))
   const newer = live ? 0 : rows.filter(r => !want.includes(r.id) && (r.tick ?? 0) > Math.max(...shown.map(x => x.tick ?? 0), -1)).length
+  /** Re-pin the newest PINNED_REPORTS reports. */
   const showLatest = () => setPins(rows.slice(0, PINNED_REPORTS).map(r => r.id))
   return { shown, newer, live, setLive, showLatest }
 }
 
+/** Minority-report table with the hold-still / live controls (state from usePinnedReports). */
 function MinorityReports({ pinned, onSelect }) {
   const { shown: rows, newer, live, setLive, showLatest } = pinned
   const controls = (
@@ -165,6 +195,7 @@ function MinorityReports({ pinned, onSelect }) {
   )
 }
 
+/** Peer-verification votes: each peer's (and the satellite's) vote and reason, and the result. */
 function Consensus({ rows, onSelect }) {
   if (!rows.length) return <p className="dim" style={{ padding: 12 }}>No peer verifications yet.</p>
   return (
@@ -193,6 +224,7 @@ function Consensus({ rows, onSelect }) {
   )
 }
 
+/** Recent mesh messages, with an option (also driven by tours) to hide heartbeats. */
 function Traffic({ rows }) {
   // Heartbeats (keepalives) arrive constantly; hiding them leaves alerts, votes and tickets.
   const [beats, setBeats] = useState(true)
@@ -222,6 +254,7 @@ function Traffic({ rows }) {
   )
 }
 
+/** Audit trail of storm warnings passed from station to station. */
 function Propagation({ rows, onSelect }) {
   if (!rows.length) return <p className="dim" style={{ padding: 12 }}>No entries in the audit trail: no storm warnings are being passed between stations.</p>
   return (
@@ -243,6 +276,7 @@ function Propagation({ rows, onSelect }) {
   )
 }
 
+/** Network event log. */
 function Events({ rows, onSelect }) {
   if (!rows.length) return <p className="dim" style={{ padding: 12 }}>No events yet.</p>
   return (
@@ -263,7 +297,10 @@ function Events({ rows, onSelect }) {
   )
 }
 
-/** Tabbed logs (ARIA tabs pattern). The first three tabs are the text equivalent of the map. */
+/**
+ * Tabbed logs (ARIA tabs pattern). The first three tabs are the text equivalent of the map.
+ * @param {{data: object, onSelect: (station: string) => void}} props `data`: mesh status
+ */
 export default function MeshLogs({ data, onSelect }) {
   const [tab, setTab] = useState('stations')
   // Kept here so switching tabs does not reshuffle the reports being walked through.
@@ -282,6 +319,7 @@ export default function MeshLogs({ data, onSelect }) {
     ['events', 'Event Log', 0],
   ]
   const countLabel = { health: 'problems', cells: 'cells', links: 'links down', minority: 'open', propagation: 'active' }
+  /** Arrow keys / Home / End move between tabs (wrapping) and focus the new tab. */
   const onKeyDown = (e) => {
     const i = tabs.findIndex(t => t[0] === tab)
     const next = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: tabs.length - 1 }[e.key]

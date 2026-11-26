@@ -27,6 +27,17 @@ Statement unit fields (JSON objects in "units", or CSV columns):
   corresponding_adjustment                    yes/no
   cancelled_for, cancelled_by, cancellation_ref, cancelled_on
   project_id, project_name
+
+Why: CORSIA only counts units that the host country has authorised, adjusted
+for and that were cancelled by the claiming operator; the registry is the
+authority on that, so a claim the register cannot match against it should be
+flagged rather than taken on the operator's word.
+
+How: statements are parsed and validated row by row (``RegistryError`` names
+the row), stored with their SHA-256 so the same file cannot be imported twice,
+and ``check_claims`` compares claims with the units of the latest statement and
+with the letters of authorisation on file, returning issues that
+services/carbon_oversight.py turns into findings.
 """
 
 from __future__ import annotations
@@ -38,6 +49,7 @@ import json
 from datetime import date, datetime, timezone
 
 from services.database import get_db
+from services.errors import BacswnValidationError
 
 REGISTRY_NAME = "Bahamas National Emissions Registry"
 STATUSES = {"ISSUED", "TRANSFERRED", "CANCELLED", "RETIRED", "SUSPENDED"}
@@ -51,12 +63,11 @@ _TRUE = {"yes", "y", "true", "1", "applied"}
 _FALSE = {"no", "n", "false", "0", "", "not applied"}
 
 
-class RegistryError(ValueError):
-    """Validation failure; the message is safe to show to the user."""
+class RegistryError(BacswnValidationError):
+    """A registry statement or authorisation was refused; the message is safe to show to the user.
 
-    def __init__(self, message: str, status: int = 400):
-        super().__init__(message)
-        self.status = status
+    HTTP 400 by default; a statement that was already imported passes ``status=409``.
+    """
 
 
 def is_ner(registry: str | None) -> bool:
@@ -66,10 +77,16 @@ def is_ner(registry: str | None) -> bool:
 
 
 def _where(row: int | None) -> str:
+    """Message prefix naming the statement row ("Row 3: "), or "" when there is no row."""
     return f"Row {row}: " if row else ""
 
 
 def _str(v, field: str, row: int, max_len: int = 120) -> str:
+    """Stripped text field of at most ``max_len`` characters (``row`` 0 = not from a statement row).
+
+    Raises:
+        RegistryError: too long.
+    """
     s = "" if v is None else str(v).strip()
     if len(s) > max_len:
         raise RegistryError(f"{_where(row)}{field} must be at most {max_len} characters")
@@ -77,6 +94,11 @@ def _str(v, field: str, row: int, max_len: int = 120) -> str:
 
 
 def _int(v, field: str, row: int, lo: int = 0, hi: int = 10**15) -> int:
+    """Required whole number in ``lo``..``hi`` from a statement row.
+
+    Raises:
+        RegistryError: missing, not a whole number, or out of range.
+    """
     try:
         n = int(str(v).strip())
     except (TypeError, ValueError):
@@ -87,6 +109,11 @@ def _int(v, field: str, row: int, lo: int = 0, hi: int = 10**15) -> int:
 
 
 def _bool(v, field: str, row: int) -> bool:
+    """Yes/no field, accepting booleans and the spellings in ``_TRUE`` / ``_FALSE`` (blank is no).
+
+    Raises:
+        RegistryError: any other value.
+    """
     if isinstance(v, bool):
         return v
     s = "" if v is None else str(v).strip().lower()
@@ -98,8 +125,13 @@ def _bool(v, field: str, row: int) -> bool:
 
 
 def _date(v, field: str, row: int | None = None, required: bool = False) -> str:
+    """ISO date (first 10 characters, YYYY-MM-DD) not in the future; "" when blank and not required.
+
+    Raises:
+        RegistryError: missing when required, not a date, or in the future.
+    """
     s = "" if v is None else str(v).strip()
-    where = f"Row {row}: " if row else ""
+    where = _where(row)
     if not s:
         if required:
             raise RegistryError(f"{where}{field} is required")
@@ -114,11 +146,17 @@ def _date(v, field: str, row: int | None = None, required: bool = False) -> str:
 
 
 def _uses(v) -> str:
+    """Normalise authorised uses (a list, or text split on ; or ,) to sorted upper-case codes joined by ";"."""
     items = v if isinstance(v, list) else str(v or "").replace(",", ";").split(";")
     return ";".join(sorted({str(i).strip().upper() for i in items if str(i).strip()}))
 
 
 def _unit(raw: dict, row: int) -> dict:
+    """Validate one statement row into a unit dict with the ``COLUMNS`` fields.
+
+    Raises:
+        RegistryError: naming the row, for any invalid or inconsistent field.
+    """
     if not isinstance(raw, dict):
         raise RegistryError(f"Row {row}: each unit must be an object")
     u = {
@@ -191,9 +229,17 @@ def parse_statement(content: str, fmt: str) -> tuple[dict, list[dict]]:
 
 
 async def import_statement(data: dict, user: str) -> dict:
+    """Validate and store a registry statement; it becomes the latest if its "as of" date is the newest.
+
+    The request's ``as_of`` / ``reference`` override those in a JSON statement.
+
+    Raises:
+        RegistryError: invalid statement or fields, or (409) the same file was already imported.
+    """
     fmt = str(data.get("format") or "").lower()
     content = data.get("content")
     meta, units = parse_statement(content, fmt)
+    units_total = sum(u["serial_end"] - u["serial_start"] + 1 for u in units)
     as_of = _date(data.get("as_of") or meta.get("as_of"), "Statement date (as of)", required=True)
     reference = _str(data.get("reference") or meta.get("reference"), "Statement reference", 0)
     source_note = _str(data.get("source_note"), "Source note", 0, 500)
@@ -204,21 +250,21 @@ async def import_statement(data: dict, user: str) -> dict:
         cur = await db.execute(
             "INSERT INTO ner_statements (as_of, reference, source_format, sha256, unit_rows, units_total, imported_by,"
             " source_note) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            [as_of, reference, fmt, digest, len(units), sum(u["serial_end"] - u["serial_start"] + 1 for u in units),
-             user, source_note])
+            [as_of, reference, fmt, digest, len(units), units_total, user, source_note])
         sid = cur.lastrowid
         await db.executemany(
             f"INSERT INTO ner_units (statement_id, {', '.join(COLUMNS)}) VALUES (?{', ?' * len(COLUMNS)})",
             [[sid] + [int(u[c]) if c == "corresponding_adjustment" else u[c] for c in COLUMNS] for u in units])
         await db.commit()
     return {"id": sid, "as_of": as_of, "reference": reference, "unit_rows": len(units),
-            "units_total": sum(u["serial_end"] - u["serial_start"] + 1 for u in units)}
+            "units_total": units_total}
 
 
 _STATEMENT_COLS = "id, as_of, reference, source_format, unit_rows, units_total, imported_by, source_note, created_at"
 
 
 async def statements() -> list[dict]:
+    """Every imported statement (metadata only), newest "as of" first."""
     async with get_db() as db:
         rows = await (await db.execute(
             f"SELECT {_STATEMENT_COLS} FROM ner_statements ORDER BY as_of DESC, id DESC")).fetchall()
@@ -226,12 +272,14 @@ async def statements() -> list[dict]:
 
 
 async def latest_statement(db) -> dict | None:
+    """Metadata of the statement claims are checked against (latest "as of", then latest import), or None."""
     row = await (await db.execute(
         f"SELECT {_STATEMENT_COLS} FROM ner_statements ORDER BY as_of DESC, id DESC LIMIT 1")).fetchone()
     return dict(row) if row else None
 
 
 async def status() -> dict:
+    """Connection status for the registry page: statement count, the latest statement and a summary of its units."""
     async with get_db() as db:
         latest = await latest_statement(db)
         summary = None
@@ -259,6 +307,7 @@ async def status() -> dict:
 
 
 def template_csv() -> str:
+    """A CSV statement template: the header row and one example row."""
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(COLUMNS)
@@ -270,6 +319,11 @@ def template_csv() -> str:
 # ── letters of authorisation ───────────────────────────────────────────────
 
 def _opt_int(v, field: str, lo: int, hi: int) -> int | None:
+    """Optional whole number in ``lo``..``hi``; None when blank.
+
+    Raises:
+        RegistryError: not a whole number, or out of range.
+    """
     if v is None or str(v).strip() == "":
         return None
     try:
@@ -282,6 +336,11 @@ def _opt_int(v, field: str, lo: int, hi: int) -> int | None:
 
 
 def _blocks(v) -> str:
+    """Normalise serial blocks (a list, or text split on ; or ,) to a sorted, de-duplicated ";"-joined string.
+
+    Raises:
+        RegistryError: more than 100 blocks, or a block longer than 200 characters.
+    """
     items = v if isinstance(v, list) else str(v or "").replace(",", ";").split(";")
     out = sorted({str(i).strip() for i in items if str(i).strip()})
     if any(len(b) > 200 for b in out) or len(out) > 100:
@@ -290,7 +349,11 @@ def _blocks(v) -> str:
 
 
 async def add_authorisation(data: dict, user: str) -> dict:
-    """Record a letter of authorisation (append-only; a revision is a new row with the same reference)."""
+    """Record a letter of authorisation (append-only; a revision is a new row with the same reference).
+
+    Raises:
+        RegistryError: missing reference or issue date, or invalid fields.
+    """
     reference = _str(data.get("reference"), "Reference", 0)
     if not reference:
         raise RegistryError("Reference is required")
@@ -321,16 +384,24 @@ async def _latest_authorisations(db) -> dict[str, dict]:
     return {r["reference"].strip().lower(): dict(r) for r in rows}
 
 
+async def _units_per_authorisation(db, statement_id: int) -> dict[str, int]:
+    """Units in a statement per cited authorisation reference (lower-cased, trimmed key)."""
+    rows = await (await db.execute(
+        "SELECT lower(trim(authorisation_ref)) AS ref, SUM(serial_end - serial_start + 1) AS n FROM ner_units"
+        " WHERE statement_id = ? GROUP BY lower(trim(authorisation_ref))", [statement_id])).fetchall()
+    return {r["ref"]: r["n"] for r in rows}
+
+
 async def authorisations() -> list[dict]:
+    """The latest revision of each letter on file, newest issue date first.
+
+    Each carries the number of units the latest statement holds under it and
+    whether that exceeds the letter's maximum quantity.
+    """
     async with get_db() as db:
         latest = await _latest_authorisations(db)
-        counts = {}
         st = await latest_statement(db)
-        if st:
-            for r in await (await db.execute(
-                    "SELECT lower(trim(authorisation_ref)) AS ref, SUM(serial_end - serial_start + 1) AS n FROM ner_units"
-                    " WHERE statement_id = ? GROUP BY lower(trim(authorisation_ref))", [st["id"]])).fetchall():
-                counts[r["ref"]] = r["n"]
+        counts = await _units_per_authorisation(db, st["id"]) if st else {}
     out = []
     for key, a in sorted(latest.items(), key=lambda kv: kv[1]["issue_date"], reverse=True):
         a["units_in_registry"] = counts.get(key, 0)
@@ -348,6 +419,7 @@ _SEVERITY = {"NER_NO_STATEMENT": "medium", "NER_STATEMENT_OLDER": "medium", "NER
 
 
 def severity(kind: str) -> str:
+    """Severity (high / medium / low) of an NER issue kind."""
     return _SEVERITY[kind]
 
 
@@ -370,10 +442,7 @@ async def check_claims(claims: list[dict]) -> dict[int, dict]:
             units = [dict(r) for r in await (await db.execute(
                 f"SELECT * FROM ner_units WHERE statement_id = ? AND lower(trim(serial_block)) IN ({marks})",
                 [latest["id"], *blocks])).fetchall()]
-            for r in await (await db.execute(
-                    "SELECT lower(trim(authorisation_ref)) AS ref, SUM(serial_end - serial_start + 1) AS n FROM ner_units"
-                    " WHERE statement_id = ? GROUP BY lower(trim(authorisation_ref))", [latest["id"]])).fetchall():
-                ref_totals[r["ref"]] = r["n"]
+            ref_totals = await _units_per_authorisation(db, latest["id"])
         auths = await _latest_authorisations(db)
     out: dict[int, dict] = {}
     for c in mine:
@@ -403,10 +472,17 @@ def _check_authorisation(u: dict, s: str, auths: dict[str, dict], ref_totals: di
 
 def _check(c: dict, latest: dict | None, units: list[dict], auths: dict[str, dict] | None = None,
            ref_totals: dict[str, int] | None = None) -> dict:
+    """Check one NER claim against the latest statement's units (see ``check_claims`` for the result shape).
+
+    Args:
+        c: the claim; latest: latest statement metadata or None; units: statement rows in the
+        claim's serial blocks; auths: letters on file by reference; ref_totals: units per letter.
+    """
     res = {"result": "MATCHED", "as_of": latest and latest["as_of"], "statement_id": latest and latest["id"],
            "issues": []}
 
     def issue(kind, message):
+        """Add an issue, keeping only the first message of each kind."""
         if not any(i["kind"] == kind for i in res["issues"]):
             res["issues"].append({"kind": kind, "message": message})
 

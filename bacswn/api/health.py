@@ -1,4 +1,14 @@
-"""BACSWN — Health check API router."""
+"""BACSWN — health check API router.
+
+What: ``GET /health/`` returns service status, cache size, WebSocket connections per
+channel and each agent's status.
+
+Why: a public, unauthenticated probe for load balancers, uptime monitors and the
+deploy scripts.
+
+How: reads in-memory state only (no database or upstream calls), so it stays fast and
+answers even when external feeds are down.
+"""
 
 from fastapi import APIRouter
 from datetime import datetime, timezone
@@ -11,7 +21,7 @@ router = APIRouter()
 
 @router.get("/")
 async def health_check():
-    """System health check."""
+    """Report liveness plus cache, WebSocket and agent status."""
     return {
         "status": "healthy",
         "service": "BACSWN SkyWatch Bahamas",

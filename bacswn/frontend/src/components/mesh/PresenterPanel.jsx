@@ -1,3 +1,11 @@
+/**
+ * PresenterPanel: "show it now" controls in the precog chamber (Mesh page).
+ *
+ * Why: in a live demo the weather rarely produces the state the presenter wants
+ * to explain; this stages it on demand using the real voting logic.
+ * How: the chosen verdict, outcome (and dissenting model) go to the parent's
+ * onPresent, which posts them to /api/mesh/present.
+ */
 import { useState } from 'react'
 
 /**
@@ -6,6 +14,7 @@ import { useState } from 'react'
  * server parks matching weather over the station (or overrides a model) and the
  * normal 2-of-3 and peer-verification logic does the rest.
  */
+/** Weather verdicts a presenter can stage. */
 export const VERDICTS = [
   { id: 'CLEAR', label: 'Clear' },
   { id: 'SHOWERS', label: 'Showers' },
@@ -13,6 +22,10 @@ export const VERDICTS = [
   { id: 'TSRA', label: 'Thunderstorm (TSRA)' },
   { id: 'SQUALL', label: 'Squall line' },
 ]
+/**
+ * Voting outcomes a presenter can stage. `clear`: allowed with the Clear verdict;
+ * `model`: needs a dissenting model to be chosen; `help`: what will happen.
+ */
 export const OUTCOMES = [
   { id: 'agree', label: 'All three models agree', clear: true,
     help: 'Real weather of this type is parked over the station; TEMPO, VISTA and LEXIS all see it (3/3).' },
@@ -26,6 +39,11 @@ export const OUTCOMES = [
     help: "Only the station's own sensors report it; neighbours see nothing, so it is REJECTED and maintenance is flagged." },
 ]
 
+/**
+ * Verdict / outcome / model pickers and the "Show it at <station>" button.
+ * @param {{node: object, busy: boolean, onPresent: (request: object) => void}} props
+ *   `node`: the selected station (its precogs list the models)
+ */
 export default function PresenterPanel({ node, busy, onPresent }) {
   const [call, setCall] = useState('TSRA')
   const [outcome, setOutcome] = useState('agree')

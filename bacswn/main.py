@@ -1,9 +1,17 @@
-"""BACSWN SkyWatch Bahamas — FastAPI Application Entry Point.
+"""BACSWN SkyWatch Bahamas — FastAPI application entry point.
 
-NextGEN Meteorological Watch Office, Flight Tracking,
-Carbon Emissions Platform & Emergency Response Coordination.
+What: builds the ``app`` served by uvicorn: middleware, the ``BacswnError`` handler,
+every API router, the static/React SPA catch-all, and the startup/shutdown lifespan.
 
-Built by AI Elevate for the Bahamas Aviation, Climate and Severe Weather Network.
+Why: SkyWatch (meteorological watch office, flight tracking, CORSIA carbon oversight
+and emergency coordination for the Bahamas Aviation, Climate and Severe Weather
+Network) is one process; this module is the single place that wires its parts together.
+
+How: ``lifespan`` initialises and seeds the database, ensures an admin user, starts the
+periodic agents, registers the forecast-verification jobs (not under ``TESTING``) and
+starts the WebSocket broadcast and FIR observation loops; on shutdown it closes the
+shared httpx clients. Background loops use ``services.scheduler.run_forever`` so a
+failing cycle is logged and the loop keeps going.
 """
 
 import asyncio
@@ -12,15 +20,16 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 from config import HOST, PORT, DATA_DIR
 from services.database import init_db, seed_demo_data
 from services.auth import ensure_default_admin
 from services.agent_orchestrator import orchestrator
 from services.websocket_manager import ws_manager
+from services.scheduler import run_forever
 from middleware.auth import AuthMiddleware
 from middleware.rate_limiter import RateLimiter
 from middleware.request_logger import RequestLogger
@@ -50,6 +59,7 @@ from api.simulation import router as simulation_router
 from api.carbon_oversight import router as carbon_oversight_router
 from api.verification import router as verification_router
 from api.climatology import router as climatology_router
+from services.errors import BacswnError
 
 # ── Logging ─────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -65,7 +75,7 @@ REACT_DIR = Path(__file__).parent / "static" / "react"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application startup and shutdown lifecycle."""
+    """Start BACSWN's database, agents and background loops; close HTTP clients on shutdown."""
     logger.info("=" * 60)
     logger.info("  BACSWN SkyWatch Bahamas — Starting Up")
     logger.info("  Bahamas Aviation, Climate & Severe Weather Network")
@@ -99,6 +109,10 @@ async def lifespan(app: FastAPI):
         from services import climatology as cl
 
         async def _seed_verification():
+            """Seed verification data, train or load correctors and build climate normals.
+
+            Runs once in the background; any failure is logged so startup never fails.
+            """
             try:
                 await fv.ensure_seeded()
                 # Train bias-correction models once data exists (also refreshes the
@@ -125,6 +139,7 @@ async def lifespan(app: FastAPI):
 
     # ── WebSocket broadcast tasks ───────────────────────────────────────
     async def _broadcast_flights():
+        """Push the current FIR flight list to ``flights`` WebSocket subscribers."""
         from services.opensky_client import fetch_flights
         from datetime import datetime, timezone
         flights = await fetch_flights()
@@ -136,6 +151,7 @@ async def lifespan(app: FastAPI):
         })
 
     async def _broadcast_weather():
+        """Push freshly parsed METARs to ``weather`` WebSocket subscribers."""
         from services.awc_client import fetch_metars, parse_metar
         from datetime import datetime, timezone
         raw = await fetch_metars()
@@ -147,37 +163,23 @@ async def lifespan(app: FastAPI):
             "timestamp": datetime.now(timezone.utc).isoformat(),
         })
 
-    async def _ws_flights_loop():
-        while True:
-            try:
-                await _broadcast_flights()
-            except Exception as e:
-                logger.error(f"WS flights broadcast error: {e}")
-            await asyncio.sleep(5)
+    # BACSWN's own per-airline FIR sightings: independent evidence for the
+    # CORSIA oversight register's cross-check of operators' reports.
+    from services.opensky_client import fetch_flights
+    from services.carbon_oversight import record_observations, OBSERVE_INTERVAL
 
-    async def _ws_weather_loop():
-        while True:
-            try:
-                await _broadcast_weather()
-            except Exception as e:
-                logger.error(f"WS weather broadcast error: {e}")
-            await asyncio.sleep(30)
+    async def _record_fir_observations():
+        """Record one round of FIR sightings for the CORSIA oversight cross-check."""
+        await record_observations(await fetch_flights())
 
-    async def _fir_observation_loop():
-        # BACSWN's own per-airline FIR sightings: independent evidence for the
-        # CORSIA oversight register's cross-check of operators' reports.
-        from services.opensky_client import fetch_flights
-        from services.carbon_oversight import record_observations, OBSERVE_INTERVAL
-        while True:
-            try:
-                await record_observations(await fetch_flights())
-            except Exception as e:
-                logger.error(f"FIR observation error: {e}")
-            await asyncio.sleep(OBSERVE_INTERVAL.total_seconds())
-
-    asyncio.create_task(_ws_flights_loop())
-    asyncio.create_task(_ws_weather_loop())
-    asyncio.create_task(_fir_observation_loop())
+    # Not paused with the demo: broadcasts already go quiet while paused (ws_manager),
+    # and FIR sightings are real-world evidence that must keep accumulating.
+    asyncio.create_task(run_forever(_broadcast_flights, 5, "WS flights broadcast error",
+                                    skip_when_paused=False, log=logger))
+    asyncio.create_task(run_forever(_broadcast_weather, 30, "WS weather broadcast error",
+                                    skip_when_paused=False, log=logger))
+    asyncio.create_task(run_forever(_record_fir_observations, OBSERVE_INTERVAL.total_seconds(),
+                                    "FIR observation error", skip_when_paused=False, log=logger))
     logger.info("WebSocket broadcast tasks started (flights: 5s, weather: 30s)")
 
     logger.info(f"Server ready at http://{HOST}:{PORT}")
@@ -207,6 +209,17 @@ app = FastAPI(
 app.add_middleware(RequestLogger)
 app.add_middleware(AuthMiddleware)
 app.add_middleware(RateLimiter, max_requests=200, window_seconds=60)
+
+
+# ── Errors: any BacswnError becomes a JSON response with its own status ─
+@app.exception_handler(BacswnError)
+async def bacswn_error_handler(request: Request, exc: BacswnError) -> JSONResponse:
+    """Render a BACSWN error as ``{"error", "detail"}`` JSON with the error's HTTP status.
+
+    Both keys carry the same user-safe message: the frontend reads ``error`` and
+    FastAPI clients conventionally read ``detail``.
+    """
+    return JSONResponse(status_code=exc.status, content={"error": exc.message, "detail": exc.message})
 
 # ── Static files ────────────────────────────────────────────────────────
 STATIC_DIR = Path(__file__).parent / "static"
@@ -244,7 +257,10 @@ app.include_router(climatology_router, prefix="/api/climatology", tags=["climato
 # ── React SPA catch-all ─────────────────────────────────────────────────
 @app.get("/{full_path:path}")
 async def serve_react(full_path: str):
-    """Serve React SPA — try file first, then fallback to index.html."""
+    """Serve the built React SPA: the requested file if it exists, else ``index.html``.
+
+    Without a build, returns a small JSON pointer to the API docs and the dev server.
+    """
     if REACT_DIR.exists():
         root = REACT_DIR.resolve()
         file_path = (root / full_path).resolve()

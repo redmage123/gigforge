@@ -1,7 +1,16 @@
 """BACSWN — Aviation Weather Center (AWC) API client.
 
-Fetches METAR, TAF, SIGMET, and PIREP data from aviationweather.gov.
-Falls back to simulated observations when the API is unavailable.
+What: fetches METARs, TAFs and SIGMETs/AIRMETs from aviationweather.gov and
+normalises METAR JSON into the field names the rest of BACSWN uses.
+
+Why: AWC is the authoritative public source of aviation observations for the
+Bahamas stations; every weather page, the verification ledger and the briefing
+read through this module.
+
+How: one shared ``httpx.AsyncClient``; results are cached in ``services.cache``
+for the configured TTLs. Fetch functions never raise: on any upstream failure
+METARs fall back to deterministic simulated observations (so the map always has
+data) and TAFs/SIGMETs fall back to an empty list.
 """
 
 import logging
@@ -39,7 +48,12 @@ _SIM_METAR_BASE = {
 
 
 def _generate_simulated_metars(stations: list[str]) -> list[dict]:
-    """Generate realistic simulated METARs for demo / offline mode."""
+    """Generate realistic simulated METARs for demo / offline mode.
+
+    Values vary around ``_SIM_METAR_BASE`` with a seed fixed per station per
+    30-minute cycle, so repeated calls within a cycle agree. Stations without a
+    baseline are skipped.
+    """
     t = time.time()
     cycle = int(t // 1800) % 24   # changes every 30 min to simulate obs cycle
     results = []
@@ -92,8 +106,24 @@ def _generate_simulated_metars(stations: list[str]) -> list[dict]:
     return results
 
 
+async def _get_json_list(url: str, params: dict) -> list[dict]:
+    """GET an AWC endpoint and return its JSON body if it is a list, else ``[]``.
+
+    Raises:
+        httpx.HTTPError: transport failure or non-2xx status (callers catch and fall back).
+        ValueError: the body is not valid JSON.
+    """
+    resp = await _client.get(url, params=params)
+    resp.raise_for_status()
+    data = resp.json()
+    return data if isinstance(data, list) else []
+
+
 async def fetch_metars(stations: list[str] | None = None) -> list[dict]:
-    """Fetch current METARs for Bahamas stations."""
+    """Current METARs (raw AWC JSON) for ``stations`` (default: all Bahamas stations).
+
+    Never raises: falls back to simulated METARs when AWC is unreachable.
+    """
     stations = stations or BAHAMAS_STATIONS
     cache_key = f"metars:{'|'.join(stations)}"
     cached = cache.get(cache_key)
@@ -102,15 +132,12 @@ async def fetch_metars(stations: list[str] | None = None) -> list[dict]:
 
     ids = ",".join(stations)
     try:
-        resp = await _client.get(AWC_METAR_URL, params={
+        results = await _get_json_list(AWC_METAR_URL, {
             "ids": ids,
             "format": "json",
             "taf": "false",
             "hours": 2,
         })
-        resp.raise_for_status()
-        data = resp.json()
-        results = data if isinstance(data, list) else []
         cache.set(cache_key, results, CACHE_TTL_METAR)
         logger.info(f"Fetched {len(results)} METARs")
         return results
@@ -125,7 +152,7 @@ async def fetch_metars(stations: list[str] | None = None) -> list[dict]:
 
 
 async def fetch_tafs(stations: list[str] | None = None) -> list[dict]:
-    """Fetch current TAFs for Bahamas stations."""
+    """Current TAFs (raw AWC JSON) for ``stations``; ``[]`` if AWC is unreachable."""
     stations = stations or BAHAMAS_STATIONS
     cache_key = f"tafs:{'|'.join(stations)}"
     cached = cache.get(cache_key)
@@ -134,13 +161,10 @@ async def fetch_tafs(stations: list[str] | None = None) -> list[dict]:
 
     ids = ",".join(stations)
     try:
-        resp = await _client.get(AWC_TAF_URL, params={
+        results = await _get_json_list(AWC_TAF_URL, {
             "ids": ids,
             "format": "json",
         })
-        resp.raise_for_status()
-        data = resp.json()
-        results = data if isinstance(data, list) else []
         cache.set(cache_key, results, CACHE_TTL_TAF)
         logger.info(f"Fetched {len(results)} TAFs")
         return results
@@ -150,19 +174,16 @@ async def fetch_tafs(stations: list[str] | None = None) -> list[dict]:
 
 
 async def fetch_sigmets() -> list[dict]:
-    """Fetch active SIGMETs/AIRMETs for the Bahamas region."""
+    """Active SIGMETs/AIRMETs from AWC (all hazards); ``[]`` if AWC is unreachable."""
     cached = cache.get("sigmets")
     if cached is not None:
         return cached
 
     try:
-        resp = await _client.get(AWC_SIGMET_URL, params={
+        results = await _get_json_list(AWC_SIGMET_URL, {
             "format": "json",
             "hazard": "all",
         })
-        resp.raise_for_status()
-        data = resp.json()
-        results = data if isinstance(data, list) else []
         cache.set("sigmets", results, CACHE_TTL_METAR)
         return results
     except Exception as e:

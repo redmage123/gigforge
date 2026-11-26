@@ -2,11 +2,21 @@
  * Text equivalent of everything on the Command Center map (WCAG 1.1.1): stations,
  * aircraft, SIGMETs and cyclones as accessible tables. Useful for screen-reader,
  * magnifier and keyboard users, and for anyone who wants exact values.
+ *
+ * How: a collapsed <details> so it costs sighted users no space; it renders
+ * the same arrays the map is drawn from (comms links already filtered as on
+ * the map). Units are converted for aviation use (ft, kt, fpm).
  */
+import { CHANNEL_BY_ID } from '../map/CommsChannels'
+
+/** Flight-category wording for the table. */
 const CATEGORY_TEXT = { VFR: 'VFR', MVFR: 'Marginal VFR', IFR: 'IFR', LIFR: 'Low IFR' }
 
-const LINK_TYPE = { wired: 'Wired line', vhf: 'VHF radio', cellular: 'Cellular', satellite: 'Satellite' }
-
+/**
+ * The map's data as tables.
+ * @param {{stations: object[], flights: object[], sigmets: object[], hurricanes: object[], links?: object[]}} props
+ *   `flights` in OpenSky units (m, m/s); `links` as filtered on the map
+ */
 export default function SituationTables({ stations, flights, sigmets, hurricanes, links = [] }) {
   const sortedFlights = [...flights].sort((a, b) => (a.callsign || a.icao24).localeCompare(b.callsign || b.icao24))
   return (
@@ -93,7 +103,7 @@ export default function SituationTables({ stations, flights, sigmets, hurricanes
               {[...links].sort((a, b) => (a.up - b.up) || (a.a + a.b).localeCompare(b.a + b.b)).map(l => (
                 <tr key={l.a + l.b}>
                   <th scope="row">{l.a}–{l.b}</th>
-                  <td>{LINK_TYPE[l.type] || l.type}</td>
+                  <td>{CHANNEL_BY_ID[l.type]?.label || l.type}</td>
                   <td>{l.up ? 'Up' : 'Down'}</td>
                   <td>{l.distance_nm} nm</td>
                   <td>{l.latency_ms} ms</td>

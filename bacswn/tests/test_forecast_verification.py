@@ -385,3 +385,35 @@ class TestBriefingCompose:
         b = br._compose(facts)
         assert "MYNN" in b["headline"]
         assert any("MYNN" in r for r in b["recommendations"])
+
+
+class TestBriefingTropical:
+    """The Tropical Activity section reads the hurricane feed's real fields (classification, wind_mph)."""
+
+    def _facts(self, storms):
+        """Minimal briefing facts with the given storms."""
+        return {"generated_at": "2026-09-01 12:00Z", "reporting": 1,
+                "cats": {"VFR": ["MYNN"], "MVFR": [], "IFR": [], "LIFR": []},
+                "impacted": [], "skill": {}, "climo": None, "storms": storms}
+
+    def test_active_hurricane_is_reported(self):
+        """A Cat 4 storm is named with its category and wind speed."""
+        from services import briefing as br
+        from services.hurricane_client import saffir_simpson_category
+        storm = {"name": "Hurricane Test", "classification": "Hurricane", "wind_mph": 140,
+                 "category": saffir_simpson_category(140)}
+        body = next(s["body"] for s in br._compose(self._facts([storm]))["sections"] if s["title"] == "Tropical Activity")
+        assert "Hurricane Test" in body and "Cat 4" in body and "140 mph" in body
+
+    def test_tropical_storm_is_reported_not_hidden(self):
+        """Below hurricane strength the classification is shown instead of a category."""
+        from services import briefing as br
+        storm = {"name": "Tropical Storm Test", "classification": "Tropical Storm", "wind_mph": 60, "category": 0}
+        body = next(s["body"] for s in br._compose(self._facts([storm]))["sections"] if s["title"] == "Tropical Activity")
+        assert "Tropical Storm Test" in body and "No active" not in body
+
+    def test_no_storms(self):
+        """With no storms the section says so."""
+        from services import briefing as br
+        body = next(s["body"] for s in br._compose(self._facts([]))["sections"] if s["title"] == "Tropical Activity")
+        assert body.startswith("No active tropical systems")

@@ -1,3 +1,17 @@
+/**
+ * Flight Operations page.
+ *
+ * What: live air picture of the Bahamas FIR: an animated canvas of aircraft over a
+ * satellite map, emergency-squawk alerts, category/country/altitude breakdowns, an
+ * Active Flights table with "weather ahead" from the mesh, and a details dialog.
+ * Why: gives forecasters and ATC liaison a single view of who is in the airspace, who
+ * is in trouble, and who is about to fly into hazardous weather.
+ * How: polls `api.liveFlights()` and `api.meshAirspace()` every 10 s, and
+ * `api.flightStats()` and `api.mapLayers()` (FIR polygon) every 30 s. FlightCanvas draws
+ * pointer-only aircraft that glide between updates (jump under reduced motion); the table
+ * is the keyboard/screen-reader equivalent. Emergency squawks (7500/7600/7700) are
+ * flagged locally as well as by the server.
+ */
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { MapContainer, TileLayer, Polygon, useMap } from 'react-leaflet'
 import { api } from '../api/client'
@@ -13,31 +27,80 @@ import { drawPlane, PLANE_SIZE, PLANE_FILL } from '../components/map/plane'
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, Title, ChartTooltip, Legend)
 
-// ─── Aircraft category color ──────────────────────────────────────────
-const getCatColor = (category) => {
-  if (category >= 4 && category <= 7) return '#3b82f6'   // Commercial (large/heavy)
-  if (category === 2 || category === 3) return '#10b981'  // Private / GA
-  if (category === 9 || category === 10) return '#ef4444' // Military
-  if (category === 8) return '#f59e0b'                    // Rotorcraft
-  return '#94a3b8'                                        // Unknown
+// ─── Aircraft categories ──────────────────────────────────────────────
+/** Display groups for OpenSky/ADS-B emitter categories, in legend order. */
+const AIRCRAFT_GROUPS = [
+  { key: 'commercial', label: 'Commercial', color: '#3b82f6' },
+  { key: 'private', label: 'Private/GA', color: '#10b981' },
+  { key: 'military', label: 'Military', color: '#ef4444' },
+  { key: 'rotorcraft', label: 'Rotorcraft', color: '#f59e0b' },
+  { key: 'unknown', label: 'Unknown', color: '#94a3b8' },
+]
+/** AIRCRAFT_GROUPS indexed by key. */
+const GROUP = Object.fromEntries(AIRCRAFT_GROUPS.map(g => [g.key, g]))
+
+/**
+ * Display group for an ADS-B emitter category number.
+ * @param {number} category 4-7 large/heavy, 2-3 light/GA, 8 rotorcraft, 9-10 military; anything else unknown
+ * @returns {{key: string, label: string, color: string}}
+ */
+const aircraftGroup = (category) => {
+  if (category >= 4 && category <= 7) return GROUP.commercial
+  if (category === 2 || category === 3) return GROUP.private
+  if (category === 9 || category === 10) return GROUP.military
+  if (category === 8) return GROUP.rotorcraft
+  return GROUP.unknown
 }
 
-const CAT_LABEL = {
-  '#3b82f6': 'Commercial', '#10b981': 'Private/GA',
-  '#ef4444': 'Military', '#f59e0b': 'Rotorcraft', '#94a3b8': 'Unknown',
-}
+/** Colour of an aircraft's display group (see aircraftGroup). */
+const getCatColor = (category) => aircraftGroup(category).color
 
-// Transponder emergency codes. The server flags them too; this covers any source that doesn't.
+/**
+ * Barometric altitude as an ICAO flight level, e.g. 10668 m -> "FL350".
+ * @param {number} altitudeM barometric altitude in metres
+ * @returns {string}
+ */
+const flightLevel = (altitudeM) => `FL${Math.round(altitudeM * 3.281 / 100).toString().padStart(3, '0')}`
+
+/**
+ * Speed in whole knots.
+ * @param {number} ms speed in metres per second
+ * @returns {number}
+ */
+const knots = (ms) => Math.round(ms * 1.944)
+
+/** Callsign (trimmed) or, if none, the ICAO24 hex address. */
+const flightName = (f) => f.callsign?.trim() || f.icao24
+
+/**
+ * Short "weather ahead" text for a mesh airspace conflict, e.g. "TSRA in 12 min".
+ * @param {{hazard: string, inside: boolean, minutes_to_entry: number}} c
+ * @returns {string}
+ */
+const aheadText = (c) => `${c.hazard} ${c.inside ? 'now' : `in ${c.minutes_to_entry} min`}`
+
+/** Altitude-band chart buckets: [flightStats key, label]. */
+const ALTITUDE_BANDS = [
+  ['ground', 'Ground'], ['low', 'Low (<3km)'], ['medium', 'Medium (3-8km)'], ['high', 'High (8-12km)'], ['cruise', 'Cruise (>12km)'],
+]
+
+/** Transponder emergency codes. The server flags them too; this covers any source that doesn't. */
 const EMERGENCY_SQUAWKS = {
   '7500': 'Unlawful interference (hijack)',
   '7600': 'Radio communication failure',
   '7700': 'General emergency',
 }
+/**
+ * Emergency for a flight: the server's `emergency` field, else derived from its squawk.
+ * @param {object} f flight
+ * @returns {{code: string, meaning: string}|null}
+ */
 const emergencyOf = (f) => f?.emergency ||
   (EMERGENCY_SQUAWKS[String(f?.squawk || '').trim()] ? { code: String(f.squawk).trim(), meaning: EMERGENCY_SQUAWKS[String(f.squawk).trim()] } : null)
+/** Ring/border colour for aircraft squawking an emergency. */
 const EMERGENCY_RED = '#ef4444'
 
-// Bahamas FIR approximate boundary [lat, lon]
+/** Approximate Bahamas FIR boundary [lat, lon], used until the server's polygon arrives. */
 const BAHAMAS_FIR = [
   [28.0, -80.5], [28.0, -77.5], [27.0, -76.5], [26.0, -76.0],
   [24.5, -75.5], [22.5, -75.5], [21.0, -77.0], [21.0, -79.5],
@@ -45,6 +108,18 @@ const BAHAMAS_FIR = [
 ]
 
 // ─── Canvas: smooth aircraft rendering with interpolation ─────────────
+/**
+ * Leaflet child that overlays a canvas and draws every aircraft each animation frame:
+ * category-coloured disc, the shared yellow plane glyph, a fading 5-point trail, a
+ * pulsing red ring for emergencies, and the callsign on hover. Positions ease toward the
+ * latest report (or jump under reduced motion). A click selects the nearest aircraft
+ * within 22 px (or null). The canvas is aria-hidden; the flights table is the
+ * accessible equivalent.
+ * @param {object} props
+ * @param {object[]} props.flights current flights (lat/lon normalised)
+ * @param {function(object|null): void} props.onSelect called on click
+ * @param {boolean} props.reducedMotion user prefers reduced motion
+ */
 function FlightCanvas({ flights, onSelect, reducedMotion }) {
   const map = useMap()
   const motionRef = useRef(reducedMotion)
@@ -86,6 +161,7 @@ function FlightCanvas({ flights, onSelect, reducedMotion }) {
     canvas.setAttribute('aria-hidden', 'true')
     map.getContainer().appendChild(canvas)
 
+    /** Matches the canvas size to the map's. */
     const resize = () => {
       const s = map.getSize()
       canvas.width = s.x
@@ -96,10 +172,12 @@ function FlightCanvas({ flights, onSelect, reducedMotion }) {
     map.on('moveend', resize)
     map.on('zoomend', resize)
 
+    /** Tracks the pointer for hover highlighting. */
     const onMouseMove = (e) => {
       const r = canvas.getBoundingClientRect()
       mouseRef.current = { x: e.clientX - r.left, y: e.clientY - r.top }
     }
+    /** Selects the aircraft nearest the click (within 22 px), or clears the selection. */
     const onClick = (e) => {
       const r = canvas.getBoundingClientRect()
       const mx = e.clientX - r.left, my = e.clientY - r.top
@@ -114,9 +192,10 @@ function FlightCanvas({ flights, onSelect, reducedMotion }) {
     canvas.addEventListener('mousemove', onMouseMove)
     canvas.addEventListener('click', onClick)
 
+    /** Per-frame fraction of the remaining distance an aircraft moves toward its reported position. */
     const LERP = 0.018
 
-
+    /** Draws one frame and schedules the next. */
     const frame = () => {
       const ctx = canvas.getContext('2d')
       ctx.clearRect(0, 0, canvas.width, canvas.height)
@@ -199,6 +278,7 @@ function FlightCanvas({ flights, onSelect, reducedMotion }) {
 }
 
 // ─── Main component ───────────────────────────────────────────────────
+/** The Flight Operations page: emergencies, legend, map, charts, stats, flights table and details dialog. */
 export default function FlightOps() {
   const { data: flightData, loading } = usePolling(useCallback(() => api.liveFlights(), []), 10000)
   const { data: statsData } = usePolling(useCallback(() => api.flightStats(), []), 30000)
@@ -217,6 +297,7 @@ export default function FlightOps() {
     ? firRaw.map(([lon, lat]) => [lat, lon])
     : BAHAMAS_FIR
 
+  /** Stable selection callback for the canvas (selects a flight or clears with null). */
   const handleSelect = useCallback((f) => setSelected(f), [])
   // Mesh weather ahead of each aircraft (predicted hazard entries in the next 30 min).
   const { data: airspace } = usePolling(useCallback(() => api.meshAirspace(), []), 10000)
@@ -225,15 +306,12 @@ export default function FlightOps() {
   const legendColor = chartTextColor()
 
   // Category breakdown
-  const counts = { commercial: 0, private: 0, military: 0, rotorcraft: 0, unknown: 0 }
-  flights.forEach(f => {
-    const c = getCatColor(f.category)
-    if (c === '#3b82f6') counts.commercial++
-    else if (c === '#10b981') counts.private++
-    else if (c === '#ef4444') counts.military++
-    else if (c === '#f59e0b') counts.rotorcraft++
-    else counts.unknown++
-  })
+  const counts = Object.fromEntries(AIRCRAFT_GROUPS.map(g => [g.key, 0]))
+  flights.forEach(f => { counts[aircraftGroup(f.category).key]++ })
+  const countryLabels = Object.keys(statsData?.by_country || {}).slice(0, 8)
+  const countryValues = Object.values(statsData?.by_country || {}).slice(0, 8)
+  const altitudeLabels = ALTITUDE_BANDS.map(([, label]) => label)
+  const altitudeValues = ALTITUDE_BANDS.map(([k]) => statsData?.altitude_bands?.[k] || 0)
 
   return (
     <div>
@@ -264,9 +342,9 @@ export default function FlightOps() {
               {emergencies.map(f => (
                 <li key={f.icao24}>
                   <button type="button" className="link-btn" style={{ fontFamily: 'monospace', fontWeight: 700 }}
-                    onClick={() => setSelected(f)}>{f.callsign?.trim() || f.icao24}</button>
+                    onClick={() => setSelected(f)}>{flightName(f)}</button>
                   {' '}squawking <b>{f.emergency.code}</b>: {f.emergency.meaning}
-                  {f.baro_altitude ? `, FL${Math.round(f.baro_altitude * 3.281 / 100).toString().padStart(3, '0')}` : ''}
+                  {f.baro_altitude ? `, ${flightLevel(f.baro_altitude)}` : ''}
                 </li>
               ))}
             </ul>
@@ -276,13 +354,7 @@ export default function FlightOps() {
 
       {/* Category legend */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }} role="list" aria-label="Aircraft by category">
-        {[
-          ['#3b82f6', 'Commercial', counts.commercial],
-          ['#10b981', 'Private/GA', counts.private],
-          ['#ef4444', 'Military', counts.military],
-          ['#f59e0b', 'Rotorcraft', counts.rotorcraft],
-          ['#94a3b8', 'Unknown', counts.unknown],
-        ].map(([color, label, count]) => (
+        {AIRCRAFT_GROUPS.map(({ key, color, label }) => (
           <div key={label} role="listitem" style={{
             display: 'flex', alignItems: 'center', gap: 6,
             background: color + '15', border: '1px solid ' + color + '40',
@@ -290,7 +362,7 @@ export default function FlightOps() {
           }}>
             <div aria-hidden="true" style={{ width: 8, height: 8, borderRadius: 2, background: color }} />
             <span style={{ color: 'var(--text-secondary)' }}>{label}</span>
-            <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{count}</span>
+            <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{counts[key]}</span>
           </div>
         ))}
       </div>
@@ -324,38 +396,33 @@ export default function FlightOps() {
           <div className="card" style={{ marginBottom: 12 }} id="chart-aircraft-by-country">
             <div className="card-header"><h3>By Country</h3></div>
             <div style={{ height: 180, padding: 8 }}>
-              <Doughnut aria-label={`Doughnut chart, aircraft by country of origin: ${summarise(Object.keys(statsData?.by_country || {}).slice(0, 8), Object.values(statsData?.by_country || {}).slice(0, 8))}`} data={{
-                labels: Object.keys(statsData?.by_country || {}).slice(0, 8),
-                datasets: [{ data: Object.values(statsData?.by_country || {}).slice(0, 8),
+              <Doughnut aria-label={`Doughnut chart, aircraft by country of origin: ${summarise(countryLabels, countryValues)}`} data={{
+                labels: countryLabels,
+                datasets: [{ data: countryValues,
                   backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#a855f7', '#06b6d4', '#ec4899', '#94a3b8'],
                   borderWidth: 0 }]
               }} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: legendColor, font: { size: 11 } } } } }} />
             </div>
             <div style={{ padding: '0 8px 8px' }}>
-              <ChartTable caption="Aircraft by country of origin" labels={Object.keys(statsData?.by_country || {}).slice(0, 8)}
-                series={[{ name: 'Aircraft', values: Object.values(statsData?.by_country || {}).slice(0, 8) }]}
+              <ChartTable caption="Aircraft by country of origin" labels={countryLabels}
+                series={[{ name: 'Aircraft', values: countryValues }]}
                 shareId="chart-aircraft-by-country" filename="aircraft-by-country" labelHeader="Country" />
             </div>
           </div>
           <div className="card" style={{ marginBottom: 12 }} id="chart-altitude-bands">
             <div className="card-header"><h3>Altitude Distribution</h3></div>
             <div style={{ height: 180, padding: 8 }}>
-              {(() => {
-                const ab = statsData?.altitude_bands || {}
-                const labels = ['Ground', 'Low (<3km)', 'Medium (3-8km)', 'High (8-12km)', 'Cruise (>12km)']
-                const vals = [ab.ground || 0, ab.low || 0, ab.medium || 0, ab.high || 0, ab.cruise || 0]
-                return <Bar aria-label={`Bar chart, aircraft by altitude band: ${summarise(labels, vals)}`} data={{
-                  labels,
-                  datasets: [{ label: 'Flights', data: vals,
-                    backgroundColor: ['#94a3b8', '#10b981', '#3b82f6', '#f59e0b', '#ef4444'],
-                    borderRadius: 6 }]
-                }} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { ticks: { color: legendColor, font: { size: 10 } } }, y: { ticks: { color: legendColor }, grid: { color: 'rgba(148,163,184,0.2)' } } } }} />
-              })()}
+              <Bar aria-label={`Bar chart, aircraft by altitude band: ${summarise(altitudeLabels, altitudeValues)}`} data={{
+                labels: altitudeLabels,
+                datasets: [{ label: 'Flights', data: altitudeValues,
+                  backgroundColor: ['#94a3b8', '#10b981', '#3b82f6', '#f59e0b', '#ef4444'],
+                  borderRadius: 6 }]
+              }} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { ticks: { color: legendColor, font: { size: 10 } } }, y: { ticks: { color: legendColor }, grid: { color: 'rgba(148,163,184,0.2)' } } } }} />
             </div>
             <div style={{ padding: '0 8px 8px' }}>
               <ChartTable caption="Aircraft by altitude band"
-                labels={['Ground', 'Low (<3km)', 'Medium (3-8km)', 'High (8-12km)', 'Cruise (>12km)']}
-                series={[{ name: 'Aircraft', values: ['ground', 'low', 'medium', 'high', 'cruise'].map(k => statsData?.altitude_bands?.[k] || 0) }]}
+                labels={altitudeLabels}
+                series={[{ name: 'Aircraft', values: altitudeValues }]}
                 shareId="chart-altitude-bands" filename="aircraft-by-altitude" labelHeader="Altitude band" />
             </div>
           </div>
@@ -404,7 +471,7 @@ export default function FlightOps() {
             </thead>
             <tbody>
               {flights.slice(0, 50).map(f => {
-                const color = getCatColor(f.category)
+                const { color, label: groupLabel } = aircraftGroup(f.category)
                 const isSelected = selected?.icao24 === f.icao24
                 return (
                   <tr key={f.icao24} onClick={() => setSelected(f)} style={{
@@ -415,18 +482,18 @@ export default function FlightOps() {
                     <td>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                         <div aria-hidden="true" style={{ width: 8, height: 8, borderRadius: 2, background: color }} />
-                        <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{CAT_LABEL[color]}</span>
+                        <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{groupLabel}</span>
                       </div>
                     </td>
                     <th scope="row" style={{ fontWeight: 600, fontFamily: 'monospace' }}>
                       <button type="button" className="link-btn" style={{ fontFamily: 'inherit' }}
-                        aria-label={`${f.callsign?.trim() || f.icao24}, show details`}
-                        onClick={e => { e.stopPropagation(); setSelected(f) }}>{f.callsign?.trim() || f.icao24}</button>
+                        aria-label={`${flightName(f)}, show details`}
+                        onClick={e => { e.stopPropagation(); setSelected(f) }}>{flightName(f)}</button>
                       {isSelected && <span className="sr-only"> (selected)</span>}
                     </th>
                     <td>{f.origin_country}</td>
-                    <td>{f.baro_altitude ? `FL${Math.round(f.baro_altitude * 3.281 / 100).toString().padStart(3, '0')}` : 'GND'}</td>
-                    <td>{f.velocity ? `${Math.round(f.velocity * 1.944)}kt` : '—'}</td>
+                    <td>{f.baro_altitude ? flightLevel(f.baro_altitude) : 'GND'}</td>
+                    <td>{f.velocity ? `${knots(f.velocity)}kt` : '—'}</td>
                     <td>{f.true_track ? `${Math.round(f.true_track)}°` : f.track ? `${Math.round(f.track)}°` : '—'}</td>
                     <td>
                       {f.emergency ? (
@@ -442,7 +509,7 @@ export default function FlightOps() {
                     </td>
                     <td>{ahead[f.icao24] ? (
                       <span style={{ color: ahead[f.icao24].severity === 'severe' ? 'var(--danger-text)' : 'var(--warning-text)', fontWeight: 600 }}>
-                        {ahead[f.icao24].hazard} {ahead[f.icao24].inside ? 'now' : `in ${ahead[f.icao24].minutes_to_entry} min`}
+                        {aheadText(ahead[f.icao24])}
                       </span>
                     ) : <span style={{ color: 'var(--text-secondary)' }}>Clear</span>}</td>
                   </tr>
@@ -455,7 +522,7 @@ export default function FlightOps() {
 
       {/* Flight details */}
       <Dialog open={!!selected} onClose={() => setSelected(null)}
-        title={selected ? `${selected.callsign?.trim() || selected.icao24}${selected.airline ? ` — ${selected.airline}` : ''}` : ''}>
+        title={selected ? `${flightName(selected)}${selected.airline ? ` — ${selected.airline}` : ''}` : ''}>
         {selected && (
           <dl style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '12px 20px', fontSize: 13, margin: 0 }}>
             {[
@@ -465,8 +532,8 @@ export default function FlightOps() {
               ['Route', selected.route || '—'],
               ['Origin', selected.origin_country || '—'],
               ['ICAO24', selected.icao24],
-              ['Altitude', selected.baro_altitude ? 'FL' + Math.round(selected.baro_altitude * 3.281 / 100).toString().padStart(3, '0') : 'GND'],
-              ['Ground Speed', selected.velocity ? Math.round(selected.velocity * 1.944) + ' kt' : '—'],
+              ['Altitude', selected.baro_altitude ? flightLevel(selected.baro_altitude) : 'GND'],
+              ['Ground Speed', selected.velocity ? knots(selected.velocity) + ' kt' : '—'],
               ['Heading', (selected.track || selected.true_track) ? Math.round(selected.track || selected.true_track) + '°' : '—'],
               ['Vertical Speed', selected.vertical_rate ? (selected.vertical_rate > 0 ? '+' : '') + Math.round(selected.vertical_rate * 196.85) + ' fpm' : '—'],
               ['Squawk', selected.emergency
@@ -475,7 +542,7 @@ export default function FlightOps() {
               ['Status', selected.emergency ? <span style={{ color: 'var(--danger-text)' }}>Emergency declared</span>
                 : selected.on_ground ? 'On Ground' : 'Airborne'],
               ['Weather ahead', ahead[selected.icao24]
-                ? `${ahead[selected.icao24].hazard} ${ahead[selected.icao24].inside ? 'now' : `in ${ahead[selected.icao24].minutes_to_entry} min`} — ${ahead[selected.icao24].advice.text}`
+                ? `${aheadText(ahead[selected.icao24])} — ${ahead[selected.icao24].advice.text}`
                 : 'Clear for 30 min'],
             ].map(([label, value]) => (
               <div key={label}>

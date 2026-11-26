@@ -1,13 +1,31 @@
+/**
+ * The Command Center weather briefing: buildBriefing (the text) and
+ * BriefingPanel (transcript with optional read-aloud and live captions).
+ *
+ * Why: the spoken briefing must also work for deaf and hard-of-hearing users
+ * and in browsers without speech synthesis, so the text is always on screen.
+ * How: the briefing is a list of caption lines; speech queues one utterance per
+ * line and highlights the line being spoken.
+ */
 import { useEffect, useRef, useState } from 'react'
 
+/** Whether this browser can read the briefing aloud. */
 const SPEECH_OK = typeof window !== 'undefined' && 'speechSynthesis' in window
+/** Speaking-rate choices: [rate, label]. */
 const RATES = [[0.75, 'Slow'], [0.9, 'Normal'], [1.1, 'Fast'], [1.3, 'Faster']]
 
 /** Spoken form of a caption line: spell out aviation abbreviations for the synthesiser. */
 const toSpeech = (s) => s.replace(/\bVFR\b/g, 'V F R').replace(/\bMVFR\b/g, 'marginal V F R')
   .replace(/\bIFR\b/g, 'I F R').replace(/\bLIFR\b/g, 'low I F R').replace(/\bFIR\b/g, 'F I R')
 
-/** Build the briefing as caption lines (display text). */
+/**
+ * Build the briefing as caption lines (display text).
+ * Only METAR stations count as reporting; model-estimated stations are stated as estimates.
+ * @param {object} summary dashboard summary (`command_center` counts), may be null
+ * @param {object[]} flights aircraft in the FIR
+ * @param {object[]} stations weather stations with `source` and `flight_category`
+ * @returns {string[]}
+ */
 export function buildBriefing(summary, flights, stations) {
   const hour = new Date().getUTCHours()
   const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
@@ -39,6 +57,8 @@ export function buildBriefing(summary, flights, stations) {
  * the text is always shown, so the briefing works for deaf/hard-of-hearing users
  * and in browsers without speech synthesis. The current sentence is highlighted
  * while speaking.
+ * @param {{lines: string[], open: boolean, onClose: () => void, autoSpeak?: boolean,
+ *   rate: number, onRate: (rate: number) => void}} props
  */
 export default function BriefingPanel({ lines, open, onClose, autoSpeak, rate, onRate }) {
   const [current, setCurrent] = useState(-1)
@@ -46,6 +66,7 @@ export default function BriefingPanel({ lines, open, onClose, autoSpeak, rate, o
   const headingRef = useRef(null)
   const runRef = useRef(0)
 
+  /** Stop speaking and clear the highlight; invalidates callbacks from the old run. */
   const stop = () => {
     runRef.current++
     if (SPEECH_OK) window.speechSynthesis.cancel()
@@ -53,6 +74,7 @@ export default function BriefingPanel({ lines, open, onClose, autoSpeak, rate, o
     setCurrent(-1)
   }
 
+  /** Read every line aloud from the start, highlighting each as it is spoken. */
   const speak = () => {
     if (!SPEECH_OK) return
     stop()

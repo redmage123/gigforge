@@ -1,7 +1,15 @@
 """BACSWN — NHC tropical cyclone tracker.
 
-Fetches active Atlantic hurricanes/tropical storms from the NHC API
-and generates realistic simulated tracks when no active storms exist.
+What: fetches active Atlantic hurricanes/tropical storms from the NHC
+CurrentSummaries feed, normalised to one dict per storm.
+
+Why: hurricane operations (surge, shelters, airports, escalation) are driven by
+the strongest active storm, so the platform needs a storm list at all times.
+
+How: a shared ``httpx.AsyncClient``; live results are cached for 10 minutes. When
+NHC is unreachable or reports no active storms, a simulated storm with a slowly
+drifting track and cone is returned instead (cached for 2 minutes) so the demo
+is never empty. Never raises.
 """
 
 import logging
@@ -39,7 +47,7 @@ _SIM_STORMS = [
 
 
 def _generate_simulated_storms():
-    """Generate demo storm tracks with slow position drift."""
+    """Demo storms whose position, track and cone drift up to 0.5 degrees over each hour."""
     t = time.time()
     drift = (t % 3600) / 3600 * 0.5
     storms = []
@@ -79,8 +87,27 @@ def _generate_simulated_storms():
     return storms
 
 
+
+def saffir_simpson_category(wind_mph: int) -> int:
+    """Saffir-Simpson category (1-5) for a sustained wind in mph; 0 below hurricane strength.
+
+    Shared by the hurricane API and the operations briefing so both classify storms the same way.
+    """
+    if wind_mph >= 157:
+        return 5
+    if wind_mph >= 130:
+        return 4
+    if wind_mph >= 111:
+        return 3
+    if wind_mph >= 96:
+        return 2
+    if wind_mph >= 74:
+        return 1
+    return 0
+
+
 async def fetch_hurricanes():
-    """Fetch active tropical cyclones. Falls back to simulated data."""
+    """Active tropical cyclones from NHC, or the simulated storm if there are none or NHC fails."""
     cached = cache.get("hurricanes:active")
     if cached is not None:
         return cached

@@ -1,17 +1,30 @@
-import { useCallback, useEffect, useId, useRef, useState } from 'react'
-import { api, saveBlob } from '../../api/client'
-import { ConvertExtract, Letters } from './LetterSections'
-
 /**
  * Bahamas National Emissions Registry exchange. The registry has no public
  * API, so statements (registry extracts of Bahamian units) are imported as
  * files and the state report is exported for submission.
+ *
+ * Why: CORSIA claims citing the registry are checked against its latest
+ * statement; this card shows what that statement contains and how to update it.
+ * How: status and statement history load from the registry endpoints;
+ * administrators import JSON/CSV statements (validated here for type and size,
+ * then by the server) or convert other layouts with AI (ConvertExtract).
  */
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import { api, saveBlob } from '../../api/client'
+import { ConvertExtract, Letters } from './LetterSections'
 
+/** Largest statement file accepted for direct import (the AI converter allows 10 MB). */
 const MAX_BYTES = 5_000_000
+/** Locale number; '—' when missing. */
 const n = (v) => (v == null ? '—' : Number(v).toLocaleString())
+/** Registry unit status -> wording. */
 const STATUS_LABEL = { ISSUED: 'issued', TRANSFERRED: 'transferred', CANCELLED: 'cancelled', RETIRED: 'retired', SUSPENDED: 'suspended' }
 
+/**
+ * The "Bahamas National Emissions Registry" card on the CORSIA Oversight page.
+ * @param {{period: string, isAdmin: boolean, aiReady: boolean, announce: (message: string) => void,
+ *   onImported?: () => void}} props `onImported`: the register should re-check its claims
+ */
 export default function NerPanel({ period, isAdmin, aiReady, announce, onImported }) {
   const [status, setStatus] = useState(null)
   const [history, setHistory] = useState([])
@@ -22,18 +35,22 @@ export default function NerPanel({ period, isAdmin, aiReady, announce, onImporte
   const asOfId = useId()
   const refId = useId()
 
+  /** Reload the registry status and statement history (empty if they cannot be loaded). */
   const load = useCallback(() => {
     api.nerStatus().then(setStatus).catch(() => setStatus(null))
     api.nerStatements().then(d => setHistory(d.statements)).catch(() => setHistory([]))
   }, [])
   useEffect(() => { load() }, [load])
 
+  /** Download a server export and announce the result (or the error). */
   const download = async (fn, name, what) => {
     try { saveBlob(await fn(), name); announce(`${what} downloaded`) } catch (e) { announce(e.message) }
   }
 
+  /** Show an import error and move focus to it. */
   const fail = (msg) => { setError(msg); requestAnimationFrame(() => errRef.current?.focus()) }
 
+  /** Validate the chosen statement file locally, then import it. */
   const submit = async (e) => {
     e.preventDefault()
     const form = e.currentTarget

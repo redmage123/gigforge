@@ -1,4 +1,15 @@
-"""Generate BACSWN Distributed Architecture Financial Model PDF."""
+"""Generate BACSWN Distributed Architecture Financial Model PDF.
+
+What: a one-shot script that writes the financial model PDF (budget, revenue, costs,
+5-year P&L, cash flow, funding, ROI, sensitivity, staffing and hardware) to ``OUTPUT``.
+
+Why: the model is shared with the client and funders as a print-ready document.
+
+How: ReportLab platypus: module-level colours and paragraph styles, small flowable
+helpers (``hr``, ``spacer``, ``p``, ``bullet``), and ``build_pdf`` which appends the
+content section by section and builds the document. Run it directly:
+``python generate_financials.py``.
+"""
 
 from reportlab.lib.pagesizes import letter, landscape
 from reportlab.lib.units import inch
@@ -52,15 +63,19 @@ styles = {
 }
 
 def hr():
+    """A thin full-width grey divider."""
     return HRFlowable(width="100%", thickness=1, color=HexColor("#e2e8f0"), spaceBefore=8, spaceAfter=8)
 
 def spacer(h=12):
+    """Vertical space of ``h`` points."""
     return Spacer(1, h)
 
 def p(text, style="body"):
+    """A paragraph of ``text`` (ReportLab mini-HTML allowed) in the named style."""
     return Paragraph(text, styles[style])
 
 def bullet(text):
+    """A bullet-point paragraph."""
     return Paragraph(f"• {text}", styles["bullet"])
 
 def money_table(data, col_widths, header_color=NAVY, stripe_colors=None):
@@ -98,6 +113,7 @@ def totals_row_style(table, row_idx, bg_color=NAVY):
     ]))
 
 def build_pdf():
+    """Lay out every section and write the PDF to ``OUTPUT``."""
     doc = SimpleDocTemplate(
         OUTPUT, pagesize=letter,
         topMargin=0.8*inch, bottomMargin=0.8*inch,

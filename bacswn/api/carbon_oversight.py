@@ -1,12 +1,30 @@
-"""BACSWN — CORSIA oversight register API (state-side verification of operators)."""
+"""BACSWN — CORSIA oversight register API (state-side verification of operators).
+
+What: the HTTP routes under /api/carbon-oversight for the CORSIA oversight
+register (services/carbon_oversight.py), the National Emissions Registry file
+exchange (services/ner_registry.py) and the AI assistance that reads documents
+and drafts text (services/oversight_ai.py).
+
+Why: keeps HTTP concerns (who may write, request parsing, file downloads) out of
+the domain services, which stay testable without a web server.
+
+How: reads are open to any signed-in user; anything that records evidence,
+decides a claim or runs an AI write workflow requires an administrator
+(``_require_writer``). Service functions raise ``BacswnError`` subclasses
+(``OversightError``, ``RegistryError``, ``AIUnavailable``), which the handler in
+main.py renders as ``{"error", "detail"}`` JSON with the error's HTTP status.
+"""
 
 import json
 
 from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import Response
 
+from services import ai_assist
 from services import carbon_oversight as co
 from services import ner_registry as ner
+from services import oversight_ai as oai
+from services.errors import BacswnPermissionError, BacswnValidationError
 
 router = APIRouter()
 
@@ -15,23 +33,24 @@ WRITE_ROLES = {"admin"}
 
 
 def _user(request: Request) -> dict:
+    """The signed-in user's token claims set by the auth middleware ({} if none)."""
     return getattr(request.state, "user", None) or {}
 
 
-def _forbidden(request: Request) -> JSONResponse | None:
-    if _user(request).get("role") not in WRITE_ROLES:
-        return JSONResponse(status_code=403, content={"error": "Only administrators can change the oversight register"})
-    return None
+def _require_writer(request: Request) -> str:
+    """The signed-in administrator's username.
 
-
-async def _run(coro):
-    try:
-        return await coro
-    except co.OversightError as e:
-        return JSONResponse(status_code=e.status, content={"error": str(e)})
+    Raises:
+        BacswnPermissionError: the user's role may not change the register (HTTP 403).
+    """
+    user = _user(request)
+    if user.get("role") not in WRITE_ROLES:
+        raise BacswnPermissionError("Only administrators can change the oversight register")
+    return user["sub"]
 
 
 async def _body(request: Request) -> dict:
+    """The JSON request body as a dict; {} if it is missing, not JSON, or not an object."""
     try:
         data = await request.json()
     except ValueError:
@@ -39,262 +58,225 @@ async def _body(request: Request) -> dict:
     return data if isinstance(data, dict) else {}
 
 
+def _upload(body: dict, default_name: str) -> dict:
+    """The uploaded file in a request body: {"filename" (max 120 chars), "media_type", "data" (base64)}."""
+    return {"filename": str(body.get("filename") or default_name)[:120],
+            "media_type": str(body.get("media_type") or ""),
+            "data": str(body.get("data") or "")}
+
+
+def _download(content: str, media_type: str, filename: str) -> Response:
+    """A file download response (Content-Disposition: attachment)."""
+    return Response(content=content, media_type=media_type,
+                    headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
 @router.get("/periods")
 async def periods():
+    """The CORSIA compliance periods and which one is current."""
     return {"periods": co.periods()}
 
 
 @router.get("/register")
 async def register(period: str):
-    return await _run(co.register(period))
+    """The register for a compliance period: operator positions, claims and findings."""
+    return await co.register(period)
 
 
 @router.get("/register.csv")
 async def register_csv(period: str):
-    result = await _run(co.export_csv(period))
-    if isinstance(result, JSONResponse):
-        return result
-    return Response(content=result, media_type="text/csv",
-                    headers={"Content-Disposition": f'attachment; filename="corsia-claims-{period}.csv"'})
+    """The period's unit-cancellation claims as a CSV download."""
+    return _download(await co.export_csv(period), "text/csv", f"corsia-claims-{period}.csv")
 
 
 @router.get("/operators/{operator_id}")
 async def operator(operator_id: int):
-    return await _run(co.operator_detail(operator_id))
+    """One operator's full record: report revisions, claims and review history."""
+    return await co.operator_detail(operator_id)
 
 
 @router.post("/operators")
 async def create_operator(request: Request):
-    if denied := _forbidden(request):
-        return denied
-    return await _run(co.create_operator(await _body(request), _user(request)["sub"]))
+    """Register an aircraft operator (administrators only)."""
+    user = _require_writer(request)
+    return await co.create_operator(await _body(request), user)
 
 
 @router.post("/operators/{operator_id}/reports")
 async def add_report(operator_id: int, request: Request):
-    if denied := _forbidden(request):
-        return denied
-    return await _run(co.add_emission_report(operator_id, await _body(request), _user(request)["sub"]))
+    """Record a verified annual emissions report for an operator (administrators only)."""
+    user = _require_writer(request)
+    return await co.add_emission_report(operator_id, await _body(request), user)
 
 
 @router.post("/operators/{operator_id}/claims")
 async def add_claim(operator_id: int, request: Request):
-    if denied := _forbidden(request):
-        return denied
-    return await _run(co.add_unit_claim(operator_id, await _body(request), _user(request)["sub"]))
+    """Record a unit-cancellation claim for an operator (administrators only)."""
+    user = _require_writer(request)
+    return await co.add_unit_claim(operator_id, await _body(request), user)
 
 
 @router.post("/claims/{claim_id}/review")
 async def review(claim_id: int, request: Request):
-    if denied := _forbidden(request):
-        return denied
-    return await _run(co.review_claim(claim_id, await _body(request), _user(request)["sub"]))
+    """Record a review decision on a unit-cancellation claim (administrators only)."""
+    user = _require_writer(request)
+    return await co.review_claim(claim_id, await _body(request), user)
 
 
 @router.post("/operators/{operator_id}/fuel-claims")
 async def add_fuel_claim(operator_id: int, request: Request):
-    if denied := _forbidden(request):
-        return denied
-    return await _run(co.add_fuel_claim(operator_id, await _body(request), _user(request)["sub"]))
+    """Record an eligible-fuel claim for an operator (administrators only)."""
+    user = _require_writer(request)
+    return await co.add_fuel_claim(operator_id, await _body(request), user)
 
 
 @router.post("/fuel-claims/{claim_id}/review")
 async def review_fuel(claim_id: int, request: Request):
-    if denied := _forbidden(request):
-        return denied
-    return await _run(co.review_fuel_claim(claim_id, await _body(request), _user(request)["sub"]))
+    """Record a review decision on an eligible-fuel claim (administrators only)."""
+    user = _require_writer(request)
+    return await co.review_fuel_claim(claim_id, await _body(request), user)
 
 
 @router.get("/fuel-claims.csv")
 async def fuel_claims_csv(period: str):
-    result = await _run(co.export_fuel_csv(period))
-    if isinstance(result, JSONResponse):
-        return result
-    return Response(content=result, media_type="text/csv",
-                    headers={"Content-Disposition": f'attachment; filename="corsia-fuel-claims-{period}.csv"'})
+    """The period's eligible-fuel claims as a CSV download."""
+    return _download(await co.export_fuel_csv(period), "text/csv", f"corsia-fuel-claims-{period}.csv")
 
 
 # ── Bahamas National Emissions Registry (file exchange) ────────────────────
 
-async def _run_ner(coro):
-    try:
-        return await coro
-    except ner.RegistryError as e:
-        return JSONResponse(status_code=e.status, content={"error": str(e)})
-
-
 @router.get("/ner/status")
 async def ner_status():
+    """Registry connection status and a summary of the latest imported statement."""
     return await ner.status()
 
 
 @router.get("/ner/statements")
 async def ner_statements():
+    """Every imported registry statement, newest first."""
     return {"statements": await ner.statements()}
 
 
 @router.post("/ner/statements")
 async def ner_import(request: Request):
     """Import a registry statement: {"format": "json"|"csv", "content": "...", "as_of"?, "reference"?}."""
-    if denied := _forbidden(request):
-        return denied
-    return await _run_ner(ner.import_statement(await _body(request), _user(request)["sub"]))
+    user = _require_writer(request)
+    return await ner.import_statement(await _body(request), user)
 
 
 @router.get("/ner/template.csv")
 async def ner_template():
-    return Response(content=ner.template_csv(), media_type="text/csv",
-                    headers={"Content-Disposition": 'attachment; filename="ner-statement-template.csv"'})
+    """A CSV statement template download."""
+    return _download(ner.template_csv(), "text/csv", "ner-statement-template.csv")
 
 
 @router.get("/ner/state-report")
 async def ner_state_report(period: str, request: Request):
     """The period's register packaged for submission to the registry (JSON download)."""
-    reg = await _run(co.register(period))
-    if isinstance(reg, JSONResponse):
-        return reg
+    reg = await co.register(period)
     checks = {c["id"]: c["ner_check"] for c in reg["claims"] if c.get("ner_check")}
     report = ner.state_report(reg, checks, _user(request).get("sub", "?"))
-    return Response(content=json.dumps(report, indent=2), media_type="application/json",
-                    headers={"Content-Disposition": f'attachment; filename="ner-state-report-{period}.json"'})
+    return _download(json.dumps(report, indent=2), "application/json", f"ner-state-report-{period}.json")
 
 
 @router.get("/ner/authorisations")
 async def ner_authorisations():
+    """Letters of authorisation on file (latest revision of each)."""
     return {"authorisations": await ner.authorisations()}
 
 
 @router.post("/ner/authorisations")
 async def ner_add_authorisation(request: Request):
     """Record a letter of authorisation (append-only; a revision is a new row with the same reference)."""
-    if denied := _forbidden(request):
-        return denied
-    return await _run_ner(ner.add_authorisation(await _body(request), _user(request)["sub"]))
+    user = _require_writer(request)
+    return await ner.add_authorisation(await _body(request), user)
 
 
 # ── AI assistance (services/oversight_ai.py): drafts and pre-filled forms only ──
 
-async def _run_ai(coro):
-    from services.ai_assist import AIUnavailable
-    try:
-        return await coro
-    except AIUnavailable as e:
-        return JSONResponse(status_code=e.status, content={"error": str(e)})
-    except (co.OversightError, ner.RegistryError) as e:
-        return JSONResponse(status_code=e.status, content={"error": str(e)})
-
-
 async def _operator(operator_id) -> dict:
-    from services.database import get_db
+    """The operator named in a request body.
+
+    Raises:
+        OversightError: the id is missing or not a number; OversightNotFoundError if there is no such operator.
+    """
     try:
         oid = int(operator_id)
     except (TypeError, ValueError):
         raise co.OversightError("Choose an operator") from None
-    async with get_db() as db:
-        return await co._require_operator(db, oid)
+    return await co.get_operator(oid)
 
 
 @router.post("/ai/read/{kind}")
 async def ai_read(kind: str, request: Request):
     """Read a document and return a pre-filled form: report, cancellation, authorisation or statement."""
-    if denied := _forbidden(request):
-        return denied
-    from services import oversight_ai as oai
+    user = _require_writer(request)
     body = await _body(request)
-    user = _user(request)["sub"]
-    upload = {"filename": str(body.get("filename") or "document")[:120], "media_type": str(body.get("media_type") or ""),
-              "data": str(body.get("data") or "")}
-
-    async def go():
-        if kind == "report":
-            return await oai.read_emissions_report(user, upload, await _operator(body.get("operator_id")))
-        if kind == "cancellation":
-            return await oai.read_cancellation(user, upload, await _operator(body.get("operator_id")),
-                                               str(body.get("period") or ""))
-        if kind == "authorisation":
-            return await oai.read_authorisation(user, upload)
-        if kind == "statement":
-            return await oai.read_registry_extract(user, upload)
-        raise co.OversightError("Unknown document type", status=404)
-    return await _run_ai(go())
+    upload = _upload(body, "document")
+    if kind == "report":
+        return await oai.read_emissions_report(user, upload, await _operator(body.get("operator_id")))
+    if kind == "cancellation":
+        return await oai.read_cancellation(user, upload, await _operator(body.get("operator_id")),
+                                           str(body.get("period") or ""))
+    if kind == "authorisation":
+        return await oai.read_authorisation(user, upload)
+    if kind == "statement":
+        return await oai.read_registry_extract(user, upload)
+    raise co.OversightNotFoundError("Unknown document type")
 
 
 @router.post("/ai/review-brief")
 async def ai_review_brief(request: Request):
-    if denied := _forbidden(request):
-        return denied
-    from services import oversight_ai as oai
+    """AI review brief for a claim: {"claim_id", "kind": "unit"|"fuel"} (administrators only)."""
+    user = _require_writer(request)
     body = await _body(request)
     try:
         claim_id = int(body.get("claim_id"))
     except (TypeError, ValueError):
-        return JSONResponse(status_code=400, content={"error": "claim_id is required"})
-    return await _run_ai(oai.review_brief(_user(request)["sub"], str(body.get("kind") or "unit"), claim_id))
+        raise BacswnValidationError("claim_id is required") from None
+    return await oai.review_brief(user, str(body.get("kind") or "unit"), claim_id)
 
 
 @router.post("/ai/rules-check")
 async def ai_rules_check(request: Request):
-    if denied := _forbidden(request):
-        return denied
-    from services import oversight_ai as oai
-    body = await _body(request)
-    upload = {"filename": str(body.get("filename") or "document")[:120], "media_type": str(body.get("media_type") or ""),
-              "data": str(body.get("data") or "")}
-    return await _run_ai(oai.check_rules(_user(request)["sub"], upload))
+    """Compare an uploaded ICAO document with the rules on file (administrators only; nothing is changed)."""
+    user = _require_writer(request)
+    return await oai.check_rules(user, _upload(await _body(request), "document"))
 
 
 @router.post("/ai/ask")
 async def ai_ask(request: Request):
-    from services import oversight_ai as oai
+    """Answer a question about the register: {"question"}."""
     body = await _body(request)
-    return await _run_ai(oai.ask_register(_user(request).get("sub", "?"), str(body.get("question") or "")))
+    return await oai.ask_register(_user(request).get("sub", "?"), str(body.get("question") or ""))
 
 
 @router.post("/ai/explain")
 async def ai_explain(request: Request):
-    from services import oversight_ai as oai
+    """Explain an automatic finding: {"period", "finding": {kind, operator_id, claim_id, fuel_claim_id, message}}."""
     body = await _body(request)
     f = body.get("finding") if isinstance(body.get("finding"), dict) else {}
-    return await _run_ai(oai.explain_finding(_user(request).get("sub", "?"), str(body.get("period") or ""), f))
+    return await oai.explain_finding(_user(request).get("sub", "?"), str(body.get("period") or ""), f)
 
 
 @router.post("/ai/draft")
 async def ai_draft(request: Request):
-    if denied := _forbidden(request):
-        return denied
-    from services import oversight_ai as oai
+    """Draft outgoing correspondence: {"kind", "period", "operator_id"?} (administrators only)."""
+    user = _require_writer(request)
     body = await _body(request)
     op = body.get("operator_id")
     try:
         op = int(op) if op not in (None, "") else None
     except (TypeError, ValueError):
-        return JSONResponse(status_code=400, content={"error": "operator_id must be a number"})
-    return await _run_ai(oai.draft_document(_user(request)["sub"], str(body.get("kind") or ""),
-                                            str(body.get("period") or ""), op))
+        raise BacswnValidationError("operator_id must be a number") from None
+    return await oai.draft_document(user, str(body.get("kind") or ""), str(body.get("period") or ""), op)
 
 
 @router.post("/operators/{operator_id}/fuel-certificate")
 async def read_fuel_certificate(operator_id: int, request: Request):
     """AI-assisted: pre-fill a fuel claim from an uploaded certificate. Nothing is recorded."""
-    if denied := _forbidden(request):
-        return denied
-    from services import ai_assist
-    from services.database import get_db
-    body = await _body(request)
-    try:
-        async with get_db() as db:
-            op = await co._require_operator(db, operator_id)
-            rows = await (await db.execute(
-                "SELECT f.id, f.batch_id, o.icao_designator, COALESCE((SELECT decision FROM carbon_fuel_reviews v"
-                " WHERE v.claim_id = f.id ORDER BY v.id DESC LIMIT 1), 'PENDING') AS status"
-                " FROM carbon_fuel_claims f JOIN carbon_operators o ON o.id = f.operator_id")).fetchall()
-    except co.OversightError as e:
-        return JSONResponse(status_code=e.status, content={"error": str(e)})
-    batches = {r["batch_id"].strip().lower(): f"claim F{r['id']} by {r['icao_designator']}, {r['status'].lower()}"
-               for r in rows if r["status"] != "REJECTED"}
-    try:
-        return await ai_assist.read_fuel_certificate(
-            _user(request).get("sub", "?"), str(body.get("filename") or "certificate")[:120],
-            str(body.get("media_type") or ""), str(body.get("data") or ""), op, batches, co.periods())
-    except ai_assist.AIUnavailable as e:
-        return JSONResponse(status_code=e.status, content={"error": str(e)})
+    user = _require_writer(request)
+    upload = _upload(await _body(request), "certificate")
+    op, batches = await co.fuel_certificate_context(operator_id)
+    return await ai_assist.read_fuel_certificate(
+        user, upload["filename"], upload["media_type"], upload["data"], op, batches, co.periods())

@@ -1,12 +1,22 @@
+/**
+ * StoryLauncher: the "Guided stories" card on the Station & Model Guide page.
+ *
+ * Why: presenters pick a story by its summary and length, or send a link that
+ * starts it directly.
+ * How: "Play story" dispatches the story event the app Layout listens for;
+ * "Copy link" copies `/mesh?story=<id>`, which Layout reads on load.
+ */
 import { useState } from 'react'
 import { STORIES, playStory } from '../../tour/stories'
 
 /**
  * Guided stories, as cards: play one, or copy a link that opens the app and
  * starts it (…/mesh?story=<id>).
+ * @param {{headingId?: string}} props id for the section heading (focus target)
  */
 export default function StoryLauncher({ headingId = 'mg-stories' }) {
   const [msg, setMsg] = useState('')
+  /** Copy a link that starts story `s`; if the clipboard is blocked, show the link instead. */
   const copy = async (s) => {
     const url = `${window.location.origin}/mesh?story=${s.id}`
     try { await navigator.clipboard.writeText(url); setMsg(`Link to "${s.title}" copied`) }

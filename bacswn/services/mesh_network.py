@@ -28,8 +28,20 @@ simulation that advances while it is being observed:
 * Each station hubs a mock ground sensor network (services/mesh_sensor_network.py):
   its own instruments, a lightning detector, a tide gauge and two outstations.
 
-Fault injection (node/link outages, stuck sensors, corrupted models) and canned
-scenarios let a presenter show each safeguard working.
+Fault injection (node/link outages, stuck sensors, corrupted models), canned
+scenarios, presenter controls and guided stories let a presenter show each
+safeguard working.
+
+Why: the demo has to show the mesh's safeguards (ensemble voting, peer
+verification, store-and-forward, failover) reacting to real-looking weather,
+without real station hardware.
+
+How: one ``MeshSimulation`` holds all state in plain dicts and advances in
+discrete ticks (``SIM_MINUTES_PER_TICK`` simulated minutes each) only when
+observed (``advance``). Each concern draws from its own seeded ``random.Random``
+stream, so a seeded run is reproducible and adding one subsystem does not shift
+another's random sequence. Errors in presenter input are returned as
+``{"error": ...}`` dicts, which ``api/mesh.py`` turns into HTTP 400.
 """
 
 from __future__ import annotations
@@ -100,6 +112,7 @@ def _distance_deg(lat1, lon1, lat2, lon2):
 
 
 def _bearing_to_compass(deg: float) -> str:
+    """Eight-point compass name (N, NE, ...) for a bearing in degrees."""
     return ["N", "NE", "E", "SE", "S", "SW", "W", "NW"][int(((deg % 360) + 22.5) // 45) % 8]
 
 
@@ -122,11 +135,39 @@ def _dbz_to_rain(dbz: float) -> float:
 
 
 def _rain_to_dbz(rain: float) -> float:
+    """Inverse Marshall–Palmer: reflectivity (dBZ) for a rain rate in mm/h; 0 for a trace."""
     return 0.0 if rain <= 0.05 else 10 * math.log10(200 * rain ** 1.6)
 
 
+def _pressure_fall(n: dict) -> float:
+    """Sum of the station's last three pressure tendencies (hPa); negative = falling."""
+    return sum(h.get("pressure_tendency", 0) for h in list(n["history"])[-3:])
+
+
+def _squall_signature(s: dict, falling: float) -> bool:
+    """Whether station readings look like a squall.
+
+    A squall shows as strong gusts with a pressure jump; gusts of 50 kt+ only
+    occur in squalls, so they count on their own.
+    """
+    return s["gust_kt"] >= 34 and (falling <= -0.8 or s["gust_kt"] >= 50)
+
+
 class MeshSimulation:
+    """The live mesh simulation: weather field, stations, links, models and presenter controls.
+
+    One module-level instance (``mesh``) backs the API. All state lives in plain
+    dicts so views can serialise it directly. ``reset`` rebuilds everything;
+    ``step`` advances one tick; ``advance`` runs the ticks owed since the last
+    observation.
+    """
+
     def __init__(self, seed: int | None = None):
+        """Create the random streams and sub-models, then build a fresh mesh.
+
+        Args:
+            seed: seeds every random stream for a reproducible run; None = random.
+        """
         self.rng = random.Random(seed)
         self.background_weather = True   # tests switch this off for controlled skies
         # Satellite and sensor-network noise use their own stream, so adding them
@@ -143,6 +184,7 @@ class MeshSimulation:
 
     # ── lifecycle ───────────────────────────────────────────────────────
     def reset(self) -> None:
+        """Rebuild the mesh from scratch: links, nodes, initial weather, then three warm-up ticks."""
         self.tick = 0
         self.sim_start = datetime.now(timezone.utc).replace(second=0, microsecond=0)
         self._last_wall = demo_pause.clock()
@@ -189,6 +231,7 @@ class MeshSimulation:
         return links
 
     def _new_node(self, code: str) -> dict:
+        """Initial state dict for one station: sensors, three precogs, verdict, comms equipment."""
         info = STATION_COORDS[code]
         return {
             "station": code, "name": info["name"], "lat": info["lat"], "lon": info["lon"],
@@ -206,6 +249,7 @@ class MeshSimulation:
         }
 
     def sim_time(self, tick: int | None = None) -> datetime:
+        """Simulated UTC time at `tick` (default: the current tick)."""
         return self.sim_start + timedelta(minutes=SIM_MINUTES_PER_TICK * (self.tick if tick is None else tick))
 
     def advance(self) -> None:
@@ -229,6 +273,14 @@ class MeshSimulation:
     # ── weather field ───────────────────────────────────────────────────
     def _spawn_cell(self, kind: str, lat: float, lon: float, heading: float, speed_kt: float,
                     peak: float, radius: float, life: int) -> dict:
+        """Add a weather cell moving along `heading` at `speed_kt` and return it.
+
+        Args:
+            kind: convective, squall, shower or fog.
+            peak: peak intensity (dBZ; for fog, a 0-1 density).
+            radius: Gaussian radius in degrees.
+            life: lifetime in ticks.
+        """
         rad = math.radians(heading)
         deg_per_tick = speed_kt / 3600 * SIM_MINUTES_PER_TICK   # kt → deg/min (1° ≈ 60 nm)
         cell = {
@@ -241,6 +293,11 @@ class MeshSimulation:
         return cell
 
     def _spawn_random_cell(self, initial: bool = False) -> None:
+        """Spawn a random storm: trade-wind convection, a frontal squall or radiation fog.
+
+        With `initial`, the cell is placed anywhere over the islands (start-up) rather
+        than at its usual entry point.
+        """
         r = self.rng.random()
         if r < 0.5:      # trade-wind convection drifting west
             lat, lon = self.rng.uniform(21.5, 26.5), self.rng.uniform(-75, -72.2)
@@ -260,6 +317,7 @@ class MeshSimulation:
         self._spawn_cell(kind, lat, lon, heading, speed, peak, radius, self.rng.randint(28, 60))
 
     def _background_weather(self) -> None:
+        """Keep the sky populated: top up storms and showers, and add dawn fog."""
         storms = [c for c in self.cells if c["kind"] != "shower"]
         if len(storms) < 2 or (len(storms) < 5 and self.rng.random() < 0.08):
             self._spawn_random_cell()
@@ -282,12 +340,18 @@ class MeshSimulation:
                          self.rng.uniform(35, 39), self.rng.uniform(0.7, 1.1), self.rng.randint(24, 50))
 
     def _spawn_fog(self) -> None:
+        """Spawn a slow-moving fog bank near a random station."""
         st = STATION_COORDS[self.rng.choice(BAHAMAS_STATIONS)]
         self._spawn_cell("fog", st["lat"] + self.rng.uniform(-0.25, 0.25), st["lon"] + self.rng.uniform(-0.25, 0.25),
                          self.rng.uniform(0, 360), self.rng.uniform(2, 5), self.rng.uniform(0.85, 0.98),
                          self.rng.uniform(0.45, 0.7), self.rng.randint(20, 40))
 
     def _intensity(self, c: dict, age: int | None = None) -> float:
+        """Cell intensity at `age` (default: its current age).
+
+        Storms grow and decay along a sine-root lifecycle; fog holds its peak for
+        80 % of its life, then thins out linearly.
+        """
         age = c["age"] if age is None else age
         frac = min(1.0, max(0.0, age / c["life"]))
         return c["peak"] * math.sqrt(max(0.0, math.sin(math.pi * frac))) if c["kind"] != "fog" else \
@@ -315,6 +379,10 @@ class MeshSimulation:
 
     # ── per-tick update ─────────────────────────────────────────────────
     def step(self) -> None:
+        """Advance one tick: move weather, update comms and health, then run every station.
+
+        The order of operations (and so of random draws) is fixed; seeded tests rely on it.
+        """
         self.tick += 1
         for c in self.cells:
             c["lat"] += c["dlat"]
@@ -356,6 +424,8 @@ class MeshSimulation:
                     self._heartbeat(n)
 
     def _sample_sensors(self, n: dict) -> None:
+        """Read the station's instruments from the true field (with noise), apply injected
+        sensor faults, and record the ground-truth hazard for scoring minority reports."""
         t = self._field(n["lat"], n["lon"])
         truth = _classify(t["dbz"], t["gust"], t["vis"], t["ceiling"], t["squall"])
         n["truth"] = truth
@@ -389,16 +459,15 @@ class MeshSimulation:
 
     # ── the three precogs ───────────────────────────────────────────────
     def _run_precogs(self, n: dict) -> None:
+        """Run TEMPO, VISTA and LEXIS for one station, each from its own modality."""
         s = n["sensors"]
         p = n["precogs"]
 
         # TEMPO — sensor time-series.
         dbz_est = _rain_to_dbz(s["rain_mm_h"])
-        falling = sum(h.get("pressure_tendency", 0) for h in list(n["history"])[-3:])
+        falling = _pressure_fall(n)
         call = _classify(dbz_est, s["gust_kt"], s["visibility_sm"], s["ceiling_ft"],
-                         # A squall shows as a pressure jump with strong gusts; gusts of 50 kt+
-                         # only occur in squalls, so they count on their own.
-                         squall=s["gust_kt"] >= 34 and (falling <= -0.8 or s["gust_kt"] >= 50))
+                         squall=_squall_signature(s, falling))
         if call == "SHOWERS" and falling <= -1.2 and s["gust_kt"] >= 25:
             call = "TSRA"
         reason = (f"rain {s['rain_mm_h']} mm/h (~{dbz_est:.0f} dBZ), gust {s['gust_kt']} kt, "
@@ -459,6 +528,11 @@ class MeshSimulation:
         self._set_precog(lex, call, 0.7 + clim + self.rng.uniform(0, 0.15), reason)
 
     def _set_precog(self, pc: dict, call: str, conf: float, reason: str) -> None:
+        """Store a model's output, unless a presenter override or a corruption fault replaces it.
+
+        A corrupted model draws a random call (two random draws), so this must be
+        called exactly once per model per tick to keep seeded runs stable.
+        """
         forced = pc.get("forced")
         if forced and forced["until"] > self.tick:
             call, conf, reason = forced["call"], 0.9, forced["reason"]
@@ -471,14 +545,13 @@ class MeshSimulation:
         pc["call"], pc["confidence"], pc["reason"] = call, round(min(0.99, max(0.3, conf)), 2), reason
 
     def _metar(self, n: dict) -> str:
+        """Compose a METAR-style report from the station's current sensor readings."""
         s = n["sensors"]
         t = self.sim_time()
         wx = []
         dbz = _rain_to_dbz(s["rain_mm_h"])
         if dbz >= 45:
-            # SQ (squall): strong gusts with a pressure jump, or gusts of 50 kt+.
-            falling = sum(h.get("pressure_tendency", 0) for h in list(n["history"])[-3:])
-            squall = s["gust_kt"] >= 34 and (falling <= -0.8 or s["gust_kt"] >= 50)
+            squall = _squall_signature(s, _pressure_fall(n))
             wx.append(("+TSRA" if dbz >= 52 else "TSRA") + (" SQ" if squall else ""))
         elif dbz >= 28:
             wx.append("SHRA")
@@ -496,6 +569,8 @@ class MeshSimulation:
 
     # ── 2-of-3 ensemble + minority reports ──────────────────────────────
     def _decide(self, n: dict) -> None:
+        """Form the station verdict from the active models (2-of-3, else satellite tie-break,
+        else hold), file minority reports, and start peer verification on a new hazard."""
         active = [pc for pc in n["precogs"].values() if not pc["quarantined"]]
         calls = [pc["call"] for pc in active]
         tally = {c: calls.count(c) for c in set(calls)}
@@ -537,6 +612,7 @@ class MeshSimulation:
                 self._send_to_hub(n, "ALERT", f"ALL CLEAR — {prev} ended at {n['station']}")
 
     def _file_minority_report(self, n: dict, pc: dict, majority: str) -> None:
+        """Record a dissenting model's call as an OPEN minority report."""
         self.minority_reports.appendleft({
             "id": f"MR-{next(self._ids)}", "station": n["station"], "precog": pc["id"],
             "minority_call": pc["call"], "majority_call": majority, "confidence": pc["confidence"],
@@ -545,6 +621,8 @@ class MeshSimulation:
         })
 
     def _score_minority_reports(self, n: dict) -> None:
+        """Close this station's open minority reports: VINDICATED if the dissenting call came
+        true within EVAL_TICKS, DISMISSED once the window passes (which may quarantine the model)."""
         for r in self.minority_reports:
             if r["station"] != n["station"] or r["status"] != "OPEN":
                 continue
@@ -595,6 +673,7 @@ class MeshSimulation:
 
     # ── multi-station consensus ─────────────────────────────────────────
     def _peers(self, code: str) -> list[str]:
+        """Live neighbours of a station over links that are up and have a working channel."""
         out = []
         for (a, b), l in self.links.items():
             if not l["up"] or not l["active"] or code not in (a, b):
@@ -605,6 +684,13 @@ class MeshSimulation:
         return out
 
     def _start_consensus(self, n: dict, claim: str) -> None:
+        """Put a station's hazard claim to up to four nearest peers (plus the satellite).
+
+        Peers vote from their own radar view of the originator's location over the
+        nowcast horizon. A confirmed claim becomes an ALERT to the hub; a rejected
+        IFR-or-worse claim flags a suspected local sensor fault. An isolated station
+        can be confirmed by the satellite alone, otherwise it raises an UNVERIFIED alert.
+        """
         peers = sorted(self._peers(n["station"]),
                        key=lambda c: _distance_deg(n["lat"], n["lon"], self.nodes[c]["lat"], self.nodes[c]["lon"]))[:4]
         event = {"id": f"CV-{next(self._ids)}", "station": n["station"], "claim": claim,
@@ -619,9 +705,7 @@ class MeshSimulation:
             event["reasons"]["SAT"] = f"Tomorrow.io satellite (pass {age} min ago) sees {sat} over {n['station']}"
         if not peers and sat_vote == "AGREE":
             event.update(result="CONFIRMED", detail="Isolated node — confirmed by satellite, ALERT routed to BACSWN hub")
-            self.counters["confirmed"] += 1
-            n["suspect"] = None
-            n["alerts_issued"] += 1
+            self._mark_confirmed(n)
             self.consensus_log.appendleft(event)
             self._send_to_hub(n, "ALERT", f"{claim} CONFIRMED at {n['station']} by satellite (isolated)")
             return
@@ -655,10 +739,8 @@ class MeshSimulation:
                                  origin_field["vis"] if foggy else 10,
                                  origin_field["ceiling"] if foggy else 3500,
                                  origin_field["squall"])
-                if seen != "CLEAR" and SEVERITY[seen] >= SEVERITY[claim] - 1:
-                    vote, why = "AGREE", f"Radar/satellite sees {seen} ({max(0, seen_dbz):.0f} dBZ) {when}"
-                else:
-                    vote, why = "DISAGREE", f"Radar/satellite sees {seen} ({max(0, seen_dbz):.0f} dBZ) {when}"
+                vote = "AGREE" if seen != "CLEAR" and SEVERITY[seen] >= SEVERITY[claim] - 1 else "DISAGREE"
+                why = f"Radar/satellite sees {seen} ({max(0, seen_dbz):.0f} dBZ) {when}"
             event["votes"][code], event["reasons"][code] = vote, why
             self._send(code, n["station"], "VOTE", f"{vote} — {why}")
 
@@ -668,9 +750,7 @@ class MeshSimulation:
             event["result"] = "CONFIRMED"
             event["detail"] = (f"{agree - (sat_vote == 'AGREE')}/{len(peers)} peers"
                                + (" + satellite" if sat_vote == "AGREE" else "") + " confirm — ALERT routed to BACSWN hub")
-            self.counters["confirmed"] += 1
-            n["suspect"] = None
-            n["alerts_issued"] += 1
+            self._mark_confirmed(n)
             self._send_to_hub(n, "ALERT", f"{claim} CONFIRMED at {n['station']} by {agree} peers")
         else:
             event["result"] = "REJECTED"
@@ -686,7 +766,15 @@ class MeshSimulation:
                 self._send_to_hub(n, "MAINT", f"{n['station']} flagged: local {claim} not corroborated by radar")
         self.consensus_log.appendleft(event)
 
+    def _mark_confirmed(self, n: dict) -> None:
+        """Bookkeeping for a confirmed hazard: count it and clear any sensor suspicion."""
+        self.counters["confirmed"] += 1
+        n["suspect"] = None
+        n["alerts_issued"] += 1
+
     def _propagation_handoffs(self, n: dict) -> None:
+        """Warn downstream peers of a strong cell near this station that will reach them
+        within the nowcast horizon (PROPAGATION message + a LEXIS warning)."""
         if n["precogs"]["VISTA"]["quarantined"]:
             return
         for c in self.cells:
@@ -748,6 +836,7 @@ class MeshSimulation:
         return path[::-1], dist[dst]
 
     def _log_message(self, mtype: str, src: str, dst: str, path: list[str], detail: str, via: str = "MESH") -> None:
+        """Record a delivered message: link traffic, node counters and the message/heartbeat log."""
         for a, b in zip(path, path[1:]):
             l = self.links.get((a, b)) or self.links.get((b, a))
             if l:
@@ -761,6 +850,7 @@ class MeshSimulation:
         })
 
     def _send(self, src: str, dst: str, mtype: str, detail: str) -> bool:
+        """Route and log a message; False if there is no path (nothing is queued)."""
         r = self.route(src, dst)
         if r is None:
             return False
@@ -768,6 +858,7 @@ class MeshSimulation:
         return True
 
     def _send_to_hub(self, n: dict, mtype: str, detail: str) -> None:
+        """Send a message to the BACSWN hub, queuing it (store-and-forward) when there is no route."""
         if mtype == "ALERT":
             self.counters["alerts"] += 1
         if n["station"] == HUB:
@@ -779,6 +870,7 @@ class MeshSimulation:
                         f"No route to BACSWN hub — {mtype} queued (store-and-forward, {len(n['queue'])} pending)")
 
     def _flush_queue(self, n: dict) -> None:
+        """Deliver a station's store-and-forward queue once a route to the hub exists again."""
         if not n["queue"]:
             return
         r = self.route(n["station"], HUB)
@@ -792,6 +884,7 @@ class MeshSimulation:
         n["queue"] = []
 
     def _heartbeat(self, n: dict) -> None:
+        """Send a status heartbeat to one random live peer."""
         peers = self._peers(n["station"])
         if peers:
             s = n["sensors"]
@@ -799,12 +892,24 @@ class MeshSimulation:
                        f"{n['verdict']['call']} {n['verdict']['agreement']} | p {s['pressure_hpa']} | batt {n['battery_pct']}%")
 
     def _event(self, station: str, kind: str, detail: str) -> None:
+        """Append an entry to the operator event log ("—" as station = network-wide)."""
         self.events.appendleft({"tick": self.tick, "time": self.sim_time().isoformat(),
                                 "station": station, "kind": kind, "detail": detail})
 
     # ── fault injection & scenarios ─────────────────────────────────────
     def inject_fault(self, kind: str, station: str | None = None, peer: str | None = None,
                      precog: str | None = None, sensor: str | None = None, channel: str | None = None) -> dict:
+        """Inject or clear a presenter fault.
+
+        Args:
+            kind: node_down|node_up|link_down|link_up|sensor_fault|corrupt_precog|
+                comms_down|comms_up|clear, or one of ``mesh_health.KINDS``.
+            station, peer, precog, sensor, channel: the fault's target, as the kind needs.
+
+        Returns:
+            ``{"ok": True, "kind", "station"}``, or ``{"error": msg}`` for bad input
+            (the API answers that with HTTP 400).
+        """
         n = self.nodes.get(station or "")
         if kind in ("node_down", "node_up", "sensor_fault", "corrupt_precog", "clear", "comms_down", "comms_up") and not n:
             return {"error": f"Unknown station {station}"}
@@ -861,8 +966,18 @@ class MeshSimulation:
             return {"error": f"Unknown fault {kind}"}
         return {"ok": True, "kind": kind, "station": station}
 
+    def _set_south_links(self, up: bool) -> None:
+        """Cut (or restore) every link between the southern stations and the rest of the mesh."""
+        for (a, b), l in self.links.items():
+            if (a in self._SOUTH) != (b in self._SOUTH):
+                l["up"] = up
+
     def spawn_storm(self, kind: str = "squall", lat: float | None = None, lon: float | None = None,
                     heading: float | None = None, speed_kt: float | None = None) -> dict:
+        """Spawn an already-mature storm cell (unknown kinds become a squall) and return its view.
+
+        Unset position, heading and speed fall back to per-kind defaults (NW of Grand Bahama).
+        """
         kind = kind if kind in ("convective", "squall", "fog") else "squall"
         defaults = {"convective": (270, 16, 54, 0.32), "squall": (125, 28, 58, 0.42), "fog": (90, 3, 0.9, 0.38)}
         h, sp, peak, radius = defaults[kind]
@@ -874,6 +989,10 @@ class MeshSimulation:
         return self._cell_view(cell)
 
     def run_scenario(self, name: str) -> dict:
+        """Run a canned demo scenario (reset, squall_line, rogue_precog, sensor_fault, partition).
+
+        Returns ``{"ok": True, "scenario"}`` or ``{"error": msg}`` for an unknown name.
+        """
         if name == "reset":
             self.reset()
         elif name == "squall_line":
@@ -884,10 +1003,7 @@ class MeshSimulation:
         elif name == "sensor_fault":
             self.inject_fault("sensor_fault", station="MYEG", sensor="visibility")
         elif name == "partition":
-            south = {"MYIG", "MYMM", "MYRD"}
-            for (a, b), l in self.links.items():
-                if (a in south) != (b in south):
-                    l["up"] = False
+            self._set_south_links(False)
             self.spawn_storm("convective", lat=21.0, lon=-73.25, heading=270, speed_kt=18)
             self._event("—", "PARTITION", "Southern stations (Inagua, Mayaguana, Ragged Island) cut off from the mesh")
         else:
@@ -928,6 +1044,7 @@ class MeshSimulation:
         until = self.tick + hold_ticks
 
         def force(pid, forced_call, why):
+            """Override model `pid` to call `forced_call` for the hold."""
             n["precogs"][pid]["forced"] = {"call": forced_call, "until": until, "reason": f"Presenter: {why}"}
 
         if outcome != "peers_reject" and call != "CLEAR":
@@ -998,7 +1115,15 @@ class MeshSimulation:
                       or all(_distance_deg(n["lat"], n["lon"], c["lat"], c["lon"]) > 1.6 for n in sts)]
 
     def _story_cell(self) -> dict | None:
+        """The story's own weather cell, if one is on the map."""
         return next((c for c in self.cells if c.get("story")), None)
+
+    def _spawn_story_cell(self, kind: str, n: dict, heading: float, speed_kt: float,
+                          peak: float, radius: float) -> dict:
+        """A long-lived, mature cell over station `n`, tagged as the story's own weather."""
+        c = self._spawn_cell(kind, n["lat"], n["lon"], heading, speed_kt, peak, radius, 400)
+        c.update(age=150, story=True)
+        return c
 
     def _story_steps(self, ticks: int, until=None) -> int:
         """Advance up to `ticks` ticks (stopping early once `until()` holds)."""
@@ -1020,6 +1145,11 @@ class MeshSimulation:
         c["lon"] = n["lon"] - back_nm / 60 * math.sin(r) / math.cos(math.radians(n["lat"]))
 
     def story_beat(self, name: str, beat: str) -> dict:
+        """Stage one beat of a guided story, then hold the mesh still until the next beat.
+
+        "start" resets the mesh; any other beat needs the same story to be running.
+        Returns ``{"ok": True, "story", "beat", "tick"}`` or ``{"error": msg}``.
+        """
         story = self.STORIES.get(name)
         if not story:
             return {"error": f"Unknown story {name}"}
@@ -1044,11 +1174,11 @@ class MeshSimulation:
     _SQUALL_HEADING = 130     # NW → SE, Treasure Cay → Marsh Harbour
 
     def _story_squall(self, beat: str) -> None:
+        """Squall story: VISTA sees it coming, it arrives at MYAT, MYAT hands off to MYAM."""
         at = self.nodes["MYAT"]
         if beat == "start":
             self.cells = []
-            c = self._spawn_cell("squall", at["lat"], at["lon"], self._SQUALL_HEADING, 30, 60, 0.25, 400)
-            c.update(age=150, story=True)
+            c = self._spawn_story_cell("squall", at, self._SQUALL_HEADING, 30, 60, 0.25)
             self._place(c, "MYAT", 55, self._SQUALL_HEADING)
             self._event("MYAT", "STORY", "Squall line approaching Abaco from the north-west")
             self._story_steps(2)
@@ -1058,6 +1188,7 @@ class MeshSimulation:
             self._story_steps(3)
         elif beat == "arrive":
             def overhead():
+                """The squall is MYAT's verdict and peer verification has concluded."""
                 return at["verdict"]["call"] == "SQUALL" and any(
                     e["station"] == "MYAT" and e.get("result") for e in self.consensus_log)
             self._story_steps(10, until=overhead)
@@ -1070,6 +1201,7 @@ class MeshSimulation:
                 p["source"] == "MYAT" and p["target"] == "MYAM" for p in self.propagation.values()))
 
     def _story_stuck_sensor(self, beat: str) -> None:
+        """Stuck-sensor story: MYEG's visibility sensor sticks, peers reject it, then it is repaired."""
         if beat == "start":
             self.cells = []
             self._story_steps(3)
@@ -1081,27 +1213,23 @@ class MeshSimulation:
             self._story_steps(2)
 
     def _story_cut_off(self, beat: str) -> None:
+        """Cut-off story: the south is partitioned, a storm at MYIG queues alerts, links return."""
         ig = self.nodes["MYIG"]
         if beat == "start":
             self.cells = []
             self._story_steps(2)
         elif beat == "cut":
-            for (a, b), l in self.links.items():
-                if (a in self._SOUTH) != (b in self._SOUTH):
-                    l["up"] = False
+            self._set_south_links(False)
             self._event("—", "PARTITION", "Southern stations (Inagua, Mayaguana, Ragged Island) cut off from the mesh")
             self._story_steps(1)
         elif beat == "storm":
-            c = self._spawn_cell("convective", ig["lat"], ig["lon"], 270, 10, 58, 0.3, 400)
-            c.update(age=150, story=True)
+            c = self._spawn_story_cell("convective", ig, 270, 10, 58, 0.3)
             self._place(c, "MYIG", 4, 270)
             self._event("MYIG", "STORY", "Thunderstorm building over Inagua")
             # Thirty simulated minutes of storm while cut off, so alerts queue up.
             self._story_steps(6)
         elif beat == "restore":
-            for (a, b), l in self.links.items():
-                if (a in self._SOUTH) != (b in self._SOUTH):
-                    l["up"] = True
+            self._set_south_links(True)
             self._event("—", "RESTORED", "Links to the southern stations restored")
             self._story_steps(1)
 
@@ -1112,8 +1240,7 @@ class MeshSimulation:
             self.cells = []
             self._story_steps(2)
         elif beat == "storm":
-            c = self._spawn_cell("squall", bc["lat"], bc["lon"], 0, 0, 60, 0.3, 400)
-            c.update(age=150, story=True)
+            self._spawn_story_cell("squall", bc, 0, 0, 60, 0.3)
             gust = self._field(bc["lat"], bc["lon"])["gust"]
             self.satellite.task_pass(bc)        # the satellite sees the squall at once
             comms.damage(self, "MYBC", "vhf", f"Squall gusts of {gust:.0f} kt brought down the VHF mast", None)
@@ -1128,6 +1255,7 @@ class MeshSimulation:
 
     # ── views ───────────────────────────────────────────────────────────
     def _cell_view(self, c: dict) -> dict:
+        """Public view of a weather cell, with its nowcast track."""
         return {"id": c["id"], "kind": c["kind"], "lat": round(c["lat"], 3), "lon": round(c["lon"], 3),
                 "radius_deg": c["radius"], "radius_nm": round(c["radius"] * 60),
                 "intensity": round(self._intensity(c), 2 if c["kind"] == "fog" else 0),
@@ -1137,6 +1265,7 @@ class MeshSimulation:
                           for k in range(0, NOWCAST_TICKS + 1, 2)]}
 
     def _node_view(self, n: dict) -> dict:
+        """Public view of a station, including a health status (offline/degraded/caution/healthy)."""
         r = self.route(n["station"], HUB) if n["alive"] else None
         if not n["alive"]:
             status = "offline"
@@ -1165,6 +1294,7 @@ class MeshSimulation:
         }
 
     def status(self) -> dict:
+        """The full mesh picture served by GET /api/mesh/status."""
         nodes = [self._node_view(n) for n in self.nodes.values()]
         links = [{"a": l["a"], "b": l["b"], "type": l["type"], "distance_nm": l["distance_nm"],
                   "latency_ms": l["latency_ms"], "quality": l["quality"],
@@ -1212,18 +1342,24 @@ mesh = MeshSimulation()
 
 # ── Module API (used by api/mesh.py) ────────────────────────────────────
 def get_mesh_status() -> dict:
+    """Catch the shared mesh up to now and return its full status."""
     mesh.advance()
     return mesh.status()
 
 
 def get_node_detail(station_id: str) -> dict | None:
+    """Catch the shared mesh up to now and return one station's detail (None if unknown)."""
     mesh.advance()
     n = mesh.nodes.get(station_id)
     return mesh.node_detail(n) if n else None
 
 
 def trigger_consensus(station_id: str = HUB) -> dict:
-    """Force a multi-station verification of a station's current verdict."""
+    """Force a multi-station verification of a station's current verdict.
+
+    A CLEAR station is checked for SHOWERS. Returns the consensus event, or
+    ``{"error": msg}`` if the station is unknown or offline.
+    """
     mesh.advance()
     n = mesh.nodes.get(station_id)
     if not n or not n["alive"]:

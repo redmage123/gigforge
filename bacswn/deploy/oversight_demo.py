@@ -12,6 +12,16 @@ user "demo-seed", which is how purge finds them. The register is append-only
 (SQLite triggers); purge lifts the triggers only for its own delete and then
 restores them. Rows recorded by real users are never touched, except reviews
 someone added to a demo claim, which go with that claim.
+
+Why: the oversight register only shows its checks (shortfalls, double claims,
+ineligible units, registry mismatches, unusual figures) when there is data to check,
+and a demo must be removable without leaving traces in a register that is otherwise
+append-only.
+
+How: seeding goes through the same service functions the API uses
+(``services.carbon_oversight`` and ``services.ner_registry``), so the demo rows pass
+the same validation as real ones. Each seeding step checks for its own marker rows
+first, so re-running ``seed`` only adds what is missing.
 """
 
 import asyncio
@@ -105,6 +115,11 @@ NER_CLAIMS = [
 
 
 async def seed_ner(ids: dict) -> None:
+    """Import the fictional registry statement and the claims that test it (once).
+
+    Args:
+        ids: demo operator designator -> operator id.
+    """
     async with get_db() as db:
         if await (await db.execute("SELECT 1 FROM ner_statements WHERE imported_by = ?", [SEED_USER])).fetchone():
             print("Demo registry statement already present; nothing added.")
@@ -133,6 +148,11 @@ DEMO_LOA = {"reference": "BS-LOA-DEMO-001", "issue_date": "2026-03-02",
 
 
 async def seed_extras(ids: dict) -> None:
+    """Add the unusual-figure signals and the demo letter of authorisation (once).
+
+    Args:
+        ids: demo operator designator -> operator id.
+    """
     async with get_db() as db:
         done = await (await db.execute("SELECT 1 FROM ner_authorisations WHERE created_by = ?", [SEED_USER])).fetchone()
     if done:
@@ -151,12 +171,18 @@ async def seed_extras(ids: dict) -> None:
 
 
 async def _demo_ops(db):
+    """Map designator -> id for the operators created by ``SEED_USER``."""
     rows = await (await db.execute(
         "SELECT id, icao_designator FROM carbon_operators WHERE created_by = ?", [SEED_USER])).fetchall()
     return {r[1]: r[0] for r in rows}
 
 
 async def seed():
+    """Create the demo operators, reports, claims and extras, then print the register.
+
+    If the demo operators exist, only the missing registry/extras steps are added.
+    Exits with a message if a demo designator is already used by a real operator.
+    """
     await init_db()
     async with get_db() as db:
         existing = await _demo_ops(db)
@@ -197,6 +223,11 @@ _TRIGGERS = [f"{t}_immutable_{op}" for t in ("carbon_reports", "carbon_claims", 
 
 
 async def purge():
+    """Delete every row recorded by ``SEED_USER`` in one transaction.
+
+    The append-only triggers are dropped for the delete and always restored afterwards
+    (even on failure) by re-running the schema script; the count restored is printed.
+    """
     async with get_db() as db:
         ops = await _demo_ops(db)
         has_ner = await (await db.execute("SELECT 1 FROM ner_statements WHERE imported_by = ? UNION "
@@ -236,6 +267,7 @@ async def purge():
 
 
 async def status():
+    """Print each compliance period's totals, per-operator status and findings."""
     for period in ("2021-2023", "2024-2026"):
         reg = await co.register(period)
         print(f"\n{period}: requirement {reg['totals']['offsetting_requirement_t']:,} | verified "

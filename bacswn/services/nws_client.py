@@ -1,4 +1,15 @@
-"""BACSWN — NWS (National Weather Service) API client for alerts."""
+"""BACSWN — NWS (National Weather Service) API client for alerts.
+
+What: fetches active NWS alerts for the Atlantic marine zones (AM, AN) and
+normalises each GeoJSON feature into a flat dict.
+
+Why: the Bahamas has no national alert feed of its own in the platform; the
+Miami WFO marine alerts are the closest official warnings for the surrounding
+waters.
+
+How: a shared ``httpx.AsyncClient`` with the User-Agent NWS requires; results are
+cached for ``CACHE_TTL_ALERTS``. Never raises — returns ``[]`` on failure.
+"""
 
 import logging
 import httpx
@@ -17,7 +28,7 @@ _client = httpx.AsyncClient(
 
 
 async def fetch_alerts() -> list[dict]:
-    """Fetch active weather alerts that may affect the Bahamas."""
+    """Active NWS marine-zone alerts that may affect the Bahamas; ``[]`` if NWS is unreachable."""
     cached = cache.get("nws:alerts")
     if cached is not None:
         return cached

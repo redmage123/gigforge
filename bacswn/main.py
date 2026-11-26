@@ -246,8 +246,10 @@ app.include_router(climatology_router, prefix="/api/climatology", tags=["climato
 async def serve_react(full_path: str):
     """Serve React SPA — try file first, then fallback to index.html."""
     if REACT_DIR.exists():
-        file_path = REACT_DIR / full_path
-        if file_path.is_file():
+        root = REACT_DIR.resolve()
+        file_path = (root / full_path).resolve()
+        # Encoded "../" (e.g. "..%2f.env") reaches here decoded; never serve outside the build.
+        if file_path.is_relative_to(root) and file_path.is_file():
             return FileResponse(str(file_path))
         index = REACT_DIR / "index.html"
         if index.exists():

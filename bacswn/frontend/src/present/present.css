@@ -499,3 +499,30 @@
 .pd-q-qr { left: auto; right: 180px; bottom: auto; top: 300px; width: 440px; }
 .pd-q-qr img { width: 400px; height: 400px; border-radius: 20px; padding: 18px; }
 .pd-q-qr figcaption { margin-top: 24px; font-size: 34px; line-height: 42px; font-weight: 700; color: var(--pd-gold); white-space: nowrap; }
+
+/* A slide's key number, on the right of a column slide. */
+.pd-stat { position: absolute; left: 1180px; top: 400px; width: 600px; margin: 0; animation: pd-rise .6s .3s both; }
+.pd-stat .num { white-space: nowrap; font-size: 112px; line-height: 124px; font-weight: 800; letter-spacing: -3px; color: var(--pd-accent); }
+.pd-stat figcaption { margin-top: 12px; font-size: 34px; line-height: 44px; color: var(--pd-dim); }
+.pd-stat.gap figcaption { margin: 0 0 28px; font-size: 28px; line-height: 36px; font-weight: 700; color: var(--pd-dim); text-transform: uppercase; letter-spacing: .5px; }
+.pd-stat.gap .row { display: flex; align-items: baseline; gap: 18px; margin-top: 22px; }
+.pd-stat.gap .num { font-size: 84px; line-height: 92px; }
+.pd-stat.gap .num.need { color: var(--pd-ink); } .pd-stat.gap .num.have { color: var(--pd-bad); }
+.pd-stat.gap .what { font-size: 34px; color: var(--pd-dim); }
+.pd-stat.gap .bar { height: 28px; margin-top: 10px; border-radius: 14px; background: var(--pd-card); overflow: hidden; }
+.pd-stat.gap .fill { display: block; height: 100%; border-radius: 14px; transform-origin: left; animation: pd-grow .9s .6s both; }
+.pd-stat.gap .fill.need { background: #64748b; } .pd-stat.gap .fill.have { background: var(--pd-bad); }
+@keyframes pd-grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@media (prefers-reduced-motion: reduce) { .pd-stat, .pd-stat.gap .fill { animation: none; } }
+
+/* Demo slides: larger step text, readable from the back of the room. */
+.pd-vpt.xs .theme { font-size: 22px; line-height: 28px; }
+.pd-vpt.xs .lbl { font-size: 36px; line-height: 44px; }
+.pd-vpt.xs .det { font-size: 27px; line-height: 34px; }
+
+/* Live demo panel: the app laid out at 1280x720 and scaled up less, so its text is ~50% larger. */
+.pd-embed iframe { width: 1280px; height: 720px; transform: scale(0.85); }
+
+/* Questions: the website for follow-up, under the speaker. */
+.pd-q-web { position: absolute; left: 0; top: 760px; width: 1440px; margin: 0; text-align: center; font-size: 40px; font-weight: 700; color: var(--pd-accent); animation: pd-fade .7s .8s both; }
+.pd-q-web svg { width: 40px; height: 40px; vertical-align: -6px; margin-right: 14px; }

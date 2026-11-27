@@ -21,7 +21,7 @@ import deck from './paris-deck.json'
 import qrUrl from './qr-live.svg'
 import { BAHAMAS_PATH } from './bahamas-outline'
 import {
-  ArrowLeft, ArrowRight, Ban, ExternalLink, Hourglass, CloudLightning, CopyX, Database, FileCheck2, FileSignature, FileX, Landmark, Lightbulb,
+  ArrowLeft, ArrowRight, Ban, ExternalLink, Hourglass, CloudLightning, CopyX, Database, FileCheck2, FileSignature, FileX, Globe, Landmark, Lightbulb,
   ListChecks, MapPin, Maximize, MessageCircleQuestion, MonitorPlay, NotebookPen, Pause, Plane, Play, RadioTower, Scale,
   SearchCheck, ShieldCheck, Smartphone, TrendingUp, TriangleAlert, UserRound, Waves, Wind,
 } from 'lucide-react'
@@ -162,9 +162,35 @@ function ChainSlide({ slide, step, onOpenDemo }) {
     <>
       <h2 className="pd-h left">{slide.headline}</h2>
       {slide.sub && <p className="pd-h-sub">{slide.sub}</p>}
-      <Column items={slide.items} x={200} y0={y0} y1={900} r={52} tone={slide.tone || 'accent'} w={1250} step={step} />
+      <Column items={slide.items} x={200} y0={y0} y1={900} r={52} tone={slide.tone || 'accent'} w={slide.stat ? 820 : 1250} step={step} />
+      {slide.stat && step >= slide.items.length - 1 && <Stat stat={slide.stat} />}
       {slide.source && step >= slide.items.length - 1 && <span className="pd-source">{slide.source}</span>}
     </>
+  )
+}
+
+/**
+ * The slide's key number on the right: one big figure with its label, or (with `have` and
+ * `need`) the gap between them drawn as two bars to scale.
+ */
+function Stat({ stat }) {
+  if (stat.need) {
+    const pct = Math.round((stat.have / stat.need) * 100)
+    return (
+      <figure className="pd-stat gap" aria-label={`${stat.title}: ${stat.have}${stat.unit} ${stat.haveLabel}, ${stat.need}${stat.unit} ${stat.needLabel}`}>
+        <figcaption>{stat.title}</figcaption>
+        <div className="row"><span className="num need">{stat.need}{stat.unit}</span><span className="what">{stat.needLabel}</span></div>
+        <div className="bar"><span className="fill need" style={{ width: '100%' }} /></div>
+        <div className="row"><span className="num have">{stat.have}{stat.unit}</span><span className="what">{stat.haveLabel}</span></div>
+        <div className="bar"><span className="fill have" style={{ width: `${pct}%` }} /></div>
+      </figure>
+    )
+  }
+  return (
+    <figure className="pd-stat">
+      <div className="num">{stat.value}</div>
+      <figcaption>{stat.label}</figcaption>
+    </figure>
   )
 }
 
@@ -239,7 +265,7 @@ function RecapSlide({ slide, step }) {
   const xs = [420, 960, 1500]
   return (
     <>
-      <h2 className="pd-h">{slide.headline}</h2>
+      <h2 className="pd-h left">{slide.headline}</h2>
       {slide.rows.map((r, i) => step >= i && (
         <div key={r.topic} className="pd-recap-col" style={{ left: xs[i] - 260 }}>
           <div className={`topic ${themeClass(r.topic)}`}>{r.topic}</div>
@@ -268,6 +294,7 @@ function QuestionsSlide({ slide }) {
       <div className="pd-q-icon"><MessageCircleQuestion aria-hidden="true" strokeWidth={1.5}><title>Questions</title></MessageCircleQuestion></div>
       <h2 className="pd-q">{slide.headline}</h2>
       <p className="pd-q-who">{p.name} · {p.role}, {p.org}</p>
+      {deck.contact && <p className="pd-q-web"><Globe aria-hidden="true" className="pd-ic-inline" strokeWidth={2.25}><title>Website</title></Globe>{deck.contact}</p>}
       <figure className="pd-revisit pd-q-qr">
         <img src={qrUrl} alt={`QR code: ${deck.joinUrl}`} />
         <figcaption><Smartphone aria-hidden="true" className="pd-ic-inline" strokeWidth={2.25}><title>On your phone</title></Smartphone>Try the demos on your phone</figcaption>

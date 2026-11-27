@@ -249,17 +249,37 @@ def intro_slide(s):
 
 def chain_slide(s):
     y0 = 380 if s.get("sub") else 310
-    els = left_headline(s) + column(s["items"], schedule(s), 200, y0, 900, 52, s.get("tone", "accent"), 1250)
+    st = s.get("stat")
+    els = left_headline(s) + column(s["items"], schedule(s), 200, y0, 900, 52, s.get("tone", "accent"), 820 if st else 1250)
+    if st:
+        els.append(stat(st, schedule(s)[-1] + 300))
     if s.get("source"):
         els.append(source(s["source"]))
     return els
+
+
+def stat(st, at):
+    """The slide's key number on the right: one big figure, or the gap between two drawn to scale (as on the web)."""
+    x, w = 1180, 600
+    if st.get("need"):
+        u, have, need = st["unit"], st["have"], st["need"]
+        return El("group", label=f"{st['title']}: {have}{u} {st['haveLabel']}, {need}{u} {st['needLabel']}", anim=Anim("rise", at, 600), children=[
+            text(x, 400, w, 36, st["title"].upper(), 28, "dim", True, "l"),
+            El("text", x, 470, w, 92, runs=[(f"{need}{u}  ", 84, "ink", True), (st["needLabel"], 34, "dim", False)], align="l"),
+            El("rect", x, 572, w, 28, radius=14, fill="64748b"),
+            El("text", x, 630, w, 92, runs=[(f"{have}{u}  ", 84, "bad", True), (st["haveLabel"], 34, "dim", False)], align="l"),
+            El("rect", x, 732, w, 28, radius=14, fill=col("card")),
+            El("rect", x, 732, w * have / need, 28, radius=14, fill=col("bad"))])
+    return El("group", label=f"{st['value']} {st['label']}", anim=Anim("rise", at, 600), children=[
+        text(x, 400, w + 100, 124, st["value"], 112, "accent", True, "l"),
+        text(x, 536, w, 92, _wrap(st["label"], 34, w), 34, "dim", align="l")])
 
 
 def demo_slide(s, video):
     """The demo steps down a column on the left; the recording of the live demo plays on the right."""
     sch = schedule(s)
     els = [text(140, 100, 1640, 96, s["headline"], 80, bold=True, align="l", anim=Anim("rise", 0, 700))]
-    els += column(s["items"], sch, 180, 340, 860, 46, "accent", 440, lbl=30, det=22)
+    els += column(s["items"], sch, 180, 340, 860, 46, "accent", 440, lbl=36, det=27)
     if video:
         path, poster, _sec = video
         els.append(El("video", 824, 300, 1024, 576, name=str(path), poster=str(poster),
@@ -278,7 +298,7 @@ def demo_slide(s, video):
 
 def recap_slide(s):
     """One column per theme: its problem, an arrow down, its fix; then the outcome."""
-    els = [headline(s["headline"])]
+    els = [text(140, 100, 1640, 96, s["headline"], 80, bold=True, align="l", anim=Anim("rise", 0, 700))]
     sch = schedule(s)
     for i, (r, at) in enumerate(zip(s["rows"], sch)):
         x = [420, 960, 1500][i]
@@ -307,6 +327,7 @@ def questions_slide(s):
             icon("MessageCircleQuestion", 720, 320, 260, "accent", 1.5) | _with(Anim("zoom", 0, 700)),
             text(0, 500, 1440, 150, s["headline"], 130, bold=True, anim=Anim("rise", 300, 700)),
             text(0, 690, 1440, 50, f"{p['name']} · {p['role']}, {p['org']}", 40, "dim", anim=Anim("fade", 600, 700)),
+            text(0, 760, 1440, 50, DECK.get("contact", ""), 40, "accent", True, anim=Anim("fade", 800, 700)),
             El("group", label="QR code to the phone demos", anim=Anim("fade", 1200, 600), children=[
                 El("rect", 1300, 300, 400, 400, radius=20, fill="ffffff"),
                 El("image", 1318, 318, 364, 364, name=str(ASSETS / "qr-live.png"), label=f"QR code: {DECK['joinUrl']}"),

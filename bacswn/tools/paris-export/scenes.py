@@ -116,12 +116,13 @@ def _spoken(notes):
 
 
 FIRST_MAX_MS = 2500   # latest moment for a slide's first point
+STEP_GAP_MS = 800     # between steps without a cue (as on the web deck)
 
 
 def schedule(s, span_ms=None):
     """When each step appears (ms): when the presenter reaches its cue phrase in the notes, at WPM.
 
-    The same rule as the web deck; steps without a cue follow two seconds after the one before.
+    The same rule as the web deck; steps without a cue follow STEP_GAP_MS after the one before.
     """
     t = _spoken(s.get("notes"))
     out = []
@@ -129,7 +130,7 @@ def schedule(s, span_ms=None):
     for i in range(steps_of(s)):
         cue = cues[i] if i < len(cues) else None
         k = t.find(cue) if cue else -1
-        out.append(int(800 + len(t[:k].split()) * 60000 / WPM) if k >= 0 else (out[-1] + 2000 if out else 800))
+        out.append(int(800 + len(t[:k].split()) * 60000 / WPM) if k >= 0 else (out[-1] + STEP_GAP_MS if out else 800))
     if out:   # the first point comes in at once, however long the lead-in (as on the web deck)
         out[0] = min(out[0], FIRST_MAX_MS)
     if s.get("pace") == "even" and len(out) > 2:   # points between the first and last spaced evenly

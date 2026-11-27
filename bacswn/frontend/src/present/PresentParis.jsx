@@ -67,6 +67,9 @@ const WPM = deck.wpm || 140
 /** Latest moment (seconds after a slide opens) for its first point to appear. */
 const FIRST_MAX = 2.5
 
+/** Gap between steps that have no cue (the opening agenda: all five drawn in about 5 s). */
+const STEP_GAP = 0.8
+
 /** The notes as spoken: checks in [brackets] are not read out. */
 const spoken = (notes) => (notes || '').replace(/\[[^\]]*\]/g, '')
 
@@ -74,7 +77,7 @@ const spoken = (notes) => (notes || '').replace(/\[[^\]]*\]/g, '')
  * When each step appears, in seconds after the slide opens: the moment the presenter
  * reaches that point in the speaker notes. Each step has a cue (the phrase that introduces
  * it); its time is the words spoken before the cue at the natural pace. Steps without a
- * cue follow two seconds after the one before. The first step is never later than FIRST_MAX.
+ * cue follow STEP_GAP seconds after the one before. The first step is never later than FIRST_MAX.
  */
 function scheduleOf(slide) {
   const text = spoken(slide.notes)
@@ -85,7 +88,7 @@ function scheduleOf(slide) {
   const out = []
   for (let i = 0; i < stepsOf(slide); i += 1) {
     const t = at(slide.cues?.[i])
-    out.push(t ?? (i ? out[i - 1] + 2 : 0.8))
+    out.push(t ?? (i ? out[i - 1] + STEP_GAP : 0.8))
   }
   // The slide never sits still: its first point comes in at once, however long the lead-in.
   if (out.length) out[0] = Math.min(out[0], FIRST_MAX)

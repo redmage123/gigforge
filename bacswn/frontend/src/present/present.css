@@ -65,10 +65,9 @@
 .pd-progress { position: absolute; top: 0; left: 0; height: 6px; background: var(--pd-accent); transition: width .5s ease; }
 
 /* title */
-.pd-arcs { position: absolute; inset: 0; width: 1920px; height: 1080px; opacity: .45; }
-.pd-arcs path { fill: none; stroke: var(--pd-accent); stroke-width: 2; stroke-dasharray: 8 12; animation: pd-dash 18s linear infinite; }
-.pd-arcs path:nth-child(2n) { stroke: var(--pd-gold); animation-duration: 24s; }
-.pd-arcs path:nth-child(3n) { stroke: var(--pd-ok); animation-duration: 30s; }
+.pd-islands { position: absolute; inset: 0; width: 1920px; height: 1080px; animation: pd-fade 2s ease-out both; }
+.pd-islands path { fill: rgba(56,189,248,.08); stroke: rgba(56,189,248,.3); stroke-width: 1.5; stroke-linejoin: round; }
+.pd-islands.faint path { opacity: .5; }
 .pd-title { position: absolute; left: 0; right: 0; top: 250px; text-align: center; font-size: 124px; font-weight: 800;
   letter-spacing: -3px; line-height: 140px; margin: 0; animation: pd-rise .8s ease-out both; }
 .pd-sub { position: absolute; left: 0; right: 0; top: 420px; text-align: center; font-size: 40px; line-height: 48px; color: var(--pd-dim); margin: 0; animation: pd-rise .8s .3s ease-out both; }
@@ -440,7 +439,6 @@
 @keyframes pd-flip { from { opacity: 0; transform: perspective(1200px) rotateY(80deg); } to { opacity: 1; transform: none; } }
 @keyframes pd-stamp { 0% { opacity: 0; transform: rotate(-8deg) scale(3); } 100% { opacity: 1; transform: rotate(-8deg) scale(1); } }
 @keyframes pd-draw { to { stroke-dashoffset: 0; } }
-@keyframes pd-dash { to { stroke-dashoffset: -400; } }
 @keyframes pd-alarm { 0% { opacity: .9; transform: scale(1); } 100% { opacity: 0; transform: scale(1.35); } }
 @keyframes pd-turn-bad { to { border-color: var(--pd-bad); color: var(--pd-bad); } }
 @keyframes pd-enter { from { opacity: 0; transform: translateX(48px); } to { opacity: 1; transform: none; } }
@@ -478,3 +476,13 @@
 /* self-guided start screen: how to move on */
 .pd-start { flex-direction: column; gap: 28px; }
 .pd-start-hint { color: var(--pd-ink); font-size: 22px; line-height: 32px; text-align: center; max-width: 640px; }
+
+/* One colour per theme of the talk (labels on points and recap columns). */
+.t-supply { color: #fbbf24 !important; } .t-integrity { color: #2dd4bf !important; } .t-bluecarbon { color: #38bdf8 !important; }
+
+/* Questions: the question on the left, a large QR code to the demos on the right. */
+.pd-q-icon { left: 720px; }
+.pd-q, .pd-q-who { right: auto; width: 1440px; }
+.pd-q-qr { left: auto; right: 180px; bottom: auto; top: 300px; width: 440px; }
+.pd-q-qr img { width: 400px; height: 400px; border-radius: 20px; padding: 18px; }
+.pd-q-qr figcaption { margin-top: 24px; font-size: 34px; line-height: 42px; font-weight: 700; color: var(--pd-gold); white-space: nowrap; }

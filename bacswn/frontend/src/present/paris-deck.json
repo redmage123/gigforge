@@ -56,7 +56,7 @@
       "id": "intro",
       "kind": "intro",
       "minutes": 0.75,
-      "headline": "Who I am and what I'll cover",
+      "headline": "Who I am and what I’ll cover",
       "sub": "CORSIA and the Bahamas",
       "notes": "Good morning. I'm Michael Strachan, CEO of BACSWN, SkyWatch Bahamas: we run a weather, airspace and emergency network for The Bahamas. A year ago in Barcelona the question on the CORSIA panel was what airlines need. Today it's what governments can do. In the next twenty minutes I'll tell you four things: how the system works for the Bahamas today, the problems that stop it delivering, how we are solving them, and then I'll show you the solution working. At the end I'll recap, and take your questions.",
       "cues": [
@@ -121,14 +121,14 @@
         },
         {
           "icon": "CopyX",
-          "label": "Claims can't be checked",
+          "label": "Claims can’t be checked",
           "detail": "A double claim passes a paper check",
           "theme": "Strengthening market integrity"
         },
         {
           "icon": "CloudLightning",
           "label": "Storms blind the evidence",
-          "detail": "Freeport's reports stopped for 10½ days in Dorian",
+          "detail": "Freeport’s reports stopped for 10½ days in Dorian",
           "theme": "Caribbean blue carbon investment"
         },
         {
@@ -152,7 +152,7 @@
       "stage": 3,
       "tone": "ok",
       "minutes": 1.5,
-      "headline": "Our solution: the state's own evidence",
+      "headline": "Our solution: the state’s own evidence",
       "items": [
         {
           "icon": "FileCheck2",
@@ -163,7 +163,7 @@
         {
           "icon": "SearchCheck",
           "label": "Check every claim",
-          "detail": "We check against observed flights and the national register: each airline's report against the flights we see in Bahamian airspace. Double claims and unauthorised units are caught.",
+          "detail": "We check against observed flights and the national register: each airline’s report against the flights we see in Bahamian airspace. Double claims and unauthorised units are caught.",
           "theme": "Strengthening market integrity"
         },
         {
@@ -175,7 +175,7 @@
         {
           "icon": "TrendingUp",
           "label": "Bankable credits",
-          "detail": "Buffers sized to each site's real risk: credits airlines can use and investors can fund."
+          "detail": "Buffers sized to each site’s real risk: credits airlines can use and investors can fund."
         }
       ],
       "notes": "Here is how we solve it. Our solution is to give the state its own evidence. BACSWN already runs the weather and airspace network over The Bahamas; we turn that data into evidence the government can use to sign, check and price credits, theme by theme. One, authorise in minutes, to unlock CORSIA supply: AI reads a letter of authorisation, fills in the record and checks it against the national registry, so the state can sign knowing the numbers hold up. A person still decides. Two, check every claim, to strengthen market integrity: we compare each airline's report with the flights we actually observe in our own airspace, and every unit with the registry and the letter. Three, measure every storm, for Caribbean blue carbon investment: a dense, hardened network of stations keeps measuring wind and surge at each project site right through a hurricane, so investors see measured risk instead of guesses. And the result: bankable credits, with buffers sized to real risk, that airlines can use and investors can fund. Let me show you.",
@@ -236,7 +236,7 @@
       "items": [
         {
           "icon": "Wind",
-          "label": "Dorian's real track",
+          "label": "Dorian’s real track",
           "detail": "NOAA best track, hour by hour",
           "demo": {
             "path": "/present/coastal-permanence",

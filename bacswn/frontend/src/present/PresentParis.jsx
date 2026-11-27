@@ -19,10 +19,11 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import deck from './paris-deck.json'
 import qrUrl from './qr-live.svg'
+import { BAHAMAS_PATH } from './bahamas-outline'
 import {
   ArrowLeft, ArrowRight, Ban, Hourglass, CloudLightning, CopyX, Database, FileCheck2, FileSignature, FileX, Landmark, Lightbulb,
   ListChecks, MapPin, Maximize, MessageCircleQuestion, MonitorPlay, NotebookPen, Pause, Plane, Play, RadioTower, Scale,
-  SearchCheck, ShieldCheck, TrendingUp, TriangleAlert, UserRound, Waves, Wind,
+  SearchCheck, ShieldCheck, Smartphone, TrendingUp, TriangleAlert, UserRound, Waves, Wind,
 } from 'lucide-react'
 import '@fontsource-variable/inter'
 import './present.css'
@@ -42,10 +43,13 @@ const ICONS = {
   MonitorPlay, Plane, RadioTower, Scale, SearchCheck, ShieldCheck, TrendingUp, TriangleAlert, UserRound, Waves, Wind,
 }
 
-/** A named icon; hidden from screen readers because a visible label always sits beside it. */
-function Icon({ name, ...props }) {
+/**
+ * A named icon with a title (shown as a tooltip); hidden from screen readers because a
+ * visible label always sits beside it.
+ */
+function Icon({ name, title, ...props }) {
   const C = ICONS[name]
-  return C ? <C aria-hidden="true" focusable="false" {...props} /> : null
+  return C ? <C aria-hidden="true" focusable="false" {...props}><title>{title || name}</title></C> : null
 }
 
 /** How many build steps a slide has (each step brings in one point or row). */
@@ -102,7 +106,7 @@ function Rail({ stage }) {
     <ol className="pd-rail" aria-label="Agenda">
       {deck.agenda.map((a, i) => (
         <li key={a.label} className={i + 1 === stage ? 'on' : i + 1 < stage ? 'past' : ''} aria-current={i + 1 === stage ? 'step' : undefined}>
-          <Icon name={a.icon} strokeWidth={2.25} />{a.label}
+          <Icon name={a.icon} title={a.label} strokeWidth={2.25} />{a.label}
         </li>
       ))}
     </ol>
@@ -124,19 +128,31 @@ function VArrow({ x, y1, y2, show, tone = 'line' }) {
   )
 }
 
+/** Colour class for one of the talk's three themes (supply, integrity, blue carbon). */
+const themeClass = (name) => ['t-supply', 't-integrity', 't-bluecarbon'][deck.themes.indexOf(name)] || ''
+
+/** Faint outline of the Bahamas islands behind the opening and closing slides. */
+function IslandsBackdrop({ faint = false }) {
+  return (
+    <svg className={`pd-islands${faint ? ' faint' : ''}`} viewBox="0 0 1920 1080" aria-hidden="true">
+      <path d={BAHAMAS_PATH} />
+    </svg>
+  )
+}
+
 /** One point in a column: an icon in a ring, with its theme, label and detail to the right. */
 function Point({ item, x, y, r, tone, w, size = 'lg', onOpenDemo, delayed, activeDemo }) {
   return (
     <div className={`pd-vpt ${tone} ${size}${delayed ? ' after-arrow' : ''}`} style={{ left: x - r, top: y - r, height: 2 * r, width: 2 * r + 40 + w }}>
-      <div className="ring" style={{ width: 2 * r, height: 2 * r }}><Icon name={item.icon} strokeWidth={1.75} /></div>
+      <div className="ring" style={{ width: 2 * r, height: 2 * r }}><Icon name={item.icon} title={item.label} strokeWidth={1.75} /></div>
       <div className="txt" style={{ width: w }}>
-        {item.theme && <div className="theme">{item.theme}</div>}
+        {item.theme && <div className={`theme ${themeClass(item.theme)}`}>{item.theme}</div>}
         <div className="lbl">{item.label}</div>
         {item.detail && <div className="det">{item.detail}</div>}
         {item.demo && onOpenDemo && (
           <button type="button" className={`pd-demo-btn${activeDemo === item.demo.path ? ' on' : ''}`} onClick={() => onOpenDemo(item.demo)}
             aria-pressed={activeDemo === item.demo.path} aria-label={`Show live demo: ${item.demo.label}`}>
-            <MonitorPlay aria-hidden="true" strokeWidth={2.25} />Live demo
+            <MonitorPlay aria-hidden="true" strokeWidth={2.25}><title>Live demo</title></MonitorPlay>Live demo
           </button>
         )}
       </div>
@@ -188,7 +204,7 @@ function DemoSlide({ slide, step, onOpenDemo }) {
         <div className="pd-embed" onMouseLeave={() => document.activeElement?.blur?.()}>
           <div className="view"><iframe key={active.path} title={`Live demo: ${active.label}`} src={active.path} /></div>
           <button type="button" className="pd-embed-max" onClick={() => onOpenDemo?.(active)} aria-label={`Open ${active.label} full screen`}>
-            <Maximize aria-hidden="true" strokeWidth={2.25} />
+            <Maximize aria-hidden="true" strokeWidth={2.25}><title>Full screen</title></Maximize>
           </button>
         </div>
       )}
@@ -200,9 +216,7 @@ function DemoSlide({ slide, step, onOpenDemo }) {
 function TitleSlide({ slide, step }) {
   return (
     <>
-      <svg className="pd-arcs" viewBox="0 0 1920 1080" aria-hidden="true">
-        {[...Array(9)].map((_, i) => <path key={i} d={`M ${-120 + i * 48} ${980 - i * 70} Q 960 ${-240 + i * 84} ${2040 - i * 36} ${360 + i * 66}`} />)}
-      </svg>
+      <IslandsBackdrop />
       <h1 className="pd-intro-title" style={{ top: 150 }}>{slide.headline}</h1>
       <p className="pd-title-about">{slide.sub}</p>
       {step >= 0 && <Point item={slide.from} x={840} y={600} r={64} tone="bad" w={400} size="sm" />}
@@ -218,12 +232,10 @@ function IntroSlide({ slide, step }) {
   const p = deck.presenter
   return (
     <>
-      <svg className="pd-arcs" viewBox="0 0 1920 1080" aria-hidden="true">
-        {[...Array(9)].map((_, i) => <path key={i} d={`M ${-120 + i * 48} ${980 - i * 70} Q 960 ${-240 + i * 84} ${2040 - i * 36} ${360 + i * 66}`} />)}
-      </svg>
+      <IslandsBackdrop />
       <h2 className="pd-h">{slide.headline}</h2>
       <div className="pd-presenter">
-        <div className="avatar"><UserRound aria-hidden="true" strokeWidth={1.75} /></div>
+        <div className="avatar"><UserRound aria-hidden="true" strokeWidth={1.75}><title>Presenter</title></UserRound></div>
         <div>
           <div className="name">{p.name}</div>
           <div className="role">{p.role}, {p.org}</div>
@@ -243,17 +255,17 @@ function RecapSlide({ slide, step }) {
       <h2 className="pd-h">{slide.headline}</h2>
       {slide.rows.map((r, i) => step >= i && (
         <div key={r.topic} className="pd-recap-col" style={{ left: xs[i] - 260 }}>
-          <div className="topic">{r.topic}</div>
-          <span className="pd-mini bad"><Icon name={r.problem.icon} strokeWidth={2} /></span>
+          <div className={`topic ${themeClass(r.topic)}`}>{r.topic}</div>
+          <span className="pd-mini bad"><Icon name={r.problem.icon} title={r.problem.label} strokeWidth={2} /></span>
           <div className="lbl bad">{r.problem.label}</div>
           <svg className="pd-arrow v ok inline" viewBox="0 0 60 80" aria-hidden="true"><line x1="30" y1="0" x2="30" y2="58" /><path d="M 12 54 L 30 78 L 48 54 Z" /></svg>
-          <span className="pd-mini ok after-arrow"><Icon name={r.fix.icon} strokeWidth={2} /></span>
+          <span className="pd-mini ok after-arrow"><Icon name={r.fix.icon} title={r.fix.label} strokeWidth={2} /></span>
           <div className="lbl ok after-arrow">{r.fix.label}</div>
         </div>
       ))}
       {step >= slide.rows.length && (
         <div className="pd-recap-result">
-          <span className="pd-mini gold"><Icon name={slide.result.icon} strokeWidth={2} /></span>{slide.result.label}
+          <span className="pd-mini gold"><Icon name={slide.result.icon} title={slide.result.label} strokeWidth={2} /></span>{slide.result.label}
         </div>
       )}
     </>
@@ -265,12 +277,13 @@ function QuestionsSlide({ slide }) {
   const p = deck.presenter
   return (
     <>
-      <div className="pd-q-icon"><MessageCircleQuestion aria-hidden="true" strokeWidth={1.5} /></div>
+      <IslandsBackdrop faint />
+      <div className="pd-q-icon"><MessageCircleQuestion aria-hidden="true" strokeWidth={1.5}><title>Questions</title></MessageCircleQuestion></div>
       <h2 className="pd-q">{slide.headline}</h2>
       <p className="pd-q-who">{p.name} · {p.role}, {p.org}</p>
-      <figure className="pd-revisit">
+      <figure className="pd-revisit pd-q-qr">
         <img src={qrUrl} alt={`QR code: ${deck.joinUrl}`} />
-        <figcaption>Explore the demos on your phone</figcaption>
+        <figcaption><Smartphone aria-hidden="true" className="pd-ic-inline" strokeWidth={2.25}><title>On your phone</title></Smartphone>Try the demos on your phone</figcaption>
       </figure>
     </>
   )
@@ -389,22 +402,22 @@ export default function PresentParis() {
         {!STATIC && started && (
           <nav className="pd-nav" aria-label="Slide navigation">
             <button type="button" onClick={() => go(index - 1, true)} disabled={index === 0} aria-label="Previous slide">
-              <ArrowLeft aria-hidden="true" strokeWidth={2.5} />
+              <ArrowLeft aria-hidden="true" strokeWidth={2.5}><title>Back</title></ArrowLeft>
             </button>
             <button type="button" className="play" onClick={() => setPlaying(p => !p)} aria-pressed={playing}
               aria-label={playing ? 'Pause the presentation' : 'Resume the presentation'}>
-              {playing ? <Pause aria-hidden="true" strokeWidth={2.5} /> : <Play aria-hidden="true" strokeWidth={2.5} />}
+              {playing ? <Pause aria-hidden="true" strokeWidth={2.5}><title>Pause</title></Pause> : <Play aria-hidden="true" strokeWidth={2.5}><title>Play</title></Play>}
               <span className="timer" style={{ width: `${progress}%` }} aria-hidden="true" />
             </button>
             <button type="button" onClick={forward} disabled={index === last && step >= total - 1} aria-label="Next">
-              <ArrowRight aria-hidden="true" strokeWidth={2.5} />
+              <ArrowRight aria-hidden="true" strokeWidth={2.5}><title>Next</title></ArrowRight>
             </button>
           </nav>
         )}
       </div>
       {!started && (
         <button type="button" className="pd-start" onClick={start} aria-label="Start the presentation in full screen">
-          <Play aria-hidden="true" strokeWidth={2} />
+          <Play aria-hidden="true" strokeWidth={2}><title>Start</title></Play>
           {SELF && <span className="pd-start-hint">Press → (or the arrow buttons) to move on.<br />The demos on slides 6 and 7 are live: try them.</span>}
         </button>
       )}
@@ -412,15 +425,15 @@ export default function PresentParis() {
         <div className="pd-frame">
           <iframe title={demo.label} src={demo.path} />
           <button type="button" className="pd-frame-close" onClick={closeDemo} aria-label="Back to the slides">
-            <ArrowLeft aria-hidden="true" strokeWidth={2.5} />
+            <ArrowLeft aria-hidden="true" strokeWidth={2.5}><title>Back</title></ArrowLeft>
           </button>
         </div>
       )}
       {notes && <div className="pd-notes" role="note"><b>~{slide.minutes || '–'} min · {minutesLeft.toFixed(1)} min to the end</b><br />{slide.notes}</div>}
       {!STATIC && started && (
         <div className="pd-chrome">
-          <button type="button" onClick={() => setNotes(v => !v)} aria-pressed={notes} aria-label="Speaker notes (N)"><NotebookPen aria-hidden="true" /></button>
-          <button type="button" onClick={fullScreen} aria-label="Full screen (F)"><Maximize aria-hidden="true" /></button>
+          <button type="button" onClick={() => setNotes(v => !v)} aria-pressed={notes} aria-label="Speaker notes (N)"><NotebookPen aria-hidden="true"><title>Speaker notes</title></NotebookPen></button>
+          <button type="button" onClick={fullScreen} aria-label="Full screen (F)"><Maximize aria-hidden="true"><title>Full screen</title></Maximize></button>
         </div>
       )}
     </div>

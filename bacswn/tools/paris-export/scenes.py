@@ -132,6 +132,9 @@ def schedule(s, span_ms=None):
         out.append(int(800 + len(t[:k].split()) * 60000 / WPM) if k >= 0 else (out[-1] + 2000 if out else 800))
     if out:   # the first point comes in at once, however long the lead-in (as on the web deck)
         out[0] = min(out[0], FIRST_MAX_MS)
+    if s.get("pace") == "even" and len(out) > 2:   # points between the first and last spaced evenly
+        a, gap = out[0], (out[-1] - out[0]) / (len(out) - 1)
+        out[1:-1] = [int(a + i * gap) for i in range(1, len(out) - 1)]
     return out
 
 

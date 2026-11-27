@@ -117,7 +117,8 @@
         "Two, trust",
         "Three, the weather",
         "The result"
-      ]
+      ],
+      "pace": "even"
     },
     {
       "id": "solution",
@@ -158,7 +159,8 @@
         "Three, measure every storm",
         "And the result"
       ],
-      "sub": "BACSWN already runs the weather and airspace network over The Bahamas. We turn that data into evidence the government can use to sign, check and price credits."
+      "sub": "BACSWN already runs the weather and airspace network over The Bahamas. We turn that data into evidence the government can use to sign, check and price credits.",
+      "pace": "even"
     },
     {
       "id": "demo-1",

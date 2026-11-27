@@ -89,6 +89,11 @@ function scheduleOf(slide) {
   }
   // The slide never sits still: its first point comes in at once, however long the lead-in.
   if (out.length) out[0] = Math.min(out[0], FIRST_MAX)
+  // "pace": "even": the points between the first and the last are spaced evenly between them.
+  if (slide.pace === 'even' && out.length > 2) {
+    const a = out[0], gap = (out[out.length - 1] - a) / (out.length - 1)
+    for (let i = 1; i < out.length - 1; i += 1) out[i] = a + i * gap
+  }
   return out
 }
 

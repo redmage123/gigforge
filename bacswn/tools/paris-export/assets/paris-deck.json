@@ -1,0 +1,434 @@
+{
+  "title": "From bottleneck to bankable",
+  "event": "Global Carbon Markets Conference · Paris · December 2026",
+  "speaker": "Michael Strachan · CEO, BACSWN",
+  "joinUrl": "78.47.104.139:8088/live",
+  "presenter": {
+    "name": "Michael Strachan",
+    "role": "CEO",
+    "org": "BACSWN",
+    "tagline": "SkyWatch Bahamas · weather, airspace and emergency network for The Bahamas"
+  },
+  "agenda": [
+    {
+      "icon": "Landmark",
+      "label": "The system today"
+    },
+    {
+      "icon": "TriangleAlert",
+      "label": "The problems"
+    },
+    {
+      "icon": "Lightbulb",
+      "label": "Our solution"
+    },
+    {
+      "icon": "MonitorPlay",
+      "label": "Demo"
+    },
+    {
+      "icon": "ListChecks",
+      "label": "Recap"
+    }
+  ],
+  "slides": [
+    {
+      "id": "title",
+      "kind": "title",
+      "minutes": 0.5,
+      "headline": "From bottleneck to bankable",
+      "sub": "Three themes from a small island state: unlocking CORSIA supply, strengthening market integrity, and Caribbean blue carbon investment",
+      "from": {
+        "icon": "Hourglass",
+        "label": "Bottleneck"
+      },
+      "to": {
+        "icon": "TrendingUp",
+        "label": "Bankable"
+      },
+      "notes": "On screen while the room settles. This talk is about CORSIA and the Bahamas, and it covers three themes: unlocking CORSIA supply, strengthening market integrity, and Caribbean blue carbon investment. It shows how state-side data and tools take Bahamian credits from bottleneck to bankable.",
+      "cues": [
+        "This talk is about",
+        "how state-side data"
+      ]
+    },
+    {
+      "id": "intro",
+      "kind": "intro",
+      "minutes": 0.75,
+      "headline": "Who I am and what I’ll cover",
+      "sub": "CORSIA and the Bahamas",
+      "notes": "Good morning. I'm Michael Strachan, CEO of BACSWN, SkyWatch Bahamas: we run a weather, airspace and emergency network for The Bahamas. A year ago in Barcelona the question on the CORSIA panel was what airlines need. Today it's what governments can do. In the next twenty minutes I'll tell you four things: how the system works for the Bahamas today, the problems that stop it delivering, how we are solving them, and then I'll show you the solution working. At the end I'll recap, and take your questions.",
+      "cues": [
+        "how the system works",
+        "the problems that stop",
+        "how we are solving",
+        "show you the solution",
+        "I'll recap"
+      ]
+    },
+    {
+      "id": "system",
+      "kind": "chain",
+      "stage": 1,
+      "tone": "accent",
+      "minutes": 1.0,
+      "headline": "The system today",
+      "items": [
+        {
+          "icon": "Scale",
+          "label": "Carbon market law",
+          "detail": "Climate Change and Carbon Market Initiatives Act 2022"
+        },
+        {
+          "icon": "Database",
+          "label": "National emissions registry",
+          "detail": "Now up and running"
+        },
+        {
+          "icon": "Waves",
+          "label": "Blue carbon programme",
+          "detail": "$25m first phase mapping the seagrass"
+        },
+        {
+          "icon": "Plane",
+          "label": "Airlines under CORSIA",
+          "detail": "Need 200–250M eligible units by Jan 2028"
+        }
+      ],
+      "source": "Act 2022 · Office of the Prime Minister, Sep 2026 · Tribune, Sep 2026 · IATA, Aug–Oct 2026",
+      "notes": "Let me start with what exists today. First, the law: the Climate Change and Carbon Market Initiatives Act of 2022 sets up a national emissions registry and puts credit trading under the Securities Commission. Second, the registry itself: the Prime Minister said in September that it is now up and running. [Check before the talk: registry status.] Third, the carbon: the blue carbon programme, a 25-million-dollar first phase mapping and sampling our seagrass so we know what it holds. And fourth, the buyers: airlines under CORSIA need between 200 and 250 million eligible units by the end of January 2028. On paper, every piece is in place: the law, the registry, the carbon and the demand.",
+      "cues": [
+        "First, the law",
+        "Second, the registry",
+        "Third, the carbon",
+        "And fourth, the buyers"
+      ]
+    },
+    {
+      "id": "problems",
+      "kind": "chain",
+      "stage": 2,
+      "tone": "bad",
+      "minutes": 1.5,
+      "headline": "The problems",
+      "items": [
+        {
+          "icon": "FileX",
+          "label": "No letter of authorisation",
+          "detail": "No Bahamian credits issued or authorised yet",
+          "theme": "Unlocking CORSIA supply"
+        },
+        {
+          "icon": "CopyX",
+          "label": "Claims can’t be checked",
+          "detail": "A double claim passes a paper check",
+          "theme": "Strengthening market integrity"
+        },
+        {
+          "icon": "CloudLightning",
+          "label": "Storms blind the evidence",
+          "detail": "Freeport’s reports stopped for 10½ days in Dorian",
+          "theme": "Caribbean blue carbon investment"
+        },
+        {
+          "icon": "Ban",
+          "label": "Zero credits reach airlines",
+          "detail": "72M authorised worldwide against 225M needed"
+        }
+      ],
+      "source": "Office of the Prime Minister, Sep 2026 · Iowa Environmental Mesonet METAR archive · IATA, Aug–Oct 2026",
+      "notes": "But the pieces don't connect, and each break matches one of the three themes. One, the signature, which is what holds back CORSIA supply. Before an airline can use a credit, the government must sign a letter of authorisation and commit to a corresponding adjustment. That's a promise the state must stand behind for years, and without data of its own the safe answer is to wait. The Bahamas has not issued or authorised a single credit yet. [Check before the talk: nothing authorised since November.] Two, trust, which is market integrity. When an airline claims a credit, who checks it? Serial numbers claimed twice, or units that were never authorised: both pass a paper check. Three, the weather, which decides Caribbean blue carbon investment. Our credits would be blue carbon, and blue carbon carries hurricane risk. When Dorian sat on Grand Bahama in 2019, Freeport's official weather reports stopped for ten and a half days, exactly when it mattered. If you can't measure the storm, investors can't price the risk. The result: zero Bahamian credits reach airlines, and worldwide only about 72 million units are authorised against the 200 to 250 million airlines need.",
+      "cues": [
+        "One, the signature",
+        "Two, trust",
+        "Three, the weather",
+        "The result"
+      ]
+    },
+    {
+      "id": "solution",
+      "kind": "chain",
+      "stage": 3,
+      "tone": "ok",
+      "minutes": 1.5,
+      "headline": "Our solution: the state’s own evidence",
+      "items": [
+        {
+          "icon": "FileCheck2",
+          "label": "Authorise in minutes",
+          "detail": "AI reads each letter of authorisation, fills in the record and checks it against the national registry, so the state can sign knowing the numbers hold. A person still decides.",
+          "theme": "Unlocking CORSIA supply"
+        },
+        {
+          "icon": "SearchCheck",
+          "label": "Check every claim",
+          "detail": "We check against observed flights and the national register: each airline’s report against the flights we see in Bahamian airspace. Double claims and unauthorised units are caught.",
+          "theme": "Strengthening market integrity"
+        },
+        {
+          "icon": "RadioTower",
+          "label": "Measure every storm",
+          "detail": "Hardened stations at each project site keep recording wind and surge right through a hurricane, so investors price measured risk instead of guesses.",
+          "theme": "Caribbean blue carbon investment"
+        },
+        {
+          "icon": "TrendingUp",
+          "label": "Bankable credits",
+          "detail": "Buffers sized to each site’s real risk: credits airlines can use and investors can fund."
+        }
+      ],
+      "notes": "Here is how we solve it. Our solution is to give the state its own evidence. BACSWN already runs the weather and airspace network over The Bahamas; we turn that data into evidence the government can use to sign, check and price credits, theme by theme. One, authorise in minutes, to unlock CORSIA supply: AI reads a letter of authorisation, fills in the record and checks it against the national registry, so the state can sign knowing the numbers hold up. A person still decides. Two, check every claim, to strengthen market integrity: we compare each airline's report with the flights we actually observe in our own airspace, and every unit with the registry and the letter. Three, measure every storm, for Caribbean blue carbon investment: a dense, hardened network of stations keeps measuring wind and surge at each project site right through a hurricane, so investors see measured risk instead of guesses. And the result: bankable credits, with buffers sized to real risk, that airlines can use and investors can fund. Let me show you.",
+      "cues": [
+        "One, authorise",
+        "Two, check every claim",
+        "Three, measure every storm",
+        "And the result"
+      ],
+      "sub": "BACSWN already runs the weather and airspace network over The Bahamas. We turn that data into evidence the government can use to sign, check and price credits."
+    },
+    {
+      "id": "demo-1",
+      "kind": "demo",
+      "stage": 4,
+      "minutes": 4,
+      "headline": "Demo: signed and checked",
+      "items": [
+        {
+          "icon": "FileSignature",
+          "label": "Read a letter",
+          "detail": "AI fills the record from the letter",
+          "demo": {
+            "path": "/corsia-oversight",
+            "label": "Read a letter of authorisation"
+          },
+          "theme": "Unlocking CORSIA supply"
+        },
+        {
+          "icon": "Database",
+          "label": "Check the registry",
+          "detail": "CORSIA use, vintages, quantity, adjustment"
+        },
+        {
+          "icon": "SearchCheck",
+          "label": "Catch a bad claim",
+          "detail": "Double claims and unauthorised units flagged",
+          "demo": {
+            "path": "/corsia-oversight?story=corsia-register",
+            "label": "How the CORSIA register works"
+          },
+          "theme": "Strengthening market integrity"
+        }
+      ],
+      "notes": "This is our oversight register, live. Press the first demo button. I drop in a letter of authorisation; AI reads it and fills in the record, then the system checks it against the national registry: CORSIA use, vintages, quantity and the corresponding adjustment. A person still decides. A small state can now do in minutes what takes months. Now the second demo: the register compares each airline's verified report with the flights we observed in our own airspace, and every claimed unit with the registry. Here it catches a double claim, serial numbers already used by another airline, and units that were never authorised for CORSIA. Ask it to explain any finding. That's independent verification a regulator can actually run.",
+      "cues": [
+        "I drop in a letter",
+        "checks it against the national registry",
+        "Now the second demo"
+      ]
+    },
+    {
+      "id": "demo-2",
+      "kind": "demo",
+      "stage": 4,
+      "minutes": 2.5,
+      "headline": "Demo: the storm, measured",
+      "items": [
+        {
+          "icon": "Wind",
+          "label": "Dorian’s real track",
+          "detail": "NOAA best track, hour by hour",
+          "demo": {
+            "path": "/present/coastal-permanence",
+            "label": "Hurricane replay"
+          },
+          "theme": "Caribbean blue carbon investment"
+        },
+        {
+          "icon": "MapPin",
+          "label": "Exposure at each site",
+          "detail": "0 to 35 hours of hurricane-force winds"
+        },
+        {
+          "icon": "ShieldCheck",
+          "label": "Buffer sized to the risk",
+          "detail": "Not one flat percentage for everyone"
+        }
+      ],
+      "notes": "And the weather. This is Hurricane Dorian, the real NOAA track, replayed hour by hour over illustrative blue-carbon projects. Watch how long each sat under hurricane-force winds: some sites for 35 hours, others not at all. Same storm, very different exposure. A flat buffer treats them all alike; measured exposure sizes each buffer to its real risk, smaller for well-sited projects, larger where the storms really hit.",
+      "cues": [
+        "This is Hurricane Dorian",
+        "Watch how long",
+        "A flat buffer"
+      ]
+    },
+    {
+      "id": "recap",
+      "kind": "recap",
+      "stage": 5,
+      "minutes": 0.75,
+      "headline": "Recap",
+      "rows": [
+        {
+          "topic": "Unlocking CORSIA supply",
+          "problem": {
+            "icon": "FileX",
+            "label": "No letter"
+          },
+          "fix": {
+            "icon": "FileCheck2",
+            "label": "Authorised in minutes"
+          }
+        },
+        {
+          "topic": "Strengthening market integrity",
+          "problem": {
+            "icon": "CopyX",
+            "label": "Unchecked claims"
+          },
+          "fix": {
+            "icon": "SearchCheck",
+            "label": "Every claim checked"
+          }
+        },
+        {
+          "topic": "Caribbean blue carbon investment",
+          "problem": {
+            "icon": "CloudLightning",
+            "label": "Blind in storms"
+          },
+          "fix": {
+            "icon": "RadioTower",
+            "label": "Measured risk"
+          }
+        }
+      ],
+      "result": {
+        "icon": "TrendingUp",
+        "label": "Bankable credits"
+      },
+      "notes": "So, what I've told you. The Bahamas has the law, the registry, the carbon and the buyers. Three things stand in the way, one for each theme. CORSIA supply: no letter today; with the state's own data, authorised in minutes. Market integrity: claims nobody checks; now every claim checked against what we observe. Blue carbon investment: blind in storms; now measured risk at every site. Together, that turns Caribbean blue carbon from a bottleneck into bankable credits that airlines can use and investors can fund.",
+      "cues": [
+        "CORSIA supply:",
+        "Market integrity:",
+        "Blue carbon investment:",
+        "Together"
+      ]
+    },
+    {
+      "id": "questions",
+      "kind": "questions",
+      "minutes": 0,
+      "headline": "Questions?",
+      "notes": "Thank you. I'm happy to take your questions. The code on screen takes you to the demos on your phone. Likely questions: 'Are these real projects?' No, the project outlines are illustrative; the storm data is NOAA's official record. 'Wind is not damage.' Agreed: loss depends on surge, species and site; exposure is the observable input a buffer should start from. 'Is the Bahamas authorising credits?' Don't speak for the government: say the state needs the data to do it with confidence."
+    }
+  ],
+  "claims": {
+    "A": {
+      "airline": "Coral Wing Airways",
+      "units": "8,988",
+      "registry": "Gold Standard",
+      "vintage": "2024"
+    },
+    "B": {
+      "airline": "Exuma Island Hopper",
+      "units": "1,500",
+      "registry": "Verra",
+      "vintage": "2023"
+    },
+    "C": {
+      "airline": "Exuma Island Hopper",
+      "units": "500",
+      "registry": "Bahamas registry",
+      "vintage": "2025"
+    }
+  },
+  "companion": {
+    "journey": [
+      {
+        "icon": "Sprout",
+        "label": "Project",
+        "text": "A project cuts or removes emissions: a mangrove restored, a seagrass meadow protected."
+      },
+      {
+        "icon": "ClipboardCheck",
+        "label": "Verified",
+        "text": "An independent verifier confirms the tonnes."
+      },
+      {
+        "icon": "Database",
+        "label": "Registry",
+        "text": "Units are issued with serial numbers in a registry — for the Bahamas, the National Emissions Registry."
+      },
+      {
+        "icon": "FileSignature",
+        "label": "Authorised",
+        "text": "The host government signs a letter of authorisation for CORSIA use.",
+        "stall": true,
+        "bahamas": "Bahamas: not issued yet. Worldwide, about 72M units are authorised against 200–250M needed by Jan 2028."
+      },
+      {
+        "icon": "Landmark",
+        "label": "Adjusted",
+        "text": "The country makes a corresponding adjustment so the tonne isn't counted twice."
+      },
+      {
+        "icon": "Plane",
+        "label": "Airline",
+        "text": "An airline cancels the unit against its CORSIA obligation; the state checks the claim."
+      }
+    ],
+    "checks": [
+      "Programme accepted for CORSIA",
+      "Vintage inside the window",
+      "Not claimed by anyone else",
+      "Authorised by the host country",
+      "Corresponding adjustment made"
+    ],
+    "claimResults": {
+      "A": {
+        "results": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "verdict": "Verified",
+        "tone": "ok",
+        "why": "Every check passes."
+      },
+      "B": {
+        "results": [
+          true,
+          true,
+          false,
+          true,
+          true
+        ],
+        "verdict": "Double claim",
+        "tone": "bad",
+        "why": "Serials 28,001–29,500 were already claimed by Coral Wing Airways."
+      },
+      "C": {
+        "results": [
+          true,
+          true,
+          true,
+          false,
+          false
+        ],
+        "verdict": "Not authorised",
+        "tone": "bad",
+        "why": "The registry lists these units as not authorised for CORSIA, with no corresponding adjustment."
+      }
+    },
+    "note": "All airlines, claims and projects in these demos are fictional, except Hurricane Dorian's track (NOAA best track)."
+  },
+  "wpm": 140,
+  "themes": [
+    "Unlocking CORSIA supply",
+    "Strengthening market integrity",
+    "Caribbean blue carbon investment"
+  ]
+}

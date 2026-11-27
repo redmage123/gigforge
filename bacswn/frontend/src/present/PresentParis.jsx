@@ -1,104 +1,92 @@
 /**
- * Paris carbon-markets talk: interactive presenter deck.
+ * Paris carbon-markets talk: full-screen presenter deck.
  *
- * What: a full-screen, near text-free slide deck for Mike's 20-minute talk. Slides are
- * animations (growing bars, verdict stamps, a flat-lining weather station, a hub), live
- * audience polls, and buttons that open the real BACSWN screens in a full-screen frame.
- * Why: the talk must be interactive and visual rather than "one more PowerPoint"; the
- * words live in the speaker notes (press N), not on the slides.
- * How: slide content comes from paris-deck.json (shared with the PPTX/PDF export script).
- * Each slide is drawn on a fixed 1920×1080 stage scaled to the window, so every pixel
- * lines up the same on any screen. Entering a slide steers the audience phones through
- * /api/live-admin/control (opens a poll, reveals answers, or closes voting); poll-driven
- * slides refresh counts every 1.5 s.
- * Keys: → / Space next, ← back, N notes, F full screen, Esc closes a live demo.
- * `?static=1&slide=N` renders one slide's final frame without chrome (for export);
- * `?export=1` keeps the animations but hides the presenter chrome and every audience count
- * (for the recorded PPTX and the PDF handout, which run without live polls).
+ * What: eight slides that tell the audience what they will hear, tell them, then tell them
+ * what they heard: introduction and agenda, the system today, the problems, our solution,
+ * two demo slides, a recap and questions. Every point is an icon in a column; an arrow draws
+ * down from each icon to the next as the talk reaches it.
+ * Why: the talk is told with pictures and motion; the words live in the speaker notes.
+ * How: slide content comes from paris-deck.json (shared with the PPTX/PDF exporter). Each
+ * slide is drawn on a fixed 1920x1080 stage scaled to the screen. The show runs by itself:
+ * a slide's points appear at speaking pace across its `minutes`, then it moves on. The
+ * clicker or → brings the next point in early (or the next slide when all are shown);
+ * ← goes back. A start screen enters full screen. Opening a live demo pauses the timer;
+ * closing it resumes the show by itself.
+ * Keys: → / Space / PageDown next, ← / PageUp back, P pause, N notes, F full screen,
+ * Esc closes a live demo. `?static=1&slide=N` renders a slide's final frame without
+ * controls (for checks and exports). `?self=1` (the public demo) waits for → on every slide.
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import deck from './paris-deck.json'
 import qrUrl from './qr-live.svg'
 import {
-  Ban, BadgeCheck, Check, ChevronLeft, ChevronRight, ClipboardCheck, Coins, CopyX, Database, FileCheck2,
-  FileSignature, Hourglass, Landmark, MapPin, MonitorPlay, Pause, Play, Plane, RadioTower, Scale, SearchCheck,
-  ShieldCheck, Smartphone, Sprout, TrendingUp, Waves, Wind,
+  ArrowLeft, ArrowRight, Ban, Hourglass, CloudLightning, CopyX, Database, FileCheck2, FileSignature, FileX, Landmark, Lightbulb,
+  ListChecks, MapPin, Maximize, MessageCircleQuestion, MonitorPlay, NotebookPen, Pause, Plane, Play, RadioTower, Scale,
+  SearchCheck, ShieldCheck, TrendingUp, TriangleAlert, UserRound, Waves, Wind,
 } from 'lucide-react'
-import { api } from '../api/client'
 import '@fontsource-variable/inter'
 import './present.css'
 
-/** Query-string flags: static export mode and the starting slide. */
 const PARAMS = new URLSearchParams(window.location.search)
+/** Final frame only, no controls (exports and checks). */
 const STATIC = PARAMS.get('static') === '1'
-/** Export mode (PPTX/PDF): no chrome, no audience counts, no poll steering. */
-const EXPORT = STATIC || PARAMS.get('export') === '1'
-/** Read-only: no admin calls and no presenter controls (exports). */
-const READ_ONLY = EXPORT
+/** Self-guided (the public demo): points build by themselves, but each slide waits for →. */
+const SELF = PARAMS.get('self') === '1'
 const START = Math.max(0, Math.min(deck.slides.length - 1, Number(PARAMS.get('slide') || window.location.hash.slice(1) || 0) || 0))
-/** Stage size every slide is designed for. */
 const STAGE_W = 1920
 const STAGE_H = 1080
 
-/** Inline style that delays an element's entrance animation by `i` steps of `step` seconds. */
-const delay = (i, step = 0.25, base = 0) => ({ animationDelay: `${base + i * step}s` })
-
-/**
- * Speaking pace for builds: seconds between successive reveals, chosen so each item
- * appears as the presenter would name it (about one short phrase, ~140 words a minute).
- */
-const BEAT = { tile: 0.3, card: 0.6, bar: 3, stamp: 3, step: 2, hop: 1, rest: 0.6, spoke: 2.5, trace: 2 }
-
-/** Percent of `n` in `total`, rounded; 0 when nobody has voted. */
-const pct = (n, total) => (total ? Math.round((100 * n) / total) : 0)
-
-/** Lucide icons the deck JSON may name (keeps the JSON free of code). */
+/** Icons the deck JSON may name. */
 const ICONS = {
-  Ban, BadgeCheck, ClipboardCheck, CopyX, Database, FileCheck2, FileSignature, Hourglass, Landmark, MapPin, Plane,
-  RadioTower, Scale, SearchCheck, ShieldCheck, Sprout, TrendingUp, Waves, Wind,
+  Ban, CloudLightning, CopyX, Database, Hourglass, FileCheck2, FileSignature, FileX, Landmark, Lightbulb, ListChecks, MapPin,
+  MonitorPlay, Plane, RadioTower, Scale, SearchCheck, ShieldCheck, TrendingUp, TriangleAlert, UserRound, Waves, Wind,
 }
+
+/** A named icon; hidden from screen readers because a visible label always sits beside it. */
+function Icon({ name, ...props }) {
+  const C = ICONS[name]
+  return C ? <C aria-hidden="true" focusable="false" {...props} /> : null
+}
+
+/** How many build steps a slide has (each step brings in one point or row). */
+function stepsOf(slide) {
+  if (slide.kind === 'intro') return deck.agenda.length
+  if (slide.kind === 'title') return 2
+  if (slide.kind === 'recap') return slide.rows.length + 1
+  if (slide.kind === 'questions') return 1
+  return slide.items.length
+}
+
+/** Speaking pace the timings assume: a natural presenter, words per minute. */
+const WPM = deck.wpm || 140
+
+/** The notes as spoken: checks in [brackets] are not read out. */
+const spoken = (notes) => (notes || '').replace(/\[[^\]]*\]/g, '')
 
 /**
- * A named Lucide icon with a title (shown as a tooltip). It stays hidden from screen
- * readers because a visible label always sits next to it and carries the meaning.
+ * When each step appears, in seconds after the slide opens: the moment the presenter
+ * reaches that point in the speaker notes. Each step has a cue (the phrase that introduces
+ * it); its time is the words spoken before the cue at the natural pace. Steps without a
+ * cue follow two seconds after the one before.
  */
-function Icon({ name, title, ...props }) {
-  const C = ICONS[name]
-  return C ? <C aria-hidden="true" focusable="false" {...props}><title>{title || name}</title></C> : null
+function scheduleOf(slide) {
+  const text = spoken(slide.notes)
+  const at = (cue) => {
+    const i = cue ? text.indexOf(cue) : -1
+    return i < 0 ? null : 0.8 + (text.slice(0, i).split(/\s+/).filter(Boolean).length * 60) / WPM
+  }
+  const out = []
+  for (let i = 0; i < stepsOf(slide); i += 1) {
+    const t = at(slide.cues?.[i])
+    out.push(t ?? (i ? out[i - 1] + 2 : 0.8))
+  }
+  return out
 }
 
-/** Short on-screen label for a poll option (phones show the full label). */
-const short = (o) => o.short || o.label
-
-/** The poll control a slide implies when it is shown: open a poll, reveal one, or close voting. */
-function controlFor(slide) {
-  if (slide.kind === 'poll' || slide.kind === 'hub') return { active: slide.poll }
-  if (slide.kind === 'compare') return { active: slide.poll, reveal: slide.compareWith }
-  if (slide.reveal) return { active: null, reveal: slide.poll }
-  return { active: null }
-}
-
-/** Live poll results for the presenter, refreshed while a poll-driven slide is showing. */
-function usePolls(live) {
-  const [polls, setPolls] = useState({})
-  useEffect(() => {
-    let stop = false
-    /** Fetch every poll's counts (admin view) into a map by id. */
-    const load = () => api.get('/api/live-admin/polls')
-      .then(r => { if (!stop) setPolls(Object.fromEntries(r.polls.map(p => [p.id, p]))) })
-      .catch(() => {})
-    load()
-    const t = live && !STATIC ? setInterval(load, 1500) : null
-    return () => { stop = true; if (t) clearInterval(t) }
-  }, [live])
-  return polls
-}
-
-/** Scale factor that fits the 1920×1080 stage inside the window (letterboxed). */
+/** Scale factor that fits the 1920x1080 stage inside the window. */
 function useStageScale() {
   const [scale, setScale] = useState(1)
   useLayoutEffect(() => {
-    /** Recompute on resize and full-screen changes. */
     const fit = () => setScale(Math.min(window.innerWidth / STAGE_W, window.innerHeight / STAGE_H))
     fit()
     window.addEventListener('resize', fit)
@@ -107,415 +95,332 @@ function useStageScale() {
   return scale
 }
 
-/** Opening/closing slide: drifting flight arcs, title, and the QR code to join the polls. */
-function TitleSlide({ slide, showJoin }) {
+/** The agenda across the top; the part of the talk now on screen is lit. */
+function Rail({ stage }) {
+  if (!stage) return null
   return (
-    <>
-      <svg className="pd-arcs" viewBox="0 0 1920 1080" aria-hidden="true">
-        {[...Array(9)].map((_, i) => (
-          <path key={i} d={`M ${-120 + i * 48} ${980 - i * 70} Q 960 ${-240 + i * 84} ${2040 - i * 36} ${360 + i * 66}`} />
-        ))}
-      </svg>
-      <h1 className="pd-title" style={showJoin ? undefined : { top: 390 }}>{slide.headline}</h1>
-      <p className="pd-sub" style={showJoin ? undefined : { top: 560 }}>{slide.sub}</p>
-      {showJoin && (
-        <div className="pd-join">
-          <img src={qrUrl} alt={`QR code: ${deck.joinUrl}`} />
-          <span><Smartphone aria-hidden="true" className="pd-ic-inline" strokeWidth={2.25}><title>Join on your phone</title></Smartphone>{deck.joinUrl}</span>
-        </div>
-      )}
-      <p className="pd-meta">{deck.speaker} · {deck.event}</p>
-    </>
+    <ol className="pd-rail" aria-label="Agenda">
+      {deck.agenda.map((a, i) => (
+        <li key={a.label} className={i + 1 === stage ? 'on' : i + 1 < stage ? 'past' : ''} aria-current={i + 1 === stage ? 'step' : undefined}>
+          <Icon name={a.icon} strokeWidth={2.25} />{a.label}
+        </li>
+      ))}
+    </ol>
   )
 }
 
-/** Footer counting phone responses, with the join address. */
-function Responses({ poll, join = true }) {
-  if (READ_ONLY) return join ? <div className="pd-foot"><Smartphone aria-hidden="true" className="pd-ic-inline"><title>Join on your phone</title></Smartphone>{deck.joinUrl}</div> : null
+/** Positions of n icons spread down the stage. */
+const spread = (n, y0, y1) => Array.from({ length: n }, (_, i) => (n === 1 ? (y0 + y1) / 2 : y0 + (i * (y1 - y0)) / (n - 1)))
+
+/** An arrow that draws itself down from one icon to the next. */
+function VArrow({ x, y1, y2, show, tone = 'line' }) {
+  if (!show) return null
+  const h = y2 - y1
   return (
-    <div className="pd-foot" aria-live="polite">
-      <Smartphone aria-hidden="true" className="pd-ic-inline"><title>Responses from phones</title></Smartphone><span className="n">{poll?.total ?? 0}</span> responses{join ? ` · ${deck.joinUrl}` : ''}
+    <svg className={`pd-arrow v ${tone}`} style={{ left: x - 30, top: y1, height: h }} viewBox={`0 0 60 ${h}`} aria-hidden="true">
+      <line x1="30" y1="0" x2="30" y2={h - 22} />
+      <path d={`M 12 ${h - 26} L 30 ${h - 2} L 48 ${h - 26} Z`} />
+    </svg>
+  )
+}
+
+/** One point in a column: an icon in a ring, with its theme, label and detail to the right. */
+function Point({ item, x, y, r, tone, w, size = 'lg', onOpenDemo, delayed, activeDemo }) {
+  return (
+    <div className={`pd-vpt ${tone} ${size}${delayed ? ' after-arrow' : ''}`} style={{ left: x - r, top: y - r, height: 2 * r, width: 2 * r + 40 + w }}>
+      <div className="ring" style={{ width: 2 * r, height: 2 * r }}><Icon name={item.icon} strokeWidth={1.75} /></div>
+      <div className="txt" style={{ width: w }}>
+        {item.theme && <div className="theme">{item.theme}</div>}
+        <div className="lbl">{item.label}</div>
+        {item.detail && <div className="det">{item.detail}</div>}
+        {item.demo && onOpenDemo && (
+          <button type="button" className={`pd-demo-btn${activeDemo === item.demo.path ? ' on' : ''}`} onClick={() => onOpenDemo(item.demo)}
+            aria-pressed={activeDemo === item.demo.path} aria-label={`Show live demo: ${item.demo.label}`}>
+            <MonitorPlay aria-hidden="true" strokeWidth={2.25} />Live demo
+          </button>
+        )}
+      </div>
     </div>
   )
 }
 
-/** One claim card: letter and four short facts (airline, units, registry, vintage). */
-function ClaimCard({ id, index, children }) {
-  const c = deck.claims[id]
-  return (
-    <div className="pd-card" style={delay(index, BEAT.card)}>
-      <div className="letter">{id}</div>
-      <div className="row"><b>{c.airline}</b></div>
-      <div className="row">{c.units} units</div>
-      <div className="row">{c.registry}</div>
-      <div className="row">Vintage {c.vintage}</div>
-      {children}
+/** A column of points joined by downward arrows, revealed one at a time. */
+function Column({ items, x, y0, y1, r, tone, w, size, step, onOpenDemo, activeDemo }) {
+  const ys = spread(items.length, y0, y1)
+  return items.map((it, i) => (
+    <div key={it.label}>
+      {i > 0 && <VArrow x={x} y1={ys[i - 1] + r + 14} y2={ys[i] - r - 14} show={step >= i} tone={tone} />}
+      {step >= i && <Point item={it} x={x} y={ys[i]} r={r} tone={tone} w={w} size={size} delayed={i > 0} onOpenDemo={onOpenDemo} activeDemo={activeDemo} />}
     </div>
-  )
+  ))
 }
 
-/** A question on every phone; the screen shows short option tiles (or claim cards) and a counter. */
-function PollSlide({ slide, poll }) {
+/** System, problems, solution and demo slides: a headline, then the points down a column. */
+function ChainSlide({ slide, step, onOpenDemo }) {
+  const demo = slide.kind === 'demo'
+  const y0 = slide.sub ? 380 : demo ? 350 : 310
+  if (demo) return <DemoSlide slide={slide} step={step} onOpenDemo={onOpenDemo} />
   return (
     <>
-      <h2 className="pd-h">{slide.headline}</h2>
-      {slide.display === 'cards' ? (
-        <div className="pd-cards">{['A', 'B', 'C'].map((id, i) => <ClaimCard key={id} id={id} index={i} />)}</div>
-      ) : (
-        <div className="pd-tiles" role="list">
-          {(poll?.options || []).map((o, i) => <div key={o.id} role="listitem" className="pd-tile" style={delay(i, BEAT.tile)}>{short(o)}</div>)}
-        </div>
-      )}
-      <Responses poll={poll} />
-    </>
-  )
-}
-
-/** Authorised vs needed units as two growing bars, the deadline, and the room's guess. */
-function GapSlide({ slide, poll }) {
-  const max = Math.max(...slide.bars.map(b => b.value))
-  const days = Math.max(0, Math.ceil((new Date(slide.deadline) - new Date()) / 86400000))
-  const top = poll?.total ? poll.options.reduce((a, o) => ((poll.counts[o.id] || 0) > (poll.counts[a.id] || 0) ? o : a), poll.options[0]) : null
-  return (
-    <>
-      <h2 className="pd-h">{slide.headline}</h2>
-      <div className="pd-gap">
-        {slide.bars.map((b, i) => (
-          <div key={b.label}>
-            <div className="name">{b.label}</div>
-            <div className={`bar ${b.tone}`} style={{ width: `${(100 * b.value) / max}%`, ...delay(i, BEAT.bar, 0.3) }}>{b.range || b.value}{b.unit}</div>
-          </div>
-        ))}
-      </div>
-      <p className="pd-deadline" style={delay(2, BEAT.bar, 0.3)}>{days.toLocaleString()} days to {new Date(slide.deadline).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
-      {top && !EXPORT && <p className="pd-guess" style={delay(2.5, BEAT.bar, 0.3)}>Room's top guess: {short(top)} ({pct(poll.counts[top.id], poll.total)}%)</p>}
-      <span className="pd-source">{slide.source}</span>
-    </>
-  )
-}
-
-/** The three claims again; a verdict stamp slams onto each, with the room's vote share. */
-function StampsSlide({ slide, poll }) {
-  return (
-    <>
-      <h2 className="pd-h">{slide.headline}</h2>
-      <div className="pd-cards stamped">
-        {slide.cards.map((c, i) => (
-          <ClaimCard key={c.id} id={c.id} index={i}>
-            <span className={`pd-stamp ${c.verdict}`} style={delay(i, BEAT.stamp, 2)}><Icon name={c.icon} title={c.stamp} className="pd-stamp-ic" strokeWidth={3} />{c.stamp}</span>
-            {poll?.total > 0 && !EXPORT && <div className="pct">{pct(poll.counts[c.id] || 0, poll.total)}% of the room accepted</div>}
-          </ClaimCard>
-        ))}
-      </div>
+      <h2 className="pd-h left">{slide.headline}</h2>
+      {slide.sub && <p className="pd-h-sub">{slide.sub}</p>}
+      <Column items={slide.items} x={200} y0={y0} y1={900} r={52} tone={slide.tone || 'accent'} w={1250} step={step} />
+      {slide.source && step >= slide.items.length - 1 && <span className="pd-source">{slide.source}</span>}
     </>
   )
 }
 
 /**
- * A process as an animation: icon steps pop in left to right, arrows draw between them,
- * then a credit token hops from step to step. In "stall" mode it stops at the bottleneck,
- * which pulses red; in "check" mode each step gets a tick as the token passes.
- * Geometry is fixed on the 1920×1080 stage; timings are derived from the step count.
+ * A demo slide: the steps down a column on the left, and the live demo itself on the right,
+ * working and clickable on the slide. "Live demo" under a step switches the panel to that
+ * demo; the expand button opens it full screen. Moving the mouse off the panel hands the
+ * keyboard (and the clicker) back to the slides.
  */
-function FlowSlide({ slide, onOpenDemo }) {
-  const steps = slide.steps
-  const n = steps.length
-  const R = 90, Y = 620, X0 = 230, X1 = 1690
-  const xs = steps.map((_, i) => X0 + (i * (X1 - X0)) / (n - 1))
-  const POP = BEAT.step, HOP = BEAT.hop, REST = BEAT.rest
-  const tokenStart = 0.2 + POP * (n - 1) + 1.2
-  const last = slide.mode === 'stall' ? slide.bottleneck : n - 1
-  const arrive = (k) => tokenStart + k * (HOP + REST)
-  const total = Math.max(0.01, arrive(last) - tokenStart)
-  // Token keyframes: hop to each step, rest, hop on (percentages of the whole journey).
-  const frames = [`0% { transform: translateX(${xs[0] - 40}px); }`]
-  for (let k = 1; k <= last; k++) {
-    const t0 = (arrive(k - 1) + REST - tokenStart) / total
-    const t1 = (arrive(k) - tokenStart) / total
-    frames.push(`${(Math.min(1, t0) * 100).toFixed(2)}% { transform: translateX(${xs[k - 1] - 40}px); }`)
-    frames.push(`${(Math.min(1, t1) * 100).toFixed(2)}% { transform: translateX(${xs[k] - 40}px); }`)
-  }
-  const kf = `pd-tok-${slide.id}`
+function DemoSlide({ slide, step, onOpenDemo }) {
+  const demos = slide.items.filter(it => it.demo).map(it => it.demo)
+  const [active, setActive] = useState(demos[0])
   return (
     <>
-      <style>{`@keyframes ${kf} { ${frames.join(' ')} }`}</style>
-      <h2 className="pd-h">{slide.headline}</h2>
-      <svg className="pd-flow-arrows" viewBox="0 0 1920 1080" aria-hidden="true">
-        <defs>
-          <marker id={`ah-${slide.id}`} viewBox="0 0 12 12" refX="10" refY="6" markerWidth="12" markerHeight="12" orient="auto">
-            <path d="M1,1 L11,6 L1,11 Z" fill="#64748b" />
-          </marker>
-        </defs>
-        {xs.slice(0, -1).map((x, i) => (
-          <line key={i} x1={x + R + 14} y1={Y} x2={xs[i + 1] - R - 18} y2={Y} markerEnd={`url(#ah-${slide.id})`}
-            style={delay(i + 1, POP, -0.4)} />
-        ))}
-      </svg>
-      <ol className="pd-flow" aria-label={steps.map(st => st.label).join(', then ')}>
-        {steps.map((st, i) => {
-          const stuck = slide.mode === 'stall' && i === slide.bottleneck
-          return (
-            <li key={st.label} className={`pd-step${stuck ? ' stuck' : ''}`} style={{ left: xs[i] - R, top: Y - R }}>
-              <div className="node" style={stuck ? { animationDelay: `${0.2 + i * POP}s, ${arrive(i)}s` } : delay(i, POP, 0.2)}>
-                <Icon name={st.icon} title={st.label} strokeWidth={1.75} />
-                {stuck && <span className="ring" style={{ animationDelay: `${arrive(i)}s` }} />}
-                {slide.mode === 'check' && <span className="tick" style={{ animationDelay: `${arrive(i)}s` }}><Check strokeWidth={4} aria-hidden="true"><title>Checked</title></Check></span>}
-              </div>
-              <div className="lbl" style={delay(i, POP, 0.35)}>{st.label}</div>
-              {stuck && <div className="stall" style={{ animationDelay: `${arrive(i) + 0.2}s` }}>{slide.stallLabel}</div>}
-            </li>
-          )
-        })}
-      </ol>
-      {slide.demo && !READ_ONLY && (
-        <button type="button" className="pd-go-pill" onClick={onOpenDemo} aria-label={`Open live demo: ${slide.demo.label}`}>
-          <MonitorPlay aria-hidden="true" strokeWidth={2.25}><title>Live demo</title></MonitorPlay>{slide.demo.label}
-        </button>
+      <h2 className="pd-h left">{slide.headline}</h2>
+      <Column items={slide.items} x={180} y0={340} y1={860} r={46} tone="accent" w={440} size="xs" step={step}
+        onOpenDemo={setActive} activeDemo={active?.path} />
+      {active && (
+        <div className="pd-embed" onMouseLeave={() => document.activeElement?.blur?.()}>
+          <div className="view"><iframe key={active.path} title={`Live demo: ${active.label}`} src={active.path} /></div>
+          <button type="button" className="pd-embed-max" onClick={() => onOpenDemo?.(active)} aria-label={`Open ${active.label} full screen`}>
+            <Maximize aria-hidden="true" strokeWidth={2.25} />
+          </button>
+        </div>
       )}
-      <div className="pd-token" aria-hidden="true"
-        style={{ top: Y - R - 104, animation: `${kf} ${total}s ease-in-out ${tokenStart}s both, pd-fade .3s ${tokenStart - 0.3}s both` }}>
-        <Coins strokeWidth={2.25}><title>One carbon credit</title></Coins>
-        <span className="cap">1 credit</span>
-      </div>
     </>
   )
 }
 
-/** Weather reports per day drawn like a heart monitor; the storm days flat-line in red. */
-function FlatlineSlide({ slide }) {
-  const s = slide.series
-  const W = 1600, H = 640, left = 20, right = 20, top = 70, bottom = 70
-  const step = (W - left - right) / (s.reports.length - 1)
-  const y = v => H - bottom - (v / 24) * (H - top - bottom)
-  const pts = s.reports.map((v, i) => [left + i * step, y(v)])
-  const firstGap = s.reports.findIndex(v => v === 0) - 1
-  const lastGap = s.reports.lastIndexOf(0) + 1
-  const path = (from, to) => pts.slice(from, to + 1).map((p, i) => `${i ? 'L' : 'M'}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ')
+/** What the talk is about: the title, one sentence, and the idea as two icons joined by an arrow. */
+function TitleSlide({ slide, step }) {
   return (
     <>
-      <h2 className="pd-h">{slide.headline}</h2>
-      <svg className="pd-ecg" viewBox={`0 0 ${W} ${H}`} role="img"
-        aria-label={`${s.station} weather reports per day, ${s.days[0]} to ${s.days[s.days.length - 1]} 2019: ${s.gapLabel}`}>
-        <line className="axis" x1={left} x2={W - right} y1={y(0)} y2={y(0)} />
-        <RadioTower x={left} y={4} width={40} height={40} className="station-ic" aria-hidden="true"><title>Weather station</title></RadioTower>
-        <text className="station" x={left + 54} y={34}>{s.station} · reports per day</text>
-        <path className="trace" d={path(0, firstGap)} style={{ animationDelay: '0.4s', animationDuration: `${BEAT.trace}s` }} />
-        <path className="trace flat" d={path(firstGap, lastGap)} style={{ animationDelay: `${0.4 + BEAT.trace}s`, animationDuration: `${BEAT.trace * 1.5}s` }} />
-        <path className="trace" d={path(lastGap, pts.length - 1)} style={{ animationDelay: `${0.4 + BEAT.trace * 3}s`, animationDuration: `${BEAT.trace}s` }} />
-        {s.days.map((d, i) => (i % 2 === 0 ? <text key={d} className="tick" x={left + i * step} y={H - 18} textAnchor="middle">{d}</text> : null))}
-        <text className="gap-label" style={{ animationDelay: `${0.4 + BEAT.trace * 2.2}s` }} x={(pts[firstGap][0] + pts[lastGap][0]) / 2} y={y(0) - 40} textAnchor="middle">{s.gapLabel}</text>
+      <svg className="pd-arcs" viewBox="0 0 1920 1080" aria-hidden="true">
+        {[...Array(9)].map((_, i) => <path key={i} d={`M ${-120 + i * 48} ${980 - i * 70} Q 960 ${-240 + i * 84} ${2040 - i * 36} ${360 + i * 66}`} />)}
       </svg>
-      <span className="pd-source">{s.source}</span>
+      <h1 className="pd-intro-title" style={{ top: 150 }}>{slide.headline}</h1>
+      <p className="pd-title-about">{slide.sub}</p>
+      {step >= 0 && <Point item={slide.from} x={840} y={600} r={64} tone="bad" w={400} size="sm" />}
+      <VArrow x={840} y1={678} y2={772} show={step >= 1} tone="ok" />
+      {step >= 1 && <Point item={slide.to} x={840} y={850} r={64} tone="ok" w={400} size="sm" delayed />}
+      <p className="pd-meta">{deck.event}</p>
     </>
   )
 }
 
-/** Vertical bars for one poll on a fixed baseline, scaled so the tallest bar fills the track. */
-function Columns({ poll, title, className }) {
-  const total = poll?.total || 0
-  const shares = (poll?.options || []).map(o => pct(poll.counts?.[o.id] || 0, total))
-  const max = Math.max(1, ...shares)
-  return (
-    <div className={className}>
-      <h3>{title} · {total}</h3>
-      <div className="pd-cols">
-        {(poll?.options || []).map((o, i) => (
-          <div key={o.id} className="pd-col">
-            <span className="v">{shares[i]}%</span>
-            <div className="track"><div className="bar" style={{ height: `${(100 * shares[i]) / max}%` }} /></div>
-            <span className="lbl">{short(o)}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-/** Buffer question before vs after the hurricane evidence, side by side. */
-function CompareSlide({ slide, polls }) {
+/** Who is speaking and for whom, then the agenda drawn down a column of icons and arrows. */
+function IntroSlide({ slide, step }) {
+  const p = deck.presenter
   return (
     <>
+      <svg className="pd-arcs" viewBox="0 0 1920 1080" aria-hidden="true">
+        {[...Array(9)].map((_, i) => <path key={i} d={`M ${-120 + i * 48} ${980 - i * 70} Q 960 ${-240 + i * 84} ${2040 - i * 36} ${360 + i * 66}`} />)}
+      </svg>
       <h2 className="pd-h">{slide.headline}</h2>
-      <div className="pd-compare">
-        <Columns poll={polls[slide.compareWith]} title="Before" />
-        <Columns poll={polls[slide.poll]} title="After" className="pd-after" />
+      <div className="pd-presenter">
+        <div className="avatar"><UserRound aria-hidden="true" strokeWidth={1.75} /></div>
+        <div>
+          <div className="name">{p.name}</div>
+          <div className="role">{p.role}, {p.org}</div>
+          <div className="tag">{p.tagline}</div>
+        </div>
       </div>
-      <Responses poll={polls[slide.poll]} />
+      <Column items={deck.agenda} x={1240} y0={320} y1={920} r={44} tone="agenda" w={440} size="sm" step={step} />
     </>
   )
 }
 
-/** Three problems pop in on a circle and lock onto one state-side platform; the room picks a start. */
-function HubSlide({ slide, poll }) {
-  const ids = ['supply', 'integrity', 'bluecarbon']
-  // Spoke centres in the 800×660 hub box, core (220 px) centred at (400, 320).
-  const centres = [[120, 100], [680, 100], [400, 560]]
+/** What I told you: one column per theme, its problem, an arrow down, its fix; then the outcome. */
+function RecapSlide({ slide, step }) {
+  const xs = [420, 960, 1500]
   return (
     <>
       <h2 className="pd-h">{slide.headline}</h2>
-      <div className="pd-hub">
-        <svg className="pd-hub-lines" viewBox="0 0 800 660" aria-hidden="true">
-          {centres.map(([x, yy], i) => <line key={i} x1={x} y1={yy} x2={400} y2={320} style={delay(i, BEAT.spoke, 1)} />)}
-        </svg>
-        {slide.spokes.map((s, i) => (
-          <div key={s.label} className="pd-spoke" style={{ left: centres[i][0] - 95, top: centres[i][1] - 95, ...delay(i, BEAT.spoke, 0.4) }}>
-            <Icon name={s.icon} title={s.label} className="ic" strokeWidth={2} />
-            <span>{s.label}</span>
-            {poll?.total > 0 && !EXPORT && <span className="pct">{pct(poll.counts[ids[i]] || 0, poll.total)}%</span>}
-          </div>
-        ))}
-        <div className="pd-core" style={delay(3, BEAT.spoke, 0)}>BACSWN</div>
-      </div>
+      {slide.rows.map((r, i) => step >= i && (
+        <div key={r.topic} className="pd-recap-col" style={{ left: xs[i] - 260 }}>
+          <div className="topic">{r.topic}</div>
+          <span className="pd-mini bad"><Icon name={r.problem.icon} strokeWidth={2} /></span>
+          <div className="lbl bad">{r.problem.label}</div>
+          <svg className="pd-arrow v ok inline" viewBox="0 0 60 80" aria-hidden="true"><line x1="30" y1="0" x2="30" y2="58" /><path d="M 12 54 L 30 78 L 48 54 Z" /></svg>
+          <span className="pd-mini ok after-arrow"><Icon name={r.fix.icon} strokeWidth={2} /></span>
+          <div className="lbl ok after-arrow">{r.fix.label}</div>
+        </div>
+      ))}
+      {step >= slide.rows.length && (
+        <div className="pd-recap-result">
+          <span className="pd-mini gold"><Icon name={slide.result.icon} strokeWidth={2} /></span>{slide.result.label}
+        </div>
+      )}
+    </>
+  )
+}
+
+/** Questions, with the QR code to the demos. */
+function QuestionsSlide({ slide }) {
+  const p = deck.presenter
+  return (
+    <>
+      <div className="pd-q-icon"><MessageCircleQuestion aria-hidden="true" strokeWidth={1.5} /></div>
+      <h2 className="pd-q">{slide.headline}</h2>
+      <p className="pd-q-who">{p.name} · {p.role}, {p.org}</p>
       <figure className="pd-revisit">
         <img src={qrUrl} alt={`QR code: ${deck.joinUrl}`} />
         <figcaption>Explore the demos on your phone</figcaption>
       </figure>
-      <Responses poll={poll} join={false} />
     </>
   )
 }
 
-/** Render the right visual for a slide kind. */
-function Slide({ slide, polls, onOpenDemo, index }) {
-  const poll = polls[slide.poll]
+function Slide({ slide, step, onOpenDemo }) {
   switch (slide.kind) {
-    case 'title': return <TitleSlide slide={slide} showJoin={index === 0 || slide.id === 'thanks'} />
-    case 'poll': return <PollSlide slide={slide} poll={poll} />
-    case 'gap': return <GapSlide slide={slide} poll={poll} />
-    case 'stamps': return <StampsSlide slide={slide} poll={poll} />
-    case 'flatline': return <FlatlineSlide slide={slide} />
-    // Without a live room (export) there is nothing to compare, so show the question instead.
-    case 'compare': return EXPORT ? <PollSlide slide={slide} poll={poll} /> : <CompareSlide slide={slide} polls={polls} />
-    case 'hub': return <HubSlide slide={slide} poll={poll} />
-    case 'flow': return <FlowSlide slide={slide} onOpenDemo={onOpenDemo} />
-    default: return <h2 className="pd-h">{slide.headline}</h2>
+    case 'title': return <TitleSlide slide={slide} step={step} />
+    case 'intro': return <IntroSlide slide={slide} step={step} />
+    case 'recap': return <RecapSlide slide={slide} step={step} />
+    case 'questions': return <QuestionsSlide slide={slide} />
+    default: return <ChainSlide slide={slide} step={step} onOpenDemo={onOpenDemo} />
   }
 }
 
 /**
- * The presenter deck: stage scaling, navigation (on-slide buttons, keys, clicker), timed
- * auto-advance with pause, poll steering, notes, full screen and live-demo frames.
- *
- * Timing: in play mode each slide advances after its speaking time (`minutes` in the deck,
- * which add up to the 20-minute talk). Pause stops both the timer and every animation.
- * Opening a live demo pauses automatically, since its length depends on the presenter.
+ * The presenter deck: start screen, full screen, the self-running show with its step
+ * schedule, arrow navigation, notes and live-demo frames.
  */
 export default function PresentParis() {
   const [index, setIndex] = useState(START)
+  const [step, setStep] = useState(STATIC ? 99 : -1)
+  const [elapsed, setElapsed] = useState(0)
+  const [playing, setPlaying] = useState(false)
+  const [started, setStarted] = useState(STATIC)
   const [notes, setNotes] = useState(false)
   const [demo, setDemo] = useState(null)
-  const [error, setError] = useState('')
-  const [playing, setPlaying] = useState(false)
-  /** True only after Pause is pressed: holds the timer and freezes the slide's animations. */
-  const [paused, setPaused] = useState(false)
-  const [elapsed, setElapsed] = useState(0)
   const rootRef = useRef(null)
   const scale = useStageScale()
   const slide = deck.slides[index]
-  const duration = (slide.minutes || 1) * 60
-  const polls = usePolls(['poll', 'compare', 'hub'].includes(slide.kind) || !!slide.poll)
+  const schedule = useMemo(() => scheduleOf(slide), [slide])
+  const total = schedule.length
+  // 0: the slide waits for the presenter (questions, and live demos, which take as long as they take)
+  const duration = SELF || slide.kind === 'demo' ? 0 : (slide.minutes || 0) * 60
+  const last = deck.slides.length - 1
 
-  /** Move to slide `i` (clamped) and remember it in the URL hash so a reload resumes there. */
-  const go = useCallback((i) => {
-    const next = Math.max(0, Math.min(deck.slides.length - 1, i))
+  /** Show slide i; `complete` shows every point at once (going back). */
+  const go = useCallback((i, complete = false) => {
+    const next = Math.max(0, Math.min(last, i))
+    const sch = scheduleOf(deck.slides[next])
     setIndex(next)
-    setElapsed(0)
-    setPaused(false)
     setDemo(null)
+    setStep(complete ? sch.length - 1 : -1)
+    setElapsed(complete ? sch[sch.length - 1] : 0)
     window.history.replaceState(null, '', `${window.location.search}#${next}`)
+  }, [last])
+
+  /** Next: bring in the next point early, or move on when all are shown. */
+  const forward = useCallback(() => {
+    if (step < total - 1) { const s = step + 1; setStep(s); setElapsed(e => Math.max(e, schedule[s])) }
+    else go(index + 1)
+  }, [step, total, schedule, go, index])
+
+  const fullScreen = useCallback(() => {
+    if (document.fullscreenElement) document.exitFullscreen?.()
+    else rootRef.current?.requestFullscreen?.().catch(() => {})
   }, [])
 
-  /** Open a slide's live demo; the timer pauses while it is on screen. */
+  /** Start screen: full screen, then the show runs. */
+  const start = useCallback(() => {
+    rootRef.current?.requestFullscreen?.().catch(() => {})
+    setStarted(true)
+    setPlaying(true)
+    go(index)
+  }, [go, index])
+
   const openDemo = useCallback((d) => { setPlaying(false); setDemo(d) }, [])
-  /** Play/pause button: play runs the timed show; pause holds the timer and the animations. */
-  const togglePlay = useCallback(() => { setPlaying(p => { setPaused(p); return !p }) }, [])
+  /** Back from a live demo: the show carries on by itself, no need to press Play. */
+  const closeDemo = useCallback(() => { setDemo(null); setPlaying(true) }, [])
 
-  // Steer the audience phones whenever the slide changes.
+  // The show's clock: runs while playing, not while a demo is open.
   useEffect(() => {
-    if (READ_ONLY) return
-    api.post('/api/live-admin/control', controlFor(slide))
-      .then(() => setError(''))
-      .catch(e => setError(`Audience polls unavailable: ${e.message}`))
-  }, [slide])
-
-  // Play mode: count this slide's speaking time and advance when it is used up.
-  useEffect(() => {
-    if (!playing || demo || EXPORT) return undefined
+    if (!started || !playing || demo || STATIC) return undefined
     const t = setInterval(() => setElapsed(e => e + 0.25), 250)
     return () => clearInterval(t)
-  }, [playing, demo])
+  }, [started, playing, demo])
+
+  // Points appear when their time comes; the slide moves on when its time is up.
   useEffect(() => {
-    if (!playing || elapsed < duration) return
-    if (index < deck.slides.length - 1) go(index + 1)
-    else setPlaying(false)
-  }, [elapsed, duration, playing, index, go])
+    if (STATIC || !started) return
+    let s = step
+    while (s + 1 < total && elapsed >= schedule[s + 1]) s += 1
+    if (step < 0 && elapsed >= schedule[0]) s = Math.max(s, 0)
+    if (s !== step) setStep(s)
+    if (playing && duration > 0 && elapsed >= duration && index < last) go(index + 1)
+  }, [elapsed, step, total, schedule, playing, duration, index, last, go, started])
 
   useEffect(() => {
     if (STATIC) return undefined
-    /** Keyboard (or presentation clicker) control. */
     const onKey = (e) => {
-      if (e.target.closest?.('input, textarea, select, button')) return
-      if (['ArrowRight', 'PageDown', ' '].includes(e.key)) { e.preventDefault(); go(index + 1) }
-      else if (['ArrowLeft', 'PageUp'].includes(e.key)) { e.preventDefault(); go(index - 1) }
-      else if (e.key === 'p' || e.key === 'P' || e.key === 'k' || e.key === 'K') togglePlay()
+      if (e.target.closest?.('input, textarea, select')) return
+      if (!started) { if (['ArrowRight', 'PageDown', ' ', 'Enter'].includes(e.key)) { e.preventDefault(); start() } return }
+      if (['ArrowRight', 'PageDown', ' '].includes(e.key)) { e.preventDefault(); forward() }
+      else if (['ArrowLeft', 'PageUp'].includes(e.key)) { e.preventDefault(); go(index - 1, true) }
+      else if (e.key === 'p' || e.key === 'P' || e.key === 'k' || e.key === 'K') setPlaying(p => !p)
       else if (e.key === 'n' || e.key === 'N') setNotes(v => !v)
-      else if (e.key === 'f' || e.key === 'F') { if (document.fullscreenElement) document.exitFullscreen(); else rootRef.current?.requestFullscreen?.() }
-      else if (e.key === 'Escape') setDemo(null)
+      else if (e.key === 'f' || e.key === 'F') fullScreen()
+      else if (e.key === 'Escape' && demo) closeDemo()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [index, go, togglePlay])
+  }, [started, start, forward, go, index, fullScreen, demo, closeDemo])
 
-  /** Clear every vote before the talk starts (asks first). */
-  const resetPolls = async () => {
-    if (!window.confirm('Clear all audience votes?')) return
-    try { await api.post('/api/live-admin/reset', {}); setError('') } catch (e) { setError(e.message) }
-  }
-
-  const minutesLeft = useMemo(() => deck.slides.slice(index).reduce((a, s) => a + (s.minutes || 0), 0), [index])
-  const last = deck.slides.length - 1
+  const minutesLeft = deck.slides.slice(index).reduce((a, s) => a + (s.minutes || 0), 0)
+  const progress = duration > 0 ? Math.min(100, (100 * elapsed) / duration) : 0
 
   return (
-    <div ref={rootRef} className={`pd${STATIC ? ' pd-static' : ''}${paused ? ' pd-paused' : ''}`} aria-roledescription="slide deck">
+    <div ref={rootRef} className={`pd${STATIC ? ' pd-static' : ''}${playing || STATIC ? '' : ' pd-paused'}`} aria-roledescription="slide deck">
       <div className="pd-stage" style={{ transform: `scale(${scale}) translate(-50%, -50%)` }}>
-        {!EXPORT && <div className="pd-progress" style={{ width: `${(100 * (index + 1)) / deck.slides.length}%` }} />}
+        <Rail stage={slide.stage} />
         <div key={slide.id} className="pd-slide" role="group" aria-roledescription="slide"
           aria-label={`${index + 1} of ${deck.slides.length}: ${slide.headline}`}>
-          <Slide slide={slide} polls={polls} index={index} onOpenDemo={() => openDemo(slide.demo)} />
+          <Slide slide={slide} step={step} onOpenDemo={openDemo} />
         </div>
-        {!EXPORT && <p className="sr-only" aria-live="polite">{`Slide ${index + 1} of ${deck.slides.length}: ${slide.headline}`}</p>}
-        {!EXPORT && (
+        {!STATIC && <p className="sr-only" aria-live="polite">{`Slide ${index + 1} of ${deck.slides.length}: ${slide.headline}`}</p>}
+        {!STATIC && started && (
           <nav className="pd-nav" aria-label="Slide navigation">
-            <button type="button" onClick={() => go(index - 1)} disabled={index === 0} aria-label="Previous slide">
-              <ChevronLeft aria-hidden="true"><title>Previous slide</title></ChevronLeft>
+            <button type="button" onClick={() => go(index - 1, true)} disabled={index === 0} aria-label="Previous slide">
+              <ArrowLeft aria-hidden="true" strokeWidth={2.5} />
             </button>
-            <button type="button" className="play" onClick={togglePlay} aria-pressed={playing}
-              aria-label={playing ? 'Pause the presentation' : 'Play the presentation (timed)'}>
-              {playing ? <Pause aria-hidden="true"><title>Pause</title></Pause> : <Play aria-hidden="true"><title>Play</title></Play>}
-              <span className="timer" style={{ width: `${Math.min(100, (100 * elapsed) / duration)}%` }} aria-hidden="true" />
+            <button type="button" className="play" onClick={() => setPlaying(p => !p)} aria-pressed={playing}
+              aria-label={playing ? 'Pause the presentation' : 'Resume the presentation'}>
+              {playing ? <Pause aria-hidden="true" strokeWidth={2.5} /> : <Play aria-hidden="true" strokeWidth={2.5} />}
+              <span className="timer" style={{ width: `${progress}%` }} aria-hidden="true" />
             </button>
-            <button type="button" onClick={() => go(index + 1)} disabled={index === last} aria-label="Next slide">
-              <ChevronRight aria-hidden="true"><title>Next slide</title></ChevronRight>
+            <button type="button" onClick={forward} disabled={index === last && step >= total - 1} aria-label="Next">
+              <ArrowRight aria-hidden="true" strokeWidth={2.5} />
             </button>
-            <span className="pos" aria-live="polite">{index + 1} / {deck.slides.length}</span>
           </nav>
         )}
       </div>
+      {!started && (
+        <button type="button" className="pd-start" onClick={start} aria-label="Start the presentation in full screen">
+          <Play aria-hidden="true" strokeWidth={2} />
+          {SELF && <span className="pd-start-hint">Press → (or the arrow buttons) to move on.<br />The demos on slides 6 and 7 are live: try them.</span>}
+        </button>
+      )}
       {demo && (
         <div className="pd-frame">
           <iframe title={demo.label} src={demo.path} />
-          <div className="pd-frame-bar"><button type="button" onClick={() => setDemo(null)}>← Back to slides</button></div>
+          <button type="button" className="pd-frame-close" onClick={closeDemo} aria-label="Back to the slides">
+            <ArrowLeft aria-hidden="true" strokeWidth={2.5} />
+          </button>
         </div>
       )}
-      {notes && <div className="pd-notes" role="note"><b>Notes · ~{slide.minutes} min · {minutesLeft.toFixed(1)} min to the end</b><br />{slide.notes}</div>}
-      {!READ_ONLY && (
+      {notes && <div className="pd-notes" role="note"><b>~{slide.minutes || '–'} min · {minutesLeft.toFixed(1)} min to the end</b><br />{slide.notes}</div>}
+      {!STATIC && started && (
         <div className="pd-chrome">
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button type="button" onClick={() => setNotes(v => !v)} aria-pressed={notes}>Notes (N)</button>
-            <button type="button" onClick={() => rootRef.current?.requestFullscreen?.()}>Full screen (F)</button>
-            <button type="button" onClick={resetPolls}>Reset votes</button>
-          </div>
-          {error && <span role="alert" style={{ color: '#fca5a5', fontSize: 13 }}>{error}</span>}
+          <button type="button" onClick={() => setNotes(v => !v)} aria-pressed={notes} aria-label="Speaker notes (N)"><NotebookPen aria-hidden="true" /></button>
+          <button type="button" onClick={fullScreen} aria-label="Full screen (F)"><Maximize aria-hidden="true" /></button>
         </div>
       )}
     </div>

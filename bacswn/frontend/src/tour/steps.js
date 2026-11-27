@@ -18,19 +18,11 @@ import { emitTour, selectMeshStation as meshStation, showMeshTab as meshTab } fr
 /** The guided demo, in order. */
 export const TOUR_STEPS = [
   {
-    id: 'welcome', path: '/', title: 'Welcome to SkyWatch Bahamas', seconds: 14,
+    id: 'welcome', path: '/mesh', title: 'Welcome to SkyWatch Bahamas', seconds: 14,
     target: '.page-header',
     body: [
       'SkyWatch gives the Bahamas Department of Meteorology and air traffic control one live picture of weather, airspace and climate obligations.',
       'This tour takes about six minutes and drives the demo for you. Use Next and Back, or turn on Auto-advance.',
-    ],
-  },
-  {
-    id: 'command', path: '/', title: 'Command Center: the live picture', seconds: 16,
-    target: '.leaflet-container',
-    body: [
-      'Aircraft in the Bahamas FIR, flight conditions at every station, SIGMETs and tropical cyclones on one map.',
-      'Alerts arrive with sound and a visual pulse that users can switch off, and the weather briefing can be read aloud. Everything on the map is also available as text tables below it.',
     ],
   },
   {
@@ -49,14 +41,6 @@ export const TOUR_STEPS = [
     body: [
       'Three squall cells are sweeping south-east across Grand Bahama, Abaco and Nassau.',
       'Watch the Audit trail log: upstream stations warn the stations in the storm’s path before it reaches them, so downstream verdicts change ahead of the weather.',
-    ],
-  },
-  {
-    id: 'traffic', path: '/', settleMs: 5000, title: 'From the mesh to the flight deck', seconds: 20,
-    target: '.mesh-traffic',
-    body: [
-      'The storms the mesh is tracking become hazard areas on the controllers’ map — solid once peer stations and the satellite confirm them.',
-      'Every aircraft is projected 30 minutes ahead; anything that will fly into a hazard is flagged with the smallest turn that keeps it clear, and imminent conflicts with hazards the mesh has confirmed arrive as alerts.',
     ],
   },
   {

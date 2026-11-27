@@ -117,6 +117,8 @@ export const api = {
 
   // Auth: session login / registration / logout; `me` returns the signed-in user.
   login: (username, password) => post('/api/auth/login', { username, password }),
+  // Public self-guided demo only (404/401 on the presenter's server): sign in as the guest.
+  guest: () => post('/api/auth/guest'),
   register: (data) => post('/api/auth/register', data),
   logout: () => post('/api/auth/logout'),
   me: () => request('/api/auth/me'),

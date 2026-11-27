@@ -5,9 +5,11 @@
  * Why: every other route sits behind authentication; this is the only public page.
  * How: posts the credentials through `api.login`, stores the returned token via the
  * auth context's `login()` and navigates to the Command Center. Failures (an ApiError
- * from the client) are shown in a live `role="alert"` region.
+ * from the client) are shown in a live `role="alert"` region. On the public self-guided
+ * demo the server offers a guest sign-in: the visitor is signed in at once and taken
+ * to the presentation in self-guided mode, without seeing the form.
  */
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../App'
 import { api } from '../api/client'
@@ -20,6 +22,16 @@ export default function Login() {
   const [loading, setLoading] = useState(false)
   const { login } = useAuth()
   const navigate = useNavigate()
+  // Until we know whether this is the public demo, show nothing (no flash of the form).
+  const [checkingGuest, setCheckingGuest] = useState(true)
+
+  useEffect(() => {
+    let alive = true
+    api.guest()
+      .then(data => { if (alive) { login(data.token, data); navigate('/present/paris?self=1', { replace: true }) } })
+      .catch(() => { if (alive) setCheckingGuest(false) })        // the presenter's server: sign in normally
+    return () => { alive = false }
+  }, [])                                                           // eslint-disable-line react-hooks/exhaustive-deps
 
   /**
    * Submit handler: authenticates, saves the session and redirects; shows the error message on failure.
@@ -39,6 +51,8 @@ export default function Login() {
       setLoading(false)
     }
   }
+
+  if (checkingGuest) return <div className="login-page" aria-busy="true" />
 
   return (
     <div className="login-page">

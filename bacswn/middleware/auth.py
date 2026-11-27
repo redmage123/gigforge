@@ -13,7 +13,20 @@ Otherwise the token comes from the ``access_token`` cookie or a ``Bearer`` heade
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
+from config import PUBLIC_DEMO
 from services.auth import decode_token
+
+# Public demo: the only changes a guest may make (everything else that writes is refused,
+# so nothing a visitor does can send a message, run AI or touch accounts).
+GUEST_WRITE_PREFIXES = (
+    "/api/carbon-oversight/",
+    "/api/demo/",
+    "/api/mesh/",
+    "/api/simulation/",
+    "/api/hurricane/",
+    "/api/auth/logout",
+)
+GUEST_WRITE_BLOCKED = ("/api/carbon-oversight/ai/", "/api/mesh/ask")
 
 PUBLIC_PATHS = (
     "/api/auth/login",
@@ -35,8 +48,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
         """Let public, SPA and WebSocket requests through; otherwise verify the JWT or answer 401."""
         path = request.url.path
 
-        # Allow public paths
-        if any(path.startswith(p) for p in PUBLIC_PATHS):
+        # Allow public paths (and, in the public demo, the guest sign-in)
+        if any(path.startswith(p) for p in PUBLIC_PATHS) or (PUBLIC_DEMO and path == "/api/auth/guest"):
             return await call_next(request)
 
         # Only protect /api/* and /ws/* — let React SPA routes through
@@ -60,6 +73,13 @@ class AuthMiddleware(BaseHTTPMiddleware):
         payload = decode_token(token)
         if not payload:
             return JSONResponse(status_code=401, content={"error": "Invalid or expired token"})
+
+        if PUBLIC_DEMO and payload.get("role") != "admin" and request.method not in ("GET", "HEAD", "OPTIONS"):
+            allowed = path.startswith(GUEST_WRITE_PREFIXES) and not path.startswith(GUEST_WRITE_BLOCKED)
+            if not allowed:
+                return JSONResponse(status_code=403, content={
+                    "error": "Not available in the public demo",
+                    "detail": "Not available in the public demo"})
 
         request.state.user = payload
         return await call_next(request)

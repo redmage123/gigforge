@@ -13,6 +13,9 @@ returned as ``{"error": ...}`` JSON responses with the appropriate status.
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+import secrets
+
+from config import PUBLIC_DEMO
 from services.auth import (
     authenticate, create_token, create_user, get_user,
     check_lockout, record_failed_attempt, clear_attempts,
@@ -60,6 +63,28 @@ async def login(req: LoginRequest):
         "first_name": user["first_name"],
         "last_name": user["last_name"],
     })
+    response.set_cookie(key="access_token", value=token, httponly=True, samesite="lax", max_age=86400)
+    return response
+
+
+GUEST_USERNAME = "guest"
+
+
+@router.post("/guest")
+async def guest():
+    """Public demo only: sign the visitor in as the shared guest (role ``user``); 404 elsewhere."""
+    if not PUBLIC_DEMO:
+        return JSONResponse(status_code=404, content={"error": "Not found"})
+    user = await get_user(GUEST_USERNAME)
+    if not user:
+        # Nobody signs in as the guest with a password: it gets a random one nobody knows.
+        await create_user(username=GUEST_USERNAME, password=secrets.token_urlsafe(24), role="user",
+                          first_name="Public", last_name="demo", title="Visitor", department="")
+        user = await get_user(GUEST_USERNAME)
+    token = create_token(user["username"], user["role"])
+    response = JSONResponse(content={"token": token, "username": user["username"], "role": user["role"],
+                                     "first_name": user["first_name"], "last_name": user["last_name"],
+                                     "public_demo": True})
     response.set_cookie(key="access_token", value=token, httponly=True, samesite="lax", max_age=86400)
     return response
 

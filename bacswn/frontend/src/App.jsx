@@ -30,7 +30,6 @@ export const ThemeContext = createContext(null)
 export function useTheme() { return useContext(ThemeContext) }
 
 // Lazy-loaded pages (each its own bundle chunk)
-const CommandCenter = lazy(() => import('./pages/CommandCenter'))
 const WatchOffice = lazy(() => import('./pages/WatchOffice'))
 const FlightOps = lazy(() => import('./pages/FlightOps'))
 const Emissions = lazy(() => import('./pages/Emissions'))
@@ -52,7 +51,7 @@ const GuidedTour = lazy(() => import('./components/tour/GuidedTour'))
 
 /** Sidebar navigation, in display order; icons are decorative (aria-hidden). */
 const NAV_ITEMS = [
-  { path: '/', icon: '🎯', label: 'Command Center' },
+  { path: '/present/paris', icon: '🎤', label: 'Presentation' },
   { path: '/watch-office', icon: '🌤️', label: 'Watch Office' },
   { path: '/verification', icon: '📈', label: 'Forecast Skill' },
   { path: '/flights', icon: '✈️', label: 'Flight Operations' },
@@ -242,7 +241,8 @@ export default function App() {
             <Route path="/present/paris" element={<ProtectedRoute><PresentParis /></ProtectedRoute>} />
             <Route path="/live" element={<Live />} />
             <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
-              <Route index element={<CommandCenter />} />
+              {/* Home is the presentation's title slide (start, or the self-guided interactive demo). */}
+              <Route index element={<Navigate to="/present/paris" replace />} />
               <Route path="watch-office" element={<WatchOffice />} />
               <Route path="flights" element={<FlightOps />} />
               <Route path="emissions" element={<Emissions />} />

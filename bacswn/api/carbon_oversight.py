@@ -26,6 +26,8 @@ from services import ner_registry as ner
 from services import oversight_ai as oai
 from services.errors import BacswnPermissionError, BacswnValidationError
 
+from config import PUBLIC_DEMO  # noqa: E402
+
 router = APIRouter()
 
 # Recording evidence and deciding on claims is a regulator action.
@@ -44,7 +46,8 @@ def _require_writer(request: Request) -> str:
         BacswnPermissionError: the user's role may not change the register (HTTP 403).
     """
     user = _user(request)
-    if user.get("role") not in WRITE_ROLES:
+    # Public self-guided demo: the visitor runs the regulator's side on throwaway data.
+    if user.get("role") not in WRITE_ROLES and not (PUBLIC_DEMO and user.get("sub") == "guest"):
         raise BacswnPermissionError("Only administrators can change the oversight register")
     return user["sub"]
 

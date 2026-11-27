@@ -120,6 +120,10 @@ TOMORROW_API_URL = "https://api.tomorrow.io/v4"
 # ── Anthropic (AI SIGMET generation / chat) ─────────────────────────────
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 
+# Public self-guided demo (a separate container): visitors are signed in as a guest
+# automatically and may only change demo data (see middleware/auth.py).
+PUBLIC_DEMO = os.getenv("PUBLIC_DEMO", "") == "1"
+
 # ── Cache TTLs (seconds) ───────────────────────────────────────────────
 CACHE_TTL_METAR = 120       # 2 minutes
 CACHE_TTL_TAF = 600         # 10 minutes

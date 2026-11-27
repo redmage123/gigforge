@@ -455,18 +455,6 @@ body {
   50% { opacity: 1; }
 }
 
-/* ── Wallboard / Kiosk mode ────────────────────────────────────────── */
-.wallboard-mode .page-header {
-  margin-bottom: 10px;
-}
-.wallboard-mode .page-header h2 {
-  font-size: 20px;
-}
-.wallboard-mode .layer-toggles {
-  padding: 6px 10px;
-  font-size: 11px;
-}
-
 /* ── Map Legend ─────────────────────────────────────────────────────── */
 .map-legend {
   position: absolute;

@@ -5,10 +5,9 @@
  * aircraft, weather stations, FIR boundary, SIGMETs, tropical cyclones (track and cone),
  * mesh hazards and predicted aircraft conflicts, comms links, optional radar and wind
  * overlays, flight trails and a replay slider; plus summary stats, an altitude slice,
- * the operational alert centre, a spoken/text weather briefing, mesh traffic and
+ * the operational alert centre, mesh traffic and
  * accessible data tables of everything on the map.
- * Why: the duty forecaster's single situational-awareness screen, also usable as a
- * wall display (kiosk mode).
+ * Why: the duty forecaster's single situational-awareness screen.
  * How: polls `api.mapLayers()` (15 s), `api.dashboardSummary()` (30 s),
  * `api.meshAirspace()` (5 s) and, while comms links are shown, `api.meshStatus()` (5 s).
  * useOperationalAlerts merges WebSocket SIGMETs/alerts with mesh hazards and conflicts
@@ -24,10 +23,10 @@ import { useWebSocket } from '../hooks/useWebSocket'
 import { useA11yPrefs, usePrefersReducedMotion } from '../hooks/useA11yPrefs'
 import AlertCenter, { useChime } from '../components/command/AlertCenter'
 import AlertDetails from '../components/command/AlertDetails'
-import BriefingPanel, { buildBriefing } from '../components/command/BriefingPanel'
 import SituationTables from '../components/command/SituationTables'
 import MeshTrafficPanel, { MeshHazardLayers } from '../components/command/MeshTraffic'
 import LiveBadge from '../components/LiveBadge'
+import { Link } from 'react-router-dom'
 import ResetViewControl from '../components/map/ResetViewControl'
 import { PLANE_D } from '../components/map/plane'
 import { CommsLinksLayer, CommsFilterControl, useCommsFilter, visibleLinks } from '../components/map/CommsChannels'
@@ -655,7 +654,7 @@ function useOperationalAlerts(airspace, prefs) {
 }
 
 // ── MAIN COMPONENT ──────────────────────────────────────────────────
-/** The Command Center: header controls, briefing, alerts, stats, layer toggles, map and tables. */
+/** The Command Center: header controls, alerts, stats, layer toggles, map and tables. */
 export default function CommandCenter() {
   const { data, loading } = usePolling(useCallback(() => api.mapLayers(), []), 15000)
   const { data: summary } = usePolling(useCallback(() => api.dashboardSummary(), []), 30000)
@@ -728,38 +727,20 @@ export default function CommandCenter() {
     })
   }, [flights])
 
-  // Weather briefing: transcript always shown; read-aloud optional
-  const [briefingOpen, setBriefingOpen] = useState(false)
-  const briefingLines = useMemo(() => buildBriefing(summary, flights, stations), [summary, flights, stations])
-
-  // 12. Wallboard mode
-  const [wallboard, setWallboard] = useState(false)
-
   return (
-    <div className={wallboard ? 'wallboard-mode' : ''}>
+    <div>
       <div className="page-header">
         <div>
           <h2>Command Center</h2>
           <p className="subtitle">Real-time operational overview — Bahamas FIR</p>
         </div>
-        <div style={{display: 'flex', gap: 8, alignItems: 'center'}}>
-          <button className="btn btn-sm" onClick={() => setBriefingOpen(o => !o)}
-            aria-expanded={briefingOpen} aria-controls="briefing-panel"
-            style={{background: briefingOpen ? 'var(--accent-strong)' : 'var(--bg-card)', color: briefingOpen ? '#fff' : 'var(--text-primary)', border: '1px solid var(--border)'}}>
-            <span aria-hidden="true">📋</span> Briefing
-          </button>
-          <button className="btn btn-sm" onClick={() => setWallboard(!wallboard)} aria-pressed={wallboard}
-            title="Kiosk mode: hide statistics and enlarge the map for a wall display"
-            style={{background: wallboard ? 'var(--accent-strong)' : 'var(--bg-card)', color: wallboard ? '#fff' : 'var(--text-primary)', border: '1px solid var(--border)'}}>
-            <span aria-hidden="true">🖥</span> Kiosk
-          </button>
+        <div style={{display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap'}}>
+          <Link to="/present/paris" className="btn btn-sm btn-primary"
+            title="Open the presentation (the audience can explore the demos at /live)">
+            <span aria-hidden="true">🎤</span> Presentation
+          </Link>
           <LiveBadge />
         </div>
-      </div>
-
-      <div id="briefing-panel">
-        <BriefingPanel lines={briefingLines} open={briefingOpen} onClose={() => setBriefingOpen(false)}
-          autoSpeak rate={prefs.speechRate} onRate={(r) => setPref('speechRate', r)} />
       </div>
 
       <AlertCenter alerts={alerts} prefs={prefs} setPref={setPref}
@@ -770,30 +751,28 @@ export default function CommandCenter() {
         onDismiss={dismissAlert} onLocate={locateOnMap} />
 
       {/* Stats row */}
-      {!wallboard && (
-        <div className="card-grid" style={{marginBottom: 16}}>
-          <div className="stat-card">
-            <span className="stat-label">Active Flights</span>
-            <span className="stat-value accent">{summary?.command_center?.active_flights ?? flights.length}</span>
-            <span className="stat-detail">Aircraft in Bahamas FIR</span>
-          </div>
-          <div className="stat-card">
-            <span className="stat-label">Stations Reporting</span>
-            <span className="stat-value success">{summary?.command_center?.reporting_stations ?? stations.length}</span>
-            <span className="stat-detail">Weather observation points</span>
-          </div>
-          <div className="stat-card">
-            <span className="stat-label">Active Alerts</span>
-            <span className="stat-value warning">{summary?.command_center?.active_alerts ?? 0}</span>
-            <span className="stat-detail">NWS + SIGMET advisories</span>
-          </div>
-          <div className="stat-card">
-            <span className="stat-label">AI Agents</span>
-            <span className="stat-value info">{summary?.agents?.total ?? 7}</span>
-            <span className="stat-detail">{summary?.agents?.running ?? 0} running</span>
-          </div>
+      <div className="card-grid" style={{marginBottom: 16}}>
+        <div className="stat-card">
+          <span className="stat-label">Active Flights</span>
+          <span className="stat-value accent">{summary?.command_center?.active_flights ?? flights.length}</span>
+          <span className="stat-detail">Aircraft in Bahamas FIR</span>
         </div>
-      )}
+        <div className="stat-card">
+          <span className="stat-label">Stations Reporting</span>
+          <span className="stat-value success">{summary?.command_center?.reporting_stations ?? stations.length}</span>
+          <span className="stat-detail">Weather observation points</span>
+        </div>
+        <div className="stat-card">
+          <span className="stat-label">Active Alerts</span>
+          <span className="stat-value warning">{summary?.command_center?.active_alerts ?? 0}</span>
+          <span className="stat-detail">NWS + SIGMET advisories</span>
+        </div>
+        <div className="stat-card">
+          <span className="stat-label">AI Agents</span>
+          <span className="stat-value info">{summary?.agents?.total ?? 7}</span>
+          <span className="stat-detail">{summary?.agents?.running ?? 0} running</span>
+        </div>
+      </div>
 
       {/* Layer toggle bar */}
       <div className="layer-toggles" role="group" aria-label="Map layers">
@@ -819,7 +798,7 @@ export default function CommandCenter() {
       {/* Map + Altitude Panel */}
       <div className="cc-map-row">
         <div className="card" style={{padding: 0, overflow: 'hidden', flex: 1}}>
-          <div className="map-container" style={wallboard ? {height: 'calc(100vh - 80px)'} : {}}
+          <div className="map-container"
             role="region" aria-label="Operational map of the Bahamas FIR" aria-describedby="map-alt-note">
             <p id="map-alt-note" className="sr-only">
               Station and cyclone markers can be reached with Tab and opened with Enter.
@@ -926,17 +905,17 @@ export default function CommandCenter() {
         </div>
 
         {/* 6. Altitude slice panel (sits beside the map) */}
-        {showAltitude && !wallboard && (
+        {showAltitude && (
           <div style={{width: 220, flexShrink: 0}}>
             <AltitudePanel flights={displayFlights} visible={showAltitude} />
           </div>
         )}
       </div>
 
-      {!wallboard && <MeshTrafficPanel airspace={airspace} />}
+      <MeshTrafficPanel airspace={airspace} />
 
-      {!wallboard && <SituationTables stations={stations} flights={displayFlights} sigmets={sigmets} hurricanes={hurricanes}
-        links={commsOn ? visibleLinks(meshStatus?.links, commsFilter) : []} />}
+      <SituationTables stations={stations} flights={displayFlights} sigmets={sigmets} hurricanes={hurricanes}
+        links={commsOn ? visibleLinks(meshStatus?.links, commsFilter) : []} />
     </div>
   )
 }

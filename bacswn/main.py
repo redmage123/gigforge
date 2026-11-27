@@ -24,7 +24,7 @@ from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 
-from config import HOST, PORT, DATA_DIR
+from config import HOST, PORT, DATA_DIR, PUBLIC_DEMO
 from services.database import init_db, seed_demo_data
 from services.auth import ensure_default_admin
 from services.agent_orchestrator import orchestrator
@@ -92,6 +92,16 @@ async def lifespan(app: FastAPI):
 
     # Create default users
     await ensure_default_admin()
+
+    # Public self-guided demo: its data starts empty on every restart, so load the fictional
+    # CORSIA demo operators each time (the same script an operator runs by hand on prod).
+    if PUBLIC_DEMO:
+        try:
+            from deploy.oversight_demo import seed as seed_oversight_demo
+            await seed_oversight_demo()
+            logger.info("Public demo: CORSIA oversight demo data seeded")
+        except Exception as e:      # the rest of the demo still works without it
+            logger.error(f"Public demo: seeding the CORSIA oversight demo failed: {e}")
 
     # Start periodic agents
     await orchestrator.run_periodic_agents()

@@ -33,39 +33,12 @@
   ],
   "slides": [
     {
-      "id": "title",
-      "kind": "title",
-      "minutes": 0.5,
-      "headline": "From bottleneck to bankable",
-      "sub": "Three themes from a small island state: unlocking CORSIA supply, strengthening market integrity, and Caribbean blue carbon investment",
-      "from": {
-        "icon": "Hourglass",
-        "label": "Bottleneck"
-      },
-      "to": {
-        "icon": "TrendingUp",
-        "label": "Bankable"
-      },
-      "notes": "On screen while the room settles. This talk is about CORSIA and the Bahamas, and it covers three themes: unlocking CORSIA supply, strengthening market integrity, and Caribbean blue carbon investment. It shows how state-side data and tools take Bahamian credits from bottleneck to bankable.",
-      "cues": [
-        "This talk is about",
-        "how state-side data"
-      ]
-    },
-    {
       "id": "intro",
       "kind": "intro",
       "minutes": 0.75,
-      "headline": "Who I am and what I’ll cover",
+      "headline": "From bottleneck to bankable",
       "sub": "CORSIA and the Bahamas",
-      "notes": "Good morning. I'm Michael Strachan, CEO of BACSWN, SkyWatch Bahamas: we run a weather, airspace and emergency network for The Bahamas. A year ago in Barcelona the question on the CORSIA panel was what airlines need. Today it's what governments can do. In the next twenty minutes I'll tell you four things: how the system works for the Bahamas today, the problems that stop it delivering, how we are solving them, and then I'll show you the solution working. At the end I'll recap, and take your questions.",
-      "cues": [
-        "how the system works",
-        "the problems that stop",
-        "how we are solving",
-        "show you the solution",
-        "I'll recap"
-      ]
+      "notes": "Good morning. I'm Michael Strachan, CEO of BACSWN, SkyWatch Bahamas: we run a weather, airspace and emergency network for The Bahamas. A year ago in Barcelona the question on the CORSIA panel was what airlines need. Today it's what governments can do. In the next twenty minutes I'll tell you four things: how the system works for the Bahamas today, the problems that stop it delivering, how we are solving them, and then I'll show you the solution working. At the end I'll recap, and take your questions."
     },
     {
       "id": "system",

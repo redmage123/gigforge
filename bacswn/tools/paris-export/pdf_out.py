@@ -244,7 +244,7 @@ def speaker_notes(out_path):
             Paragraph("Run sheet", st["h2"])]
     rows = [[Paragraph(h, st["cellb"]) for h in ("#", "Slide", "Part", "Starts", "Min")]]
     t, blocks = 0.0, []
-    cues = {"title": "Click the large play arrow: the deck goes full screen and runs by itself.",
+    cues = {"intro": "Click “Start the presentation” at the bottom of the screen: the deck goes full screen and runs by itself.",
             "questions": "This slide stays up until you move on."}
     for i, s in enumerate(DECK["slides"], 1):
         start = f"{int(t)}:{int(round((t % 1) * 60)):02d}"
@@ -254,7 +254,7 @@ def speaker_notes(out_path):
         cue = cues.get(s["id"])
         if s["kind"] == "demo":
             cue = ("Live demo, on the slide itself: click and use it in the panel on the right. “Live demo” under a step "
-                   "switches demos; the square button above the panel opens it full screen. This slide waits for you: press → "
+                   "switches demos; the square button above the panel opens it full screen, and “Open in new tab” opens it in its own browser tab. This slide waits for you: press → "
                    "when you're done (move the mouse off the demo first). In the PowerPoint backup the recording plays here.")
         length = f"about {s['minutes']:g} min" if s["minutes"] else "as long as the questions last"
         block = [Paragraph(xesc(f"{i}. {s['headline']}"), st["h3"]),
@@ -276,7 +276,7 @@ def speaker_notes(out_path):
 DRIVE = [
     ("1. Open it", "On the laptop, log in at http://78.47.104.139:8088 with the login you were given. On the Command Center, "
                    "press the blue “Presentation” button at the top."),
-    ("2. Start", "Click the large play arrow in the middle of the screen. The deck goes full screen and runs by itself from "
+    ("2. Start", "Click the blue “Start the presentation” button at the bottom of the screen. The deck goes full screen and runs by itself from "
                  "slide 1. You don't need to touch anything to move on."),
     ("3. Just talk", "Speak from your notes at a normal pace. Each icon and its arrow appear as you reach that point, and each "
                      "slide moves on when you've finished it (except the two demo slides, which wait for you)."),
@@ -284,7 +284,7 @@ DRIVE = [
                                 "point now, or the next slide once every point is showing."),
     ("5. Need more time?", "Press P, or the middle round button bottom right, to pause; a question from the floor, a sip of "
                            "water. Press it again to carry on. The thin bar on that button shows the slide's time."),
-    ("6. Live demos (slides 6 and 7)", "The demo is live on the slide itself, on the right: click and use it right there. "
+    ("6. Live demos (slides 5 and 6)", "The demo is live on the slide itself, on the right: click and use it right there. "
                                        "“Live demo” under a step switches the panel to that demo; the square button above the "
                                        "panel opens it full screen (the round ← at its top right comes back, and the show carries "
                                        "on by itself). Demo slides wait for you: press → when you're done. If you clicked inside "

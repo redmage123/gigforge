@@ -64,6 +64,9 @@ function stepsOf(slide) {
 /** Speaking pace the timings assume: a natural presenter, words per minute. */
 const WPM = deck.wpm || 140
 
+/** Latest moment (seconds after a slide opens) for its first point to appear. */
+const FIRST_MAX = 2.5
+
 /** The notes as spoken: checks in [brackets] are not read out. */
 const spoken = (notes) => (notes || '').replace(/\[[^\]]*\]/g, '')
 
@@ -71,7 +74,7 @@ const spoken = (notes) => (notes || '').replace(/\[[^\]]*\]/g, '')
  * When each step appears, in seconds after the slide opens: the moment the presenter
  * reaches that point in the speaker notes. Each step has a cue (the phrase that introduces
  * it); its time is the words spoken before the cue at the natural pace. Steps without a
- * cue follow two seconds after the one before.
+ * cue follow two seconds after the one before. The first step is never later than FIRST_MAX.
  */
 function scheduleOf(slide) {
   const text = spoken(slide.notes)
@@ -84,6 +87,8 @@ function scheduleOf(slide) {
     const t = at(slide.cues?.[i])
     out.push(t ?? (i ? out[i - 1] + 2 : 0.8))
   }
+  // The slide never sits still: its first point comes in at once, however long the lead-in.
+  if (out.length) out[0] = Math.min(out[0], FIRST_MAX)
   return out
 }
 
@@ -247,6 +252,7 @@ function IntroSlide({ slide, step }) {
         </div>
       </div>
       <Column items={deck.agenda} x={1240} y0={320} y1={920} r={44} tone="agenda" w={440} size="sm" step={step} />
+      <p className="pd-intro-event">{deck.event}</p>
     </>
   )
 }
@@ -395,7 +401,7 @@ export default function PresentParis() {
   const progress = duration > 0 ? Math.min(100, (100 * elapsed) / duration) : 0
 
   return (
-    <div ref={rootRef} className={`pd${STATIC ? ' pd-static' : ''}${playing || STATIC ? '' : ' pd-paused'}`} aria-roledescription="slide deck">
+    <div ref={rootRef} className={`pd${STATIC ? ' pd-static' : ''}${playing || STATIC || !started ? '' : ' pd-paused'}`} aria-roledescription="slide deck">
       <div className="pd-stage" style={{ transform: `scale(${scale}) translate(-50%, -50%)` }}>
         <Rail stage={slide.stage} />
         <div key={slide.id} className="pd-slide" role="group" aria-roledescription="slide"
@@ -421,8 +427,8 @@ export default function PresentParis() {
       </div>
       {!started && (
         <button type="button" className="pd-start" onClick={start} aria-label="Start the presentation in full screen">
-          <Play aria-hidden="true" strokeWidth={2}><title>Start</title></Play>
-          {SELF && <span className="pd-start-hint">Press → (or the arrow buttons) to move on.<br />The demos on slides 6 and 7 are live: try them.</span>}
+          <span className="pd-start-btn"><Play aria-hidden="true" focusable="false" strokeWidth={2.25}><title>Start</title></Play>Start the presentation</span>
+          {SELF && <span className="pd-start-hint">Press → (or the arrow buttons) to move on.<br />The demos on slides 5 and 6 are live: try them.</span>}
         </button>
       )}
       {demo && (

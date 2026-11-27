@@ -115,6 +115,9 @@ def _spoken(notes):
     return re.sub(r"\[[^\]]*\]", "", notes or "")
 
 
+FIRST_MAX_MS = 2500   # latest moment for a slide's first point
+
+
 def schedule(s, span_ms=None):
     """When each step appears (ms): when the presenter reaches its cue phrase in the notes, at WPM.
 
@@ -127,6 +130,8 @@ def schedule(s, span_ms=None):
         cue = cues[i] if i < len(cues) else None
         k = t.find(cue) if cue else -1
         out.append(int(800 + len(t[:k].split()) * 60000 / WPM) if k >= 0 else (out[-1] + 2000 if out else 800))
+    if out:   # the first point comes in at once, however long the lead-in (as on the web deck)
+        out[0] = min(out[0], FIRST_MAX_MS)
     return out
 
 
@@ -257,6 +262,7 @@ def intro_slide(s):
                text(350, 370, 700, 74, p["name"], 64, bold=True, align="l"),
                text(350, 444, 700, 54, f"{p['role']}, {p['org']}", 44, "gold", True, "l"),
                text(350, 500, 640, 76, _wrap(p["tagline"], 28, 600), 28, "dim", align="l")])]
+    els.append(text(140, 990, 1000, 34, DECK["event"], 26, "dim", align="l", anim=Anim("fade", 600, 800)))
     return els + column(DECK["agenda"], schedule(s), 1240, 320, 920, 44, "agenda", 440, lbl=32)
 
 

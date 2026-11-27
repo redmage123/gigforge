@@ -8,7 +8,7 @@
  * Why: the talk is told with pictures and motion; the words live in the speaker notes.
  * How: slide content comes from paris-deck.json (shared with the PPTX/PDF exporter). Each
  * slide is drawn on a fixed 1920x1080 stage scaled to the screen. The show runs by itself:
- * a slide's points appear at speaking pace across its `minutes`, then it moves on. The
+ * a slide's points come in quickly one after another, it stays up for its `minutes`, then it moves on. The
  * clicker or → brings the next point in early (or the next slide when all are shown);
  * ← goes back. A start screen enters full screen. Opening a live demo pauses the timer;
  * closing it resumes the show by itself.
@@ -61,43 +61,12 @@ function stepsOf(slide) {
   return slide.items.length
 }
 
-/** Speaking pace the timings assume: a natural presenter, words per minute. */
-const WPM = deck.wpm || 140
-
-/** Latest moment (seconds after a slide opens) for its first point to appear. */
-const FIRST_MAX = 2.5
-
-/** Gap between steps that have no cue (the opening agenda: all five drawn in about 5 s). */
+/** Gap between a slide's points: four points are all in within about 4 s. */
 const STEP_GAP = 0.8
 
-/** The notes as spoken: checks in [brackets] are not read out. */
-const spoken = (notes) => (notes || '').replace(/\[[^\]]*\]/g, '')
-
-/**
- * When each step appears, in seconds after the slide opens: the moment the presenter
- * reaches that point in the speaker notes. Each step has a cue (the phrase that introduces
- * it); its time is the words spoken before the cue at the natural pace. Steps without a
- * cue follow STEP_GAP seconds after the one before. The first step is never later than FIRST_MAX.
- */
+/** When each step appears, in seconds after the slide opens: the first at once, then STEP_GAP apart. */
 function scheduleOf(slide) {
-  const text = spoken(slide.notes)
-  const at = (cue) => {
-    const i = cue ? text.indexOf(cue) : -1
-    return i < 0 ? null : 0.8 + (text.slice(0, i).split(/\s+/).filter(Boolean).length * 60) / WPM
-  }
-  const out = []
-  for (let i = 0; i < stepsOf(slide); i += 1) {
-    const t = at(slide.cues?.[i])
-    out.push(t ?? (i ? out[i - 1] + STEP_GAP : 0.8))
-  }
-  // The slide never sits still: its first point comes in at once, however long the lead-in.
-  if (out.length) out[0] = Math.min(out[0], FIRST_MAX)
-  // "pace": "even": the points between the first and the last are spaced evenly between them.
-  if (slide.pace === 'even' && out.length > 2) {
-    const a = out[0], gap = (out[out.length - 1] - a) / (out.length - 1)
-    for (let i = 1; i < out.length - 1; i += 1) out[i] = a + i * gap
-  }
-  return out
+  return Array.from({ length: stepsOf(slide) }, (_, i) => 0.8 + i * STEP_GAP)
 }
 
 /** Scale factor that fits the 1920x1080 stage inside the window. */

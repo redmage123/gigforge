@@ -235,9 +235,9 @@ def speaker_notes(out_path):
     flow = [Paragraph(xesc(f"{DECK['title']} — speaker notes"), st["h1"]),
             Paragraph(xesc(f"{DECK['speaker']} · {DECK['event']} · about {sum(s['minutes'] for s in DECK['slides']):g} minutes, then questions"), st["meta"]),
             Paragraph("The story", st["h2"]),
-            Paragraph("Tell them what you'll tell them (slide 1: what the talk is about, with Drazen's three themes; slide 2: who you are and the agenda), tell them (the system today, the "
+            Paragraph("Tell them what you'll tell them (slide 1: who you are and the agenda), tell them (the system today, the "
                       "problems, our solution, then the demos), and tell them what you told them (the recap), then questions. Every "
-                      "point is an icon, and an arrow draws to the next one as you reach it; the agenda across the top shows where "
+                      "point is an icon, and the points come in one after another within a few seconds of the slide opening; the agenda across the top shows where "
                       "you are.", st["body"]),
             Paragraph("How to drive it", st["h2"]),
             _drive_table(st, grid_style()),
@@ -278,7 +278,7 @@ DRIVE = [
                    "press the blue “Presentation” button at the top."),
     ("2. Start", "Click the blue “Start the presentation” button at the bottom of the screen. The deck goes full screen and runs by itself from "
                  "slide 1. You don't need to touch anything to move on."),
-    ("3. Just talk", "Speak from your notes at a normal pace. Each icon and its arrow appear as you reach that point, and each "
+    ("3. Just talk", "Speak from your notes at a normal pace. Each slide's icons and arrows are all on screen within a few seconds, and each "
                      "slide moves on when you've finished it (except the two demo slides, which wait for you)."),
     ("4. Ahead of the slides?", "Press → on the clicker or keyboard (or the → button bottom right). It brings in the next "
                                 "point now, or the next slide once every point is showing."),

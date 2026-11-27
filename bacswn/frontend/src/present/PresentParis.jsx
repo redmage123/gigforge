@@ -21,7 +21,7 @@ import deck from './paris-deck.json'
 import qrUrl from './qr-live.svg'
 import { BAHAMAS_PATH } from './bahamas-outline'
 import {
-  ArrowLeft, ArrowRight, Ban, Hourglass, CloudLightning, CopyX, Database, FileCheck2, FileSignature, FileX, Landmark, Lightbulb,
+  ArrowLeft, ArrowRight, Ban, ExternalLink, Hourglass, CloudLightning, CopyX, Database, FileCheck2, FileSignature, FileX, Landmark, Lightbulb,
   ListChecks, MapPin, Maximize, MessageCircleQuestion, MonitorPlay, NotebookPen, Pause, Plane, Play, RadioTower, Scale,
   SearchCheck, ShieldCheck, Smartphone, TrendingUp, TriangleAlert, UserRound, Waves, Wind,
 } from 'lucide-react'
@@ -206,6 +206,10 @@ function DemoSlide({ slide, step, onOpenDemo }) {
           <button type="button" className="pd-embed-max" onClick={() => onOpenDemo?.(active)} aria-label={`Open ${active.label} full screen`}>
             <Maximize aria-hidden="true" strokeWidth={2.25}><title>Full screen</title></Maximize>
           </button>
+          <a className="pd-embed-tab" href={active.path} target="_blank" rel="noopener noreferrer"
+            aria-label={`Open ${active.label} in a new tab`}>
+            <ExternalLink aria-hidden="true" focusable="false" strokeWidth={2.25}><title>New tab</title></ExternalLink>Open in new tab
+          </a>
         </div>
       )}
     </>

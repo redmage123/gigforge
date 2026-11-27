@@ -472,6 +472,11 @@
   background: rgba(2,6,23,.85); color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; }
 .pd-embed-max svg { width: 28px; height: 28px; }
 .pd-embed-max:hover, .pd-embed-max:focus-visible { background: var(--pd-accent); color: #04111f; outline: none; }
+.pd-embed-tab { position: absolute; right: 72px; top: -72px; height: 56px; padding: 0 24px 0 20px; border-radius: 28px;
+  border: 2px solid rgba(255,255,255,.35); background: rgba(2,6,23,.85); color: #fff; display: flex; align-items: center; gap: 10px;
+  font-size: 22px; font-weight: 600; text-decoration: none; white-space: nowrap; }
+.pd-embed-tab svg { width: 26px; height: 26px; }
+.pd-embed-tab:hover, .pd-embed-tab:focus-visible { background: var(--pd-accent); color: #04111f; outline: none; }
 
 /* self-guided start screen: how to move on */
 .pd-start { flex-direction: column; gap: 28px; }

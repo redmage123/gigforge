@@ -382,5 +382,9 @@
     "Strengthening market integrity",
     "Caribbean blue carbon investment"
   ],
-  "contact": "skywatch.ai-elevate.ai"
+  "contact": "skywatch.ai-elevate.ai",
+  "download": {
+    "path": "/downloads/Paris_From_Bottleneck_to_Bankable.pdf",
+    "label": "Download the slides (PDF)"
+  }
 }

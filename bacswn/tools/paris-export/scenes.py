@@ -328,6 +328,11 @@ def questions_slide(s):
             text(0, 500, 1440, 150, s["headline"], 130, bold=True, anim=Anim("rise", 300, 700)),
             text(0, 690, 1440, 50, f"{p['name']} · {p['role']}, {p['org']}", 40, "dim", anim=Anim("fade", 600, 700)),
             text(0, 760, 1440, 50, DECK.get("contact", ""), 40, "accent", True, anim=Anim("fade", 800, 700)),
+            *([El("group", label=f"{DECK['download']['label']} ({DEMO_BASE}{DECK['download']['path']})",
+                  link=DEMO_BASE + DECK["download"]["path"], anim=Anim("fade", 1000, 700), children=[
+                El("rect", 470, 860, 500, 72, radius=36, fill=col("card"), stroke=col("accent"), sw=3),
+                icon("Download", 535, 896, 34, "accent", 2.25),
+                text(566, 860, 390, 72, DECK["download"]["label"], 28, "accent", True, "l")])] if DECK.get("download") else []),
             El("group", label="QR code to the phone demos", anim=Anim("fade", 1200, 600), children=[
                 El("rect", 1300, 300, 400, 400, radius=20, fill="ffffff"),
                 El("image", 1318, 318, 364, 364, name=str(ASSETS / "qr-live.png"), label=f"QR code: {DECK['joinUrl']}"),

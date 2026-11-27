@@ -526,3 +526,10 @@
 /* Questions: the website for follow-up, under the speaker. */
 .pd-q-web { position: absolute; left: 0; top: 760px; width: 1440px; margin: 0; text-align: center; font-size: 40px; font-weight: 700; color: var(--pd-accent); animation: pd-fade .7s .8s both; }
 .pd-q-web svg { width: 40px; height: 40px; vertical-align: -6px; margin-right: 14px; }
+
+/* Questions: download the slides as a PDF (the handout). */
+.pd-q-dl { position: absolute; left: 470px; top: 860px; width: 500px; height: 72px; display: flex; align-items: center; justify-content: center; gap: 14px;
+  border-radius: 36px; border: 3px solid var(--pd-accent); background: var(--pd-card); color: var(--pd-accent); font-size: 28px; font-weight: 700;
+  text-decoration: none; white-space: nowrap; animation: pd-fade .7s 1s both; }
+.pd .pd-q-dl svg { flex: none; width: 34px; height: 34px; }
+.pd-q-dl:hover, .pd-q-dl:focus-visible { background: var(--pd-accent); color: #04111f; outline: 3px solid #fff; outline-offset: 3px; }

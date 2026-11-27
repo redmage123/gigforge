@@ -21,7 +21,7 @@ import deck from './paris-deck.json'
 import qrUrl from './qr-live.svg'
 import { BAHAMAS_PATH } from './bahamas-outline'
 import {
-  ArrowLeft, ArrowRight, Ban, ExternalLink, Hourglass, CloudLightning, CopyX, Database, FileCheck2, FileSignature, FileX, Globe, Landmark, Lightbulb,
+  ArrowLeft, ArrowRight, Ban, Download, ExternalLink, Hourglass, CloudLightning, CopyX, Database, FileCheck2, FileSignature, FileX, Globe, Landmark, Lightbulb,
   ListChecks, MapPin, Maximize, MessageCircleQuestion, MonitorPlay, NotebookPen, Pause, Plane, Play, RadioTower, Scale,
   SearchCheck, ShieldCheck, Smartphone, TrendingUp, TriangleAlert, UserRound, Waves, Wind,
 } from 'lucide-react'
@@ -294,6 +294,11 @@ function QuestionsSlide({ slide }) {
       <div className="pd-q-icon"><MessageCircleQuestion aria-hidden="true" strokeWidth={1.5}><title>Questions</title></MessageCircleQuestion></div>
       <h2 className="pd-q">{slide.headline}</h2>
       <p className="pd-q-who">{p.name} · {p.role}, {p.org}</p>
+      {deck.download && (
+        <a className="pd-q-dl" href={deck.download.path} download>
+          <Download aria-hidden="true" focusable="false" strokeWidth={2.25}><title>Download</title></Download>{deck.download.label}
+        </a>
+      )}
       {deck.contact && <p className="pd-q-web"><Globe aria-hidden="true" className="pd-ic-inline" strokeWidth={2.25}><title>Website</title></Globe>{deck.contact}</p>}
       <figure className="pd-revisit pd-q-qr">
         <img src={qrUrl} alt={`QR code: ${deck.joinUrl}`} />
